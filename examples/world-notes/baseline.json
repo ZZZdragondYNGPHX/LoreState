@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "profile": {
+    "id": "world-notes",
+    "instructions": "记录地点、组织和长期事件，不记录普通对话流水。"
+  },
+  "data": {
+    "places": {
+      "harbor": {
+        "name": "潮汐港",
+        "description": "商会管理的港口"
+      }
+    },
+    "events": {}
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "id": "lorestate-patch-display-v1",
+  "scriptName": "LoreState｜显示侧隐藏更新协议",
+  "findRegex": "/<LoreStatePatch>[\\s\\S]*?<\\/LoreStatePatch>/g",
+  "replaceString": "",
+  "trimStrings": [],
+  "placement": [
+    2
+  ],
+  "disabled": false,
+  "markdownOnly": true,
+  "promptOnly": false,
+  "runOnEdit": true,
+  "substituteRegex": 0,
+  "minDepth": null,
+  "maxDepth": null
+}

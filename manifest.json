@@ -1,0 +1,16 @@
+{
+  "display_name": "LoreState · 文字状态",
+  "author": "ZZZdragondYNGPHX",
+  "version": "0.2.0",
+  "minimum_client_version": "1.18.0",
+  "loading_order": 80,
+  "js": "index.js",
+  "css": "style.css",
+  "generate_interceptor": "lorestateGenerationInterceptor",
+  "hooks": {
+    "enable": "init",
+    "disable": "dispose",
+    "delete": "dispose"
+  },
+  "auto_update": false
+}
