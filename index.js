@@ -1,6 +1,7 @@
 import { emptyState, renderBook, validateState } from './src/core.js';
 import { LoreStateHost, exportState, importBackup, capabilities } from './src/host.js';
 let host, panel, opener, status, output, preview;
+let menuContainer, menuObserver;
 const node = (tag, text, parent) => { const el = document.createElement(tag); if (text !== undefined) el.textContent = text; parent?.append(el); return el; };
 const report = text => { if (status) status.textContent = text; };
 const signature = ctx => JSON.stringify([ctx.getCurrentChatId(), ctx.chat.map(m => [m.mes,m.name,m.is_user,m.is_system,m.swipe_id])]);
@@ -22,9 +23,21 @@ function stage(state) {
 }
 export function init() {
   if (panel || !globalThis.SillyTavern?.getContext) return;
-  opener=node('button','LoreState',document.body);opener.id='lorestate-open';opener.type='button';
+  opener=node('button');opener.id='lorestate-open';opener.type='button';
+  opener.className='list-group-item flex-container flexGap5';
+  node('span',undefined,opener).className='fa-solid fa-book-open extensionsMenuExtensionButton';
+  node('span','LoreState',opener);
+  menuContainer=node('div');menuContainer.id='lorestate-wand-container';
+  menuContainer.className='extension_container';menuContainer.append(opener);
+  const mountMenu=()=>{
+    const menu=document.getElementById('extensionsMenu');
+    if(!menu)return;
+    menu.append(menuContainer);menuObserver?.disconnect();menuObserver=null;
+  };
+  menuObserver=new MutationObserver(mountMenu);
+  menuObserver.observe(document.body,{childList:true,subtree:true});mountMenu();
   panel=node('dialog',undefined,document.body);panel.id='lorestate-panel';panel.setAttribute('aria-labelledby','lorestate-title');
-  node('h2','LoreState · 文字状态',panel).id='lorestate-title';
+  node('h2','LoreState',panel).id='lorestate-title';
   button('关闭',panel,()=>panel.close());status=node('p','',panel);status.setAttribute('role','status');
   output=node('pre','',panel);output.tabIndex=0;
   host=new LoreStateHost(()=>SillyTavern.getContext(),report);
@@ -59,5 +72,5 @@ export function init() {
   host.attach();globalThis.lorestateGenerationInterceptor=(...args)=>host.intercept(...args);
   window.addEventListener('pagehide',dispose,{once:true});
 }
-export function dispose(){host?.dispose();panel?.remove();opener?.remove();panel=null;preview=null;delete globalThis.lorestateGenerationInterceptor;window.removeEventListener('pagehide',dispose);}
+export function dispose(){menuObserver?.disconnect();menuObserver=null;menuContainer?.remove();host?.dispose();panel?.remove();opener?.remove();panel=null;preview=null;delete globalThis.lorestateGenerationInterceptor;window.removeEventListener('pagehide',dispose);}
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init();

@@ -1,7 +1,7 @@
 {
-  "display_name": "LoreState · 文字状态",
+  "display_name": "LoreState",
   "author": "ZZZdragondYNGPHX",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "minimum_client_version": "1.18.0",
   "loading_order": 80,
   "js": "index.js",

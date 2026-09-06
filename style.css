@@ -1,4 +1,4 @@
-#lorestate-open { position: fixed; right: 14px; bottom: 160px; z-index: 100; border: 1px solid #ad9872; border-radius: 8px; background: #27231e; color: #fff2d6; padding: 9px 16px; cursor: pointer; font: inherit; }
+#lorestate-open { width: 100%; border: 0; border-radius: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; align-items: center; }
 #lorestate-panel { box-sizing: border-box; width: min(760px, calc(100vw - 24px)); max-height: 85dvh; margin: auto; border: 1px solid #ae9875; border-radius: 12px; padding: 22px; color: #f2eadb; background: #24221e; overflow: auto; text-align: left; }
 #lorestate-panel::backdrop { background: #0009; }
 #lorestate-panel h2 { margin: 0 0 12px; font-size: 1.2em; }
@@ -13,4 +13,4 @@
 #lorestate-panel details { margin-top: 18px; }
 #lorestate-panel summary { cursor: pointer; }
 #lorestate-panel .lorestate-actions { display: flex; flex-wrap: wrap; gap: 8px; }
-@media (max-width: 480px) { #lorestate-panel { padding: 14px; } #lorestate-open { right: 8px; bottom: 150px; } }
+@media (max-width: 480px) { #lorestate-panel { padding: 14px; } }

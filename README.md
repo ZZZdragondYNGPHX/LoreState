@@ -1,12 +1,12 @@
 # LoreState
 
-用于 SillyTavern 的纯文字状态扩展。吸收 MVU 的增量更新、消息楼层存储和历史事件联动思路，用自然语言保存事实，由程序负责路径校验、原子提交和回放。
+LoreState 是用于 SillyTavern 的通用纯文字状态接口与扩展。吸收 MVU 的增量更新、消息楼层存储和历史事件联动思路，用自然语言保存事实，由程序负责路径校验、原子提交和回放。
 
-仓库根目录是通用扩展；[`examples/wishnote`](examples/wishnote) 是缄愿笔记示例。核心没有人物编号、愿望类型或世界观规则，不依赖 MVU、酒馆助手或运行时 CDN。
+main 分支的仓库根目录是通用接口与扩展；[`examples/wishnote`](examples/wishnote) 是缄愿笔记示例。另有可直接安装的 examples/wishnote 分支，它是从 main 派生的特定实现，显示为“LoreState · 缄愿笔记示例”，不代表项目整体。核心没有人物编号、愿望类型或世界观规则，不依赖 MVU、酒馆助手或运行时 CDN。
 
 ## 使用
 
-需要 SillyTavern 1.18.0 或更高版本及 manifest 声明的宿主能力。将本仓库安装为 UI 扩展，刷新后打开角色聊天，点击 **LoreState**。在“基线设置”中粘贴基线 JSON，或选择示例的 `baseline.json`，预览并确认。
+需要 SillyTavern 1.18.0 或更高版本及 manifest 声明的宿主能力。将本仓库安装为 UI 扩展，刷新后打开角色聊天，点击输入框旁的 **魔法棒 → LoreState**。在“基线设置”中粘贴基线 JSON，或选择示例的 `baseline.json`，预览并确认。
 
 ```json
 {
