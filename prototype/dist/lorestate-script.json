@@ -3,8 +3,8 @@
   "enabled": true,
   "name": "LoreState · 文字状态原型",
   "id": "0aa89d30-099d-4cf3-8cfb-d367490ec067",
-  "content": "import 'https://testingcf.jsdelivr.net/gh/ZZZdragondYNGPHX/LoreState@prototype-v0.1.0/artifact/bundle.js';",
-  "info": "LoreState 作者流程原型 0.1.0；酒馆助手 4.9.5 / SillyTavern 1.18.0。设置入口在魔法棒。选择世界书条目、复制制作提示词、粘贴 HTML 后保存。首次 full，后续 delta。 远程加载版，固定 prototype-v0.1.0；需要访问 CDN。",
+  "content": "import 'https://testingcf.jsdelivr.net/gh/ZZZdragondYNGPHX/LoreState@prototype-v0.2.0/artifact/bundle.js';",
+  "info": "LoreState 作者流程原型 0.2.0；酒馆助手 4.9.5 / SillyTavern 1.18.0。设置入口在魔法棒。选择世界书条目、复制制作提示词、粘贴 HTML 后保存。首次 full，后续 delta。 远程加载版，固定 prototype-v0.2.0；需要访问 CDN。",
   "button": {
     "enabled": true,
     "buttons": [

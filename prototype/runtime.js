@@ -1,7 +1,8 @@
 import { PROTO_KEY, TAG_PATTERN, replayText, playPrompt, authorPrompt } from './core.js';
 import { inspectTemplate, renderTemplate } from './template.js';
+import { listPresets, sameFields, savePreset, deletePreset } from './presets.js';
 
-// This module is bundled into one Tavern Helper character script; no remote loader.
+// Runs inside the owning Tavern Helper character script, including remote imports.
 export function startPrototype(defaultHtml) {
   const doc=window.parent.document,ctx=()=>window.parent.SillyTavern.getContext();
   if(doc.getElementById('lorestate-prototype-settings'))throw new Error('已有 LoreState 原型脚本运行，请勿重复启用');
@@ -49,6 +50,21 @@ export function startPrototype(defaultHtml) {
     catch{report('制作提示词已生成，请从文本框手动复制。');}
   });
   const htmlLabel=node('label','2. 粘贴网页 AI 生成的 HTML',panel),html=node('textarea',undefined,htmlLabel);html.setAttribute('aria-label','HTML 模板');html.rows=9;html.value=settings().html||defaultHtml;
+  const presetLabel=node('label','HTML 预设（随卡保存）',panel),presetSelect=node('select',undefined,presetLabel);presetSelect.setAttribute('aria-label','HTML 预设');
+  const nameLabel=node('label','预设名称',panel),presetName=node('input',undefined,nameLabel);presetName.maxLength=40;presetName.setAttribute('aria-label','预设名称');
+  function syncPresets(id=settings().activePresetId??'legacy'){
+    presetSelect.replaceChildren();for(const p of listPresets(settings())){const option=node('option',p.name,presetSelect);option.value=p.id;}
+    if(listPresets(settings()).some(p=>p.id===id))presetSelect.value=id;
+    presetName.value=listPresets(settings()).find(p=>p.id===presetSelect.value)?.name??'我的样式';
+  }
+  function writeConfig(config){updateVariablesWith(v=>({...v,[PROTO_KEY]:config}),{type:'script'});}
+  function validateSkin(source){const parsed=inspectTemplate(source),config=settings();if(config.ready&&config.fields&&!sameFields(parsed.fields,config.fields))throw new Error('预设的栏目必须与当前配置一致；可以调整顺序和外观，不能增删栏目');return parsed;}
+  presetSelect.onchange=()=>{presetName.value=listPresets(settings()).find(p=>p.id===presetSelect.value)?.name??'';};
+  button('另存为新预设',panel,()=>{validateSkin(html.value);const id=crypto.randomUUID();writeConfig(savePreset(settings(),presetName.value,html.value,id));syncPresets(id);report('已保存新预设。点击“应用所选预设”才会切换当前样式。');});
+  button('覆盖所选预设',panel,async()=>{validateSkin(html.value);const config=settings(),id=presetSelect.value;if(!id)throw new Error('请先保存一份预设');let next=savePreset(config,presetName.value,html.value,id);if(id===(config.activePresetId??'legacy'))next={...next,html:html.value};writeConfig(next);syncPresets(id);renderKey='';await refresh();report('预设已更新，聊天状态保留。');});
+  button('应用所选预设',panel,async()=>{const config=settings(),preset=listPresets(config).find(p=>p.id===presetSelect.value);if(!preset)throw new Error('请先保存一份预设');validateSkin(preset.html);if(!config.ready)throw new Error('请先点击“保存 HTML 并启用本聊天”完成初始配置');writeConfig({...config,presets:listPresets(config),html:preset.html,activePresetId:preset.id});html.value=preset.html;renderKey='';await refresh();report(`已应用“${preset.name}”，聊天状态保留。`);});
+  button('删除所选预设',panel,()=>{writeConfig(deletePreset(settings(),presetSelect.value));syncPresets();report('已删除所选预设，当前展示保留。');});
+  syncPresets();
   const preview=node('iframe',undefined,panel);preview.title='LoreState HTML 预览';preview.setAttribute('sandbox','');preview.style.cssText='width:100%;height:260px;border:0;border-radius:8px';
   const getResult=(config=settings(),list=messages())=>replayText(list,config.fields,chatSettings().start??1);
   button('预览 HTML（不保存）',panel,()=>{
@@ -70,8 +86,10 @@ export function startPrototype(defaultHtml) {
     if(!ctx().getCurrentChatId()||!messages().length)throw new Error('请先打开角色聊天');
     if(ctx().chatMetadata?.wishnote_v1?.enabled||ctx().chatMetadata?.lorestate_v1?.enabled)throw new Error('本聊天启用了旧扩展状态，请先停用旧版或使用新测试聊天');
     const {fields}=inspectTemplate(html.value),previous=settings();
-    if(previous.fields&&getResult(previous).state&&JSON.stringify(fields)!==JSON.stringify(previous.fields))throw new Error('本聊天已有状态，原型不支持改变栏目。请在新聊天中设计新栏目。');
-    const config={version:1,ready:true,book,uid:entry.uid,entryName:entry.name,html:html.value,fields};
+    if(previous.ready&&previous.fields&&!sameFields(fields,previous.fields))throw new Error('已有配置不支持改变栏目，以免影响其他聊天。新栏目请使用独立角色脚本。');
+    const activePresetId=previous.activePresetId??'legacy';
+    const activeName=listPresets(previous).find(p=>p.id===activePresetId)?.name??'默认样式';
+    const config=savePreset({...previous,version:2,ready:true,book,uid:entry.uid,entryName:entry.name,html:html.value,fields,activePresetId},activeName,html.value,activePresetId);
     updateVariablesWith(v=>({...v,[PROTO_KEY]:config}),{type:'script'});
     const old=chatSettings();updateVariablesWith(v=>({...v,[PROTO_KEY]:{...old,enabled:true,start:old.start??Math.max(1,messages().length)}}),{type:'chat'});
     // Separate display and prompt copy filters; neither edits the source message.
@@ -88,7 +106,7 @@ export function startPrototype(defaultHtml) {
   button('暂停本聊天',panel,async()=>{
     updateVariablesWith(v=>({...v,[PROTO_KEY]:{...chatSettings(),enabled:false}}),{type:'chat'});uninject?.();uninject=null;view?.remove();report('已暂停；数据和 HTML 保留，标签过滤正则保留。');
   });
-  async function open(){if(!panel.open)panel.showModal();html.value=settings().html||html.value;await loadBooks();}
+  async function open(){if(!panel.open)panel.showModal();html.value=settings().html||html.value;syncPresets();await loadBooks();}
   const menu=node('div');menu.className='extension_container';
   const opener=button('LoreState · 原型设置',menu,open);opener.className='list-group-item';opener.style.cssText='background:transparent;color:inherit;border:0;text-align:left;width:100%;font:inherit';
   const mount=()=>{const target=doc.getElementById('extensionsMenu');if(target){target.append(menu);menuObserver?.disconnect();}};
