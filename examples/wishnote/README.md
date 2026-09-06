@@ -16,3 +16,6 @@ node examples/wishnote/migrate.mjs xml 热档.txt 新基线.json 冷档世界书
 人物路径为 `/people/P01/reality/F01`；愿望内容更新到 `/people/P01/wishes/W01/text`。热/冷标记均保留，但这一通用版本会完整注入所有人物。领域语义由 `profile.instructions` 与世界书引导，核心不强制恒/程类型或目标人物存在。
 
 `legacy/` 仅供离线迁移和原始世界书对照，不是第二份可安装扩展。`adapter.js` 将旧格式转换到通用文字状态，保留原件供核查。旧版允许的自定义字段若不是纯文字结构，转换会拒绝，需先人工整理；不会悄悄丢弃它们。
+# 新版人物记忆脚本
+
+新的世界书＋酒馆助手脚本技术迁移见 [people/README.md](people/README.md)。下文对应保留的旧原生扩展示例，不与新版同时维护聊天。
