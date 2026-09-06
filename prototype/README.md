@@ -1,27 +1,67 @@
-# LoreState 作者流程原型
+# LoreState 统一文字状态
 
-本目录验证新的酒馆助手脚本路线，**没有替换仓库根目录的旧扩展**。不同时在一段聊天启用两套状态维护。
+酒馆助手是固定前提。0.4.0 将简单状态栏与人物记忆合为一套：公共状态＋可选人物档案，共用更新、回放、提示与 HTML 渲染。没有模式选择，也不读取旧版配置或旧版标签。请用新脚本和新聊天配置；旧版原生扩展仍作为历史工程保留在仓库根目录。
 
-`prototype-v0.3.0` 新增可选的[人物记忆模式](people-memory.md)：在场人物完整状态、离场人物本地保留、简短索引与按输入预取。旧简单状态模式保持兼容；已有脚本不能直接改类型，人物模式请使用独立脚本和新聊天。
+## 作者与读者流程
 
-默认导入 [远程加载脚本](dist/lorestate-script.json)，或者在酒馆助手中新建角色脚本，填入：
+1. 导入 `dist/lorestate-script.json` 角色脚本，或使用离线备用版，两者只启用一个。开启脚本数据随卡导出。
+2. 从魔法棒打开 LoreState 设置，选择当前角色绑定的世界书状态栏条目。
+3. 复制 HTML 制作提示词与条目给网页 AI，粘贴生成的 HTML，预览并保存。
+4. 保存会自动添加两条本卡正则：仅显示隐藏、仅提示词过滤；两者都保留正文与消息原文。启用本卡局部正则。
+5. 作者可保存最多 20 份 HTML 预设；公共与人物的栏目集合分别一致才可切换。换外观不改聊天状态。
+6. 读者正常聊天即可。最新 AI 回复旁显示完整状态；AI 首次给完整内容，之后仅给变化。编辑原始 AI 标签后可点击“重新读取当前聊天状态”纠错。
 
-```js
-import 'https://testingcf.jsdelivr.net/gh/ZZZdragondYNGPHX/LoreState@prototype-v0.3.0/artifact/bundle.js';
+## HTML 接口
+
+```html
+<section><h3>地点</h3><p data-lore-field="地点"></p></section>
+<article data-lore-person>
+  <h3 data-lore-name></h3><small data-lore-id></small>
+  <p data-lore-field="衣着"></p>
+</article>
 ```
 
-手动新建脚本时，开启脚本数据随卡导出；导入版已经配置好。HTML 与栏目配置仍保存在随卡脚本数据中，聊天状态仍保存在本地。远程地址只加载通用代码。版本固定为原型 `prototype-v0.3.0`，不会跟随 main 自动升级；正式使用前仍需真实酒馆验收。
+人物容器外为公共栏目，容器内为人物栏目；两者都可单独使用。只能有一个人物容器，脚本按在场人物复制。可选 `data-lore-identity` 显示稳定识别信息。每个绑定节点独立放文字，标签标题放旁边。重复人物区域请使用 class 样式，不依赖 id（渲染时移除重复 ID）。
 
-CDN 无法访问时可用 [离线备用版](dist/lorestate-script-offline.json)。两版二选一；已有配置时优先只替换原脚本的代码内容，保留脚本 ID 和数据，不要删除后重建。关闭再启用脚本可重新加载。
+仅支持静态 HTML/CSS 和原生折叠，文字使用 textContent 填入不允许脚本的 iframe。每类最多 32 个栏目，值为普通文字，不引入数值运算或复杂变量结构。
 
-作者流程：在角色卡脚本中导入 `dist/lorestate-script.json`，启用后从魔法棒打开“LoreState · 原型设置”。选择当前卡绑定的世界书状态栏条目，复制脚本生成的 HTML 制作提示词给网页 AI；将生成的 HTML 粘贴回脚本，预览，再保存启用。HTML 与条目关联保存在脚本数据中，脚本设置为随卡导出数据。
+## 统一协议
 
-本原型支持最多 20 份随卡 HTML 预设，可另存、覆盖、应用和删除。预设名称不能重复；当前使用的预设需先切换才能删除。旧版 HTML 自动保留为“原有样式”。切换仅改变外观，栏目集合必须一致。示例 HTML 可直接用于地点、衣着、身体状况三个栏目。保存时会添加两条本卡正则：一条仅隐藏显示副本中的 LoreState 标签，另一条仅过滤发送给模型的历史标签，两条均保留正文与原始消息。HTML 读取合并后的完整状态，不直接替换单层增量标签；当前状态由脚本单独注入一次，HTML 不进入提示词。请确保本卡局部正则已启用，并停用旧的“屏蔽整层 AI 正文”正则。
+```xml
+<LoreState version="2" mode="full">
+  <Shared><地点>驿站</地点></Shared>
+  <Person id="P01" name="林舟" identity="书商" mode="full">
+    <衣着>灰色斗篷</衣着>
+  </Person>
+</LoreState>
+```
 
-0 层开场白不要求状态。首次有效 AI 状态为完整的 `mode="full"`，以后为 `mode="delta"`；字段名来自 HTML 的 `data-lore-field`，原型仅支持单层文字栏目，列表作为多行文字。缺失/非法更新保留上一份状态，提示错误而不中断聊天。编辑消息后可重新读取；历史重算不能自动判断后续剧情是否语义冲突。
+```xml
+<LoreState version="2" mode="delta">
+  <Shared><地点>码头</地点></Shared>
+  <Person id="P01" mode="delta"><衣着>雨衣</衣着></Person>
+</LoreState>
+```
 
-HTML 仅使用声明式 HTML/CSS 和原生折叠。脚本、事件属性、外部资源等不在此原型范围内。文字通过 textContent 绑定，在不允许脚本的独立 iframe 中展示。预览与实际展示使用同一渲染函数。
+没有公共栏目不输出 Shared；没有人物栏目不输出 Person。首次需包含全部公共栏目；新人物需完整人物栏目，已有编号仅 delta。每项变化写该栏目完整新文字，遗漏保留；删除内容用 `action="remove"`。整轮任何错误均不提交半份状态。标签版本与属性顺序按示例书写。
 
-尚不包含：个人预设、历史查看界面、直接字段纠错、复杂数组和自定义 JavaScript。它们仍是后续讨论方向。
+在场人物完整注入；离场完整文字留本地，仅注入编号、姓名、识别信息索引。明确提及编号或唯一姓名时预取，临时回归先空 delta 唤醒，下一轮改栏目；不增加模型调用。细节见 [人物档案](people-memory.md)。
 
-开发：`node scripts/build-prototype.mjs` 同时生成 `artifact/bundle.js`、远程加载脚本和完整嵌入源码的离线版。不需要额外模型 Key。`npm test` 同时运行协议回归。验证边界见 [verification.md](verification.md)。
+存储键为 `lorestate_unified_v1`，脚本配置包含 `schema: {shared: [...], person: [...]}`。消息原始标签是回放依据，聊天快照不替代历史。0 层开场白默认不参与初始化。尚不支持直接字段编辑器、同层续写或自动迁移旧聊天。
+
+## 构建
+
+```sh
+node scripts/build-prototype.mjs
+node scripts/build-wishnote-people.mjs
+npm test
+npm run check
+```
+
+浏览器测试：在仓库根目录启动本地静态服务器，打开 `tests/template-browser.html`。
+远程地址固定为 `prototype-v0.4.0`，不会随 main 自动变化。
+
+```js
+import 'https://testingcf.jsdelivr.net/gh/ZZZdragondYNGPHX/LoreState@prototype-v0.4.0/artifact/bundle.js';
+```
+发布状态与实装边界见 [verification.md](verification.md)。

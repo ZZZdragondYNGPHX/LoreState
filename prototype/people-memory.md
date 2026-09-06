@@ -1,13 +1,13 @@
-# 人物记忆模式
+# 统一状态中的人物档案
 
-新建独立角色脚本，在首次保存前选择“人物记忆：在场与离场”。已有简单模式脚本保持兼容，不自动将旧平面状态转换成人物。不要在同一页面同时启用两份 LoreState。HTML 描述单个人物的栏目，脚本重复展示在场人物，姓名和编号由外层提供。
+人物是统一状态中的可选部分。HTML 用 data-lore-person 声明一个重复容器，公共栏目放在容器外。没有独立人物模式，没有旧协议兼容。
 
 ## 输出示例
 
-以下示例模板需包含 `事实`、`衣着` 两个 data-lore-field。
+以下示例模板需包含 `事实`、`衣着` 两个人物容器内的 data-lore-field。
 
 ```xml
-<LoreState mode="full">
+<LoreState version="2" mode="full">
 <Person id="P01" name="林舟" identity="港口书商" mode="full" presence="active">
 <事实>保管蓝色钥匙</事实><衣着>旧外套</衣着>
 </Person>
@@ -17,9 +17,9 @@
 后续普通更新只写改变的栏目；外层始终 delta，新人物内层使用 full，已有编号内层使用 delta。首次允许无人物的空 full。姓名和稳定识别信息一旦建档不能由 AI 重新指派；笔误可编辑最初消息再重新读取。
 
 ```xml
-<LoreState mode="delta"><Person id="P01" mode="delta"><衣着>深色斗篷</衣着></Person></LoreState>
-<LoreState mode="delta"><Person id="P01" mode="delta" presence="cold"/></LoreState>
-<LoreState mode="delta"><Person id="P01" mode="delta" presence="active"/></LoreState>
+<LoreState version="2" mode="delta"><Person id="P01" mode="delta"><衣着>深色斗篷</衣着></Person></LoreState>
+<LoreState version="2" mode="delta"><Person id="P01" mode="delta" presence="cold"/></LoreState>
+<LoreState version="2" mode="delta"><Person id="P01" mode="delta" presence="active"/></LoreState>
 ```
 
 以上是三轮独立回复，不应放在同一消息。遗漏保留，离场不删除；出入场默认由模型根据剧情决定。整个更新批次原子提交，一个人物格式错误也不会部分改掉其他人物。
@@ -36,6 +36,6 @@
 
 ## 存储与恢复
 
-当前选中分支的原始标签为权威来源；聊天变量 `lorestate_text_prototype_v1.current` 只是完整冷热记忆快照。重新读取、刷新、编辑、重抽和删尾按现存消息重算，不读其他聊天。完整聊天导出包含原始更新和快照；只导出角色卡不包含游玩状态。删除建档消息会失去该人物的回放起点，不将快照冒充已存在的历史。
+当前选中分支的原始标签为权威来源；聊天变量 `lorestate_unified_v1.current` 只是完整冷热记忆快照。重新读取、刷新、编辑、重抽和删尾按现存消息重算，不读其他聊天。完整聊天导出包含原始更新和快照；只导出角色卡不包含游玩状态。删除建档消息会失去该人物的回放起点，不将快照冒充已存在的历史。
 
 上限：100 人、本地状态 100 万字符、单栏目 6000 字符、提示词 24000 字符。超限不截断状态。无外部数据库，无额外模型 URL/Key，不使用 MVU stat_data。当前版本仍不支持同层续写和旧 WishBook 冷档自动迁移。

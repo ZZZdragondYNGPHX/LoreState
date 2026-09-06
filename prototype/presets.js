@@ -1,9 +1,9 @@
 // Presets contain presentation only; rules and chat state are never copied here.
 export function listPresets(config) {
   if(Array.isArray(config.presets)&&config.presets.length)return config.presets.map(p=>({...p}));
-  return config.html?[{id:'legacy',name:'原有样式',html:config.html}]:[];
+  return [];
 }
-export function sameFields(a,b){return a.length===b.length&&a.every(f=>b.includes(f));}
+function sameFields(a,b){return a.length===b.length&&a.every(f=>b.includes(f));}
 export function savePreset(config,name,html,id){
   name=name.trim();if(!name||name.length>40)throw new Error('预设名称需为 1～40 个字符');
   const presets=listPresets(config);
@@ -14,6 +14,8 @@ export function savePreset(config,name,html,id){
   return {...config,presets};
 }
 export function deletePreset(config,id){
-  if(id===(config.activePresetId??'legacy'))throw new Error('请先切换到其他预设，再删除当前样式');
+  if(id===(config.activePresetId))throw new Error('请先切换到其他预设，再删除当前样式');
   return {...config,presets:listPresets(config).filter(p=>p.id!==id)};
 }
+
+export function sameSchema(a,b){return !!a&&!!b&&sameFields(a.shared,b.shared)&&sameFields(a.person,b.person);}

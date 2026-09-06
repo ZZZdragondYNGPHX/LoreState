@@ -1,5 +1,5 @@
 {
-  "version": "1.0",
+  "version": "2.0",
   "sourceSha256": "99a32575dc93acf63fb6f8335de2e871fccb004c962c565bb6ee6d6cdcd81183",
   "preservedEntries": [
     0,
@@ -9,12 +9,12 @@
     4,
     5
   ],
-  "runtime": "prototype-v0.3.0",
+  "runtime": "prototype-v0.4.0",
   "wholeCharacterCard": false,
   "hashes": {
-    "缄愿笔记_LoreState人物记忆版_1.0.json": "3a9e01d7c14dbba7ec868b2935653c25ef84644949482386972456457c282ac8",
-    "缄愿笔记_角色脚本.json": "30c760b5388731652ab6d96edeb43de233d32325ab6f8c11e552495e05da1137",
-    "缄愿笔记_角色脚本_离线备用.json": "073a28a2ff72b57d66fb513fb6360713c5139af64e9883f00ace8329fcb8c9ab",
+    "缄愿笔记_LoreState统一版_2.0.json": "acce7d45b5d2fe7bc93ceaba937013d084d4f3fd1a69c57a2de8ffe25688f271",
+    "缄愿笔记_角色脚本.json": "fa111e2b18db7c747375d462418a29610ecc864d0d7b58a40dcfa532297ce9e9",
+    "缄愿笔记_角色脚本_离线备用.json": "11cc47884fa392ef491ce57b669d4292f53a3730f6449aa092eb3d2a5ece6453",
     "缄愿笔记_显示隐藏.json": "8a644a22afe259bd2cc022613a0ea5a35163b27170b81db62255a6176c99d632",
     "缄愿笔记_提示词过滤.json": "c5bfff5895ee766a69387d2217a9b8656718918bd9067e331ff343b9d2e03f59"
   }

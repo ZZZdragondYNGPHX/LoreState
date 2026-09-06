@@ -1,7 +1,7 @@
 import {parseLegacyXml} from '../legacy/migration.js';
 import {xmlText} from '../../../prototype/core.js';
-import {applyPeople} from '../../../prototype/people.js';
-import {wishnoteFields} from './fields.js';
+import {applyState} from '../../../prototype/core.js';
+import {wishnoteFields,wishnoteSchema} from './fields.js';
 
 export function convertWishnoteMemory(hotXml='',coldBook=null){
   const people=new Map(),warnings=[];
@@ -26,7 +26,7 @@ export function convertWishnoteMemory(hotXml='',coldBook=null){
     people.set(id,{id,name:node.attrs.name,presence:'cold',values:[node.text.trim(),'参见已成事实中的旧冷档原文（未自动拆分）','参见已成事实中的旧冷档原文（未自动拆分）']});
     warnings.push(`${id} 冷档摘要原文完整保留，恒/程与关联尚未自动拆分。`);
   }
-  const xml='<LoreState mode="full">\n'+[...people.values()].map(p=>`<Person id="${xmlText(p.id)}" name="${xmlText(p.name)}" identity="旧愿档迁入人物" mode="full" presence="${p.presence}">\n${wishnoteFields.map((f,i)=>`<${f}>${xmlText(p.values[i])}</${f}>`).join('\n')}\n</Person>`).join('\n')+'\n</LoreState>';
-  const state=applyPeople(null,xml,wishnoteFields);
+  const xml='<LoreState version="2" mode="full">\n'+[...people.values()].map(p=>`<Person id="${xmlText(p.id)}" name="${xmlText(p.name)}" identity="旧愿档迁入人物" mode="full" presence="${p.presence}">\n${wishnoteFields.map((f,i)=>`<${f}>${xmlText(p.values[i])}</${f}>`).join('\n')}\n</Person>`).join('\n')+'\n</LoreState>';
+  const state=applyState(null,xml,wishnoteSchema);
   return {xml,state,warnings,originals:{hotXml,coldBook}};
 }

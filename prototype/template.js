@@ -1,4 +1,4 @@
-import { checkFields } from './core.js';
+import { checkSchema } from './core.js';
 // Declarative HTML/CSS only. Opaque sandbox + CSP contain styles and prevent code/network access.
 export function inspectTemplate(html, Parser=DOMParser) {
   if(typeof html!=='string'||!html.trim()||html.length>100000)throw new Error('HTML 必须为非空文字，最多 100000 字符');
@@ -8,17 +8,36 @@ export function inspectTemplate(html, Parser=DOMParser) {
     if(!allowed.has(el.tagName))throw new Error(`HTML 原型不接受 ${el.tagName}，请使用静态 HTML/CSS`);
     for(const attr of el.attributes)if(/^on/i.test(attr.name)||['src','href','srcdoc','action','formaction','http-equiv','contenteditable'].includes(attr.name.toLowerCase()))throw new Error(`HTML 不接受属性 ${attr.name}`);
   }
+  const regions=[...doc.querySelectorAll('[data-lore-person]')];
+  const forbidden=['HTML','HEAD','BODY','STYLE','META','TITLE'];
+  if(regions.length>1||regions.some(el=>forbidden.includes(el.tagName)))throw new Error('只允许一个正文人物容器');
+  const bindings='[data-lore-field],[data-lore-name],[data-lore-id],[data-lore-identity]';
+  for(const el of doc.querySelectorAll(bindings)){
+    if(forbidden.includes(el.tagName)||el.hasAttribute('data-lore-person')||el.querySelector(bindings)||['data-lore-field','data-lore-name','data-lore-id','data-lore-identity'].filter(a=>el.hasAttribute(a)).length!==1)throw new Error('绑定须位于独立文字节点');
+    if(!el.hasAttribute('data-lore-field')&&!el.closest('[data-lore-person]'))throw new Error('人物信息必须放在人物容器中');
+  }
   const nodes=[...doc.querySelectorAll('[data-lore-field]')];
-  if(nodes.some(el=>['HTML','HEAD','BODY','STYLE','META','TITLE'].includes(el.tagName)||el.querySelector('[data-lore-field]')))throw new Error('栏目绑定须位于正文的独立文字节点');
-  const fields=[...new Set(nodes.map(el=>el.getAttribute('data-lore-field')))];
-  checkFields(fields);
-  return {doc,fields};
+  const schema={shared:[],person:[]};
+  for(const el of nodes){const fields=schema[el.closest('[data-lore-person]')?'person':'shared'],name=el.getAttribute('data-lore-field');if(!fields.includes(name))fields.push(name);}
+  checkSchema(schema);
+  if(regions.length&&!schema.person.length)throw new Error('人物容器至少需要一个人物栏目');
+  return {doc,schema};
 }
 export function renderTemplate(html,state,Parser=DOMParser){
   const {doc}=inspectTemplate(html,Parser);
-  for(const el of doc.querySelectorAll('[data-lore-field]')){
-    const field=el.getAttribute('data-lore-field');el.textContent=Object.hasOwn(state??{},field)?state[field]:'尚未记录';
+  function fill(root,fields){for(const el of root.querySelectorAll('[data-lore-field]')){const field=el.getAttribute('data-lore-field');el.textContent=Object.hasOwn(fields??{},field)?fields[field]:'尚未记录';}}
+  const region=doc.querySelector('[data-lore-person]');
+  if(region){
+    for(const person of Object.values(state?.people??{}).filter(p=>p.presence==='active')){
+      const clone=region.cloneNode(true);fill(clone,person.fields);
+      for(const key of ['name','id','identity'])for(const el of clone.querySelectorAll(`[data-lore-${key}]`))el.textContent=person[key];
+      // Repeated HTML must not create duplicate document IDs.
+      clone.removeAttribute('id');for(const el of clone.querySelectorAll('[id]'))el.removeAttribute('id');
+      region.before(clone);
+    }
+    region.remove();
   }
+  for(const el of doc.querySelectorAll('[data-lore-field]'))if(!el.closest('[data-lore-person]')){const field=el.getAttribute('data-lore-field');el.textContent=Object.hasOwn(state?.shared??{},field)?state.shared[field]:'尚未记录';}
   const csp=doc.createElement('meta');csp.httpEquiv='Content-Security-Policy';csp.content="default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'";doc.head.prepend(csp);
   const base=doc.createElement('style');base.textContent='*{box-sizing:border-box}body{margin:0;padding:12px;color:#e5dfd3;background:#242421;font:14px/1.6 system-ui} [data-lore-field]{white-space:pre-wrap;overflow-wrap:anywhere}';doc.head.insertBefore(base,csp.nextSibling);
   return '<!doctype html>'+doc.documentElement.outerHTML;
