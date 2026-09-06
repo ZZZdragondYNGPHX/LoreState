@@ -2,13 +2,15 @@
 
 本目录验证新的酒馆助手脚本路线，**没有替换仓库根目录的旧扩展**。不同时在一段聊天启用两套状态维护。
 
+`prototype-v0.3.0` 新增可选的[人物记忆模式](people-memory.md)：在场人物完整状态、离场人物本地保留、简短索引与按输入预取。旧简单状态模式保持兼容；已有脚本不能直接改类型，人物模式请使用独立脚本和新聊天。
+
 默认导入 [远程加载脚本](dist/lorestate-script.json)，或者在酒馆助手中新建角色脚本，填入：
 
 ```js
-import 'https://testingcf.jsdelivr.net/gh/ZZZdragondYNGPHX/LoreState@prototype-v0.2.0/artifact/bundle.js';
+import 'https://testingcf.jsdelivr.net/gh/ZZZdragondYNGPHX/LoreState@prototype-v0.3.0/artifact/bundle.js';
 ```
 
-手动新建脚本时，开启脚本数据随卡导出；导入版已经配置好。HTML 与栏目配置仍保存在随卡脚本数据中，聊天状态仍保存在本地。远程地址只加载通用代码。版本固定为原型 `prototype-v0.2.0`，不会跟随 main 自动升级；正式使用前仍需真实酒馆验收。
+手动新建脚本时，开启脚本数据随卡导出；导入版已经配置好。HTML 与栏目配置仍保存在随卡脚本数据中，聊天状态仍保存在本地。远程地址只加载通用代码。版本固定为原型 `prototype-v0.3.0`，不会跟随 main 自动升级；正式使用前仍需真实酒馆验收。
 
 CDN 无法访问时可用 [离线备用版](dist/lorestate-script-offline.json)。两版二选一；已有配置时优先只替换原脚本的代码内容，保留脚本 ID 和数据，不要删除后重建。关闭再启用脚本可重新加载。
 
@@ -20,6 +22,6 @@ CDN 无法访问时可用 [离线备用版](dist/lorestate-script-offline.json)�
 
 HTML 仅使用声明式 HTML/CSS 和原生折叠。脚本、事件属性、外部资源等不在此原型范围内。文字通过 textContent 绑定，在不允许脚本的独立 iframe 中展示。预览与实际展示使用同一渲染函数。
 
-尚不包含：个人预设、历史查看界面、直接字段纠错、多人物按需取回、复杂数组和自定义 JavaScript。它们仍是后续讨论方向。
+尚不包含：个人预设、历史查看界面、直接字段纠错、复杂数组和自定义 JavaScript。它们仍是后续讨论方向。
 
 开发：`node scripts/build-prototype.mjs` 同时生成 `artifact/bundle.js`、远程加载脚本和完整嵌入源码的离线版。不需要额外模型 Key。`npm test` 同时运行协议回归。验证边界见 [verification.md](verification.md)。

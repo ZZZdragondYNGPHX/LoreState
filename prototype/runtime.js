@@ -1,6 +1,7 @@
 import { PROTO_KEY, TAG_PATTERN, replayText, playPrompt, authorPrompt } from './core.js';
 import { inspectTemplate, renderTemplate } from './template.js';
 import { listPresets, sameFields, savePreset, deletePreset } from './presets.js';
+import { replayPeople, peoplePrompt } from './people.js';
 
 // Runs inside the owning Tavern Helper character script, including remote imports.
 export function startPrototype(defaultHtml) {
@@ -21,6 +22,9 @@ export function startPrototype(defaultHtml) {
   const report=text=>{status.textContent=text;};
   const button=(title,parent,fn)=>{const el=node('button',title,parent);el.type='button';el.onclick=async()=>{el.disabled=true;try{await fn();}catch(e){report(e.message);}finally{el.disabled=false;}};return el;};
   button('关闭',panel,()=>panel.close());
+  const memoryLabel=node('label','状态类型（首次配置后固定）',panel),memoryMode=node('select',undefined,memoryLabel);memoryMode.setAttribute('aria-label','状态类型');
+  for(const [value,label] of [['flat','简单状态栏'],['people','人物记忆：在场与离场']])node('option',label,memoryMode).value=value;
+  memoryMode.value=settings().memoryMode??'flat';
   const bookLabel=node('label','1. 角色／聊天绑定的世界书',panel),books=node('select',undefined,bookLabel);books.setAttribute('aria-label','世界书');
   const entryLabel=node('label','状态栏条目',panel),entries=node('select',undefined,entryLabel);entries.setAttribute('aria-label','状态栏条目');
   const rules=node('textarea',undefined,panel);rules.readOnly=true;rules.setAttribute('aria-label','条目内容');
@@ -45,7 +49,7 @@ export function startPrototype(defaultHtml) {
   const maker=node('textarea',undefined,panel);maker.readOnly=true;maker.setAttribute('aria-label','HTML 制作提示词');maker.placeholder='点击下方按钮生成提示词，可复制给网页 AI';
   button('生成并复制 HTML 制作提示词',panel,async()=>{
     if(!selectedEntry()?.content?.trim())throw new Error('请先选择有内容的状态栏条目');
-    maker.value=authorPrompt(selectedEntry().content);
+    maker.value=authorPrompt(selectedEntry().content)+(memoryMode.value==='people'?'\n本卡采用人物记忆：HTML 是单个人物的栏目模板，脚本负责按在场人物重复展示，并在模板外显示姓名和编号。不要把特定人物编号写进 data-lore-field，也不需要自己写循环。':'');
     try{await navigator.clipboard.writeText(maker.value);report('制作提示词已复制。交给网页 AI 后，将 HTML 粘贴到下方。');}
     catch{report('制作提示词已生成，请从文本框手动复制。');}
   });
@@ -66,10 +70,11 @@ export function startPrototype(defaultHtml) {
   button('删除所选预设',panel,()=>{writeConfig(deletePreset(settings(),presetSelect.value));syncPresets();report('已删除所选预设，当前展示保留。');});
   syncPresets();
   const preview=node('iframe',undefined,panel);preview.title='LoreState HTML 预览';preview.setAttribute('sandbox','');preview.style.cssText='width:100%;height:260px;border:0;border-radius:8px';
-  const getResult=(config=settings(),list=messages())=>replayText(list,config.fields,chatSettings().start??1);
+  const getResult=(config=settings(),list=messages())=>(config.memoryMode==='people'?replayPeople:replayText)(list,config.fields,chatSettings().start??1);
+  const previewState=(config,result)=>config.memoryMode==='people'?Object.values(result.state?.people??{}).find(p=>p.presence==='active')?.fields:result.state;
   button('预览 HTML（不保存）',panel,()=>{
     const parsed=inspectTemplate(html.value);const config=settings();
-    const state=config.fields?getResult(config).state:null;
+    const state=config.fields?previewState(config,getResult(config)):null;
     preview.srcdoc=renderTemplate(html.value,state??Object.fromEntries(parsed.fields.map(f=>[f,`${f}的示例文字`])));
     report(`已识别栏目：${parsed.fields.join('、')}。预览未保存。`);
   });
@@ -86,12 +91,13 @@ export function startPrototype(defaultHtml) {
     if(!ctx().getCurrentChatId()||!messages().length)throw new Error('请先打开角色聊天');
     if(ctx().chatMetadata?.wishnote_v1?.enabled||ctx().chatMetadata?.lorestate_v1?.enabled)throw new Error('本聊天启用了旧扩展状态，请先停用旧版或使用新测试聊天');
     const {fields}=inspectTemplate(html.value),previous=settings();
+    if(previous.ready&&(previous.memoryMode??'flat')!==memoryMode.value)throw new Error('已有配置不能切换状态类型，请使用独立脚本及新聊天');
     if(previous.ready&&previous.fields&&!sameFields(fields,previous.fields))throw new Error('已有配置不支持改变栏目，以免影响其他聊天。新栏目请使用独立角色脚本。');
     const activePresetId=previous.activePresetId??'legacy';
     const activeName=listPresets(previous).find(p=>p.id===activePresetId)?.name??'默认样式';
-    const config=savePreset({...previous,version:2,ready:true,book,uid:entry.uid,entryName:entry.name,html:html.value,fields,activePresetId},activeName,html.value,activePresetId);
+    const config=savePreset({...previous,version:3,memoryMode:memoryMode.value,ready:true,book,uid:entry.uid,entryName:entry.name,html:html.value,fields,activePresetId},activeName,html.value,activePresetId);
     updateVariablesWith(v=>({...v,[PROTO_KEY]:config}),{type:'script'});
-    const old=chatSettings();updateVariablesWith(v=>({...v,[PROTO_KEY]:{...old,enabled:true,start:old.start??Math.max(1,messages().length)}}),{type:'chat'});
+    const old=chatSettings();updateVariablesWith(v=>({...v,[PROTO_KEY]:{...old,enabled:true,start:old.start??(previous.ready?1:Math.max(1,messages().length))}}),{type:'chat'});
     // Separate display and prompt copy filters; neither edits the source message.
     await installRegex();if(!matches(original))return;
     if(!isCharacterTavernRegexesEnabled())report('已保存，但本卡局部正则未启用。请启用局部正则后生成，否则历史标签仍会进入上下文。');
@@ -101,12 +107,13 @@ export function startPrototype(defaultHtml) {
   button('查看下一轮状态提示',panel,async()=>{
     const config=settings(),source=await getWorldbook(config.book),entry=source.find(e=>e.uid===config.uid);
     if(!entry)throw new Error('保存的世界书关联已失效，请重新选择');
-    maker.value=playPrompt(entry.content,config.fields,getResult(config));report('此处仅预览提示，没有调用模型。');
+    maker.value=config.memoryMode==='people'?peoplePrompt(entry.content,config.fields,getResult(config),doc.getElementById('send_textarea')?.value??''):playPrompt(entry.content,config.fields,getResult(config));report('此处仅预览提示，没有调用模型。');
   });
   button('暂停本聊天',panel,async()=>{
     updateVariablesWith(v=>({...v,[PROTO_KEY]:{...chatSettings(),enabled:false}}),{type:'chat'});uninject?.();uninject=null;view?.remove();report('已暂停；数据和 HTML 保留，标签过滤正则保留。');
   });
-  async function open(){if(!panel.open)panel.showModal();html.value=settings().html||html.value;syncPresets();await loadBooks();}
+  button('重新读取当前聊天状态',panel,async()=>{renderKey='';await refresh();report('已按当前消息和分支重新读取状态。');});
+  async function open(){if(!panel.open)panel.showModal();html.value=settings().html||html.value;memoryMode.value=settings().memoryMode??'flat';syncPresets();await loadBooks();}
   const menu=node('div');menu.className='extension_container';
   const opener=button('LoreState · 原型设置',menu,open);opener.className='list-group-item';opener.style.cssText='background:transparent;color:inherit;border:0;text-align:left;width:100%;font:inherit';
   const mount=()=>{const target=doc.getElementById('extensionsMenu');if(target){target.append(menu);menuObserver?.disconnect();}};
@@ -119,7 +126,14 @@ export function startPrototype(defaultHtml) {
     if(view?.isConnected&&renderKey===key)return;
     view?.remove();view=node('section',undefined,message.querySelector('.mes_block')||message);view.className='lorestate-prototype-view';view.style.cssText='margin:12px 0;padding:10px;border-top:1px solid #778063';
     node('small',result.errors.length?`状态有 ${result.errors.length} 轮未应用；保留有效内容。${result.errors.at(-1).message}`:result.state?'LoreState · 当前状态':'LoreState · 等待首次完整状态',view);
-    if(result.state){const frame=node('iframe',undefined,view);frame.title='LoreState 当前状态';frame.setAttribute('sandbox','');frame.srcdoc=renderTemplate(config.html,result.state);frame.style.cssText='display:block;width:100%;height:260px;border:0;border-radius:8px;margin-top:8px';}
+    function showFrame(state,parent,title){const frame=node('iframe',undefined,parent);frame.title=title;frame.setAttribute('sandbox','');frame.srcdoc=renderTemplate(config.html,state);frame.style.cssText='display:block;width:100%;height:260px;border:0;border-radius:8px;margin-top:8px';}
+    if(result.state&&config.memoryMode==='people'){
+      const people=Object.values(result.state.people),hot=people.filter(p=>p.presence==='active'),cold=people.filter(p=>p.presence==='cold');
+      for(const p of hot){node('h3',`${p.name} · ${p.id}`,view);showFrame(p.fields,view,`LoreState · ${p.name}`);}
+      if(!hot.length)node('p','当前没有在场人物。',view);
+      if(cold.length){const archive=node('details',undefined,view);node('summary',`本地离场记忆 · ${cold.length} 人`,archive);
+        for(const p of cold){const item=node('details',undefined,archive);node('summary',`${p.name} · ${p.id} · ${p.identity}`,item);let loaded=false;item.ontoggle=()=>{if(item.open&&!loaded){showFrame(p.fields,item,`离场资料 · ${p.name}`);loaded=true;}};}}
+    }else if(result.state)showFrame(result.state,view,'LoreState 当前状态');
     if(result.errors.length)button('重新读取状态',view,()=>refresh());renderKey=key;
   }
   async function refresh(){
@@ -145,7 +159,8 @@ export function startPrototype(defaultHtml) {
       if(!entry)throw new Error('世界书关联失效，请在原型设置中重新选择');
       let list=messages();if(['swipe','regenerate'].includes(type)&&list.at(-1)?.role==='assistant')list=list.slice(0,-1);
       const result=getResult(config,list);
-      const content=playPrompt(entry.content,config.fields,result);
+      const userText=type==='swipe'||type==='regenerate'?list.findLast(m=>m.role==='user')?.message??'':doc.getElementById('send_textarea')?.value||list.findLast(m=>m.role==='user')?.message||'';
+      const content=config.memoryMode==='people'?peoplePrompt(entry.content,config.fields,result,userText):playPrompt(entry.content,config.fields,result);
       uninject=injectPrompts([{id:PROTO_KEY,position:'in_chat',depth:0,role:'system',content,should_scan:false}]).uninject;
     }catch(e){report(`状态提示未注入：${e.message}`);}
   }
