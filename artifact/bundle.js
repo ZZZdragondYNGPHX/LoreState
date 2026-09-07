@@ -336,6 +336,29 @@ function createControlCenter({doc,manager,panel,summary,status,floorSelect,detai
   return {select,open(id){if(!manager.open){returnFocus=doc.activeElement;manager.showModal();}select(id);tabs[id].focus();},get active(){return active;}};
 }
 
+// Both inline and expanded state views retain the opaque, script-free sandbox.
+function createStateFrame(doc,title,{expanded=false}={}){
+  const frame=doc.createElement('iframe');frame.title=title;frame.setAttribute('sandbox','');
+  frame.className='lorestate-state-frame';
+  // Host themes and iframe renderers may supply generic sizing/position rules.
+  // Keep the owned frame in normal flow and prevent flex shrink to a thumbnail.
+  const styles={display:'block',position:'relative',inset:'auto',transform:'none',float:'none',width:'100%',minWidth:'0',maxWidth:'100%',height:expanded?'100%':'clamp(360px, 60vh, 640px)',minHeight:expanded?'0':'360px',maxHeight:'none',flex:expanded?'1 1 0':'0 0 auto',border:'0',borderRadius:'10px',boxSizing:'border-box',margin:'0'};
+  for(const [key,value] of Object.entries(styles))frame.style.setProperty(key.replace(/[A-Z]/g,m=>'-'+m.toLowerCase()),value,'important');
+  return frame;
+}
+
+function createStateWindow(doc){
+  const dialog=doc.createElement('dialog');dialog.id='lorestate-state-window';dialog.setAttribute('aria-label','LoreState 状态窗口');
+  dialog.style.cssText='position:fixed;inset:0;margin:auto;width:min(1000px,calc(100vw - 24px));height:min(780px,calc(100dvh - 32px));max-width:none;max-height:none;box-sizing:border-box;padding:16px;border:1px solid #59634d;border-radius:14px;background:#20251f;color:#f1f3ed;overflow:hidden';
+  const style=doc.createElement('style');style.textContent='#lorestate-state-window[open]{display:flex;flex-direction:column;gap:12px}#lorestate-state-window::backdrop{background:#10150fc9}#lorestate-state-window button:focus-visible{outline:2px solid #d5e5ae;outline-offset:2px}';dialog.append(style);
+  const header=doc.createElement('header');header.style.cssText='display:flex;align-items:center;justify-content:space-between;gap:12px;flex:0 0 auto';
+  const heading=doc.createElement('h2');heading.textContent='LoreState · 当前状态';heading.style.cssText='font:600 18px/1.5 system-ui;margin:0';
+  const close=doc.createElement('button');close.type='button';close.textContent='关闭状态窗口';close.style.cssText='font:inherit;min-height:44px;padding:8px 12px;border:1px solid #59634d;border-radius:8px;background:#2a3028;color:inherit;cursor:pointer';close.onclick=()=>dialog.close();
+  header.append(heading,close);dialog.append(header);const frame=createStateFrame(doc,'LoreState 展开状态',{expanded:true});dialog.append(frame);doc.body.append(dialog);
+  let opener;dialog.addEventListener('close',()=>{if(opener?.isConnected)opener.focus();});
+  return {open(source){frame.srcdoc=source;if(!dialog.open){opener=doc.activeElement;dialog.showModal();}close.focus();},update(source){if(dialog.open)frame.srcdoc=source;},close(){dialog.close();},dispose(){dialog.remove();}};
+}
+
 
 // Runs inside the owning Tavern Helper character script, including remote imports.
 function startPrototype(defaultHtml) {
@@ -348,6 +371,7 @@ function startPrototype(defaultHtml) {
   const matches=([chat,id])=>!closed&&ctx().chat===chat&&ctx().getCurrentChatId()===id;
   let closed=false,queue=Promise.resolve(),pending=false,uninject=null,view=null,renderKey='',menuObserver;
   const node=(tag,text,parent)=>{const el=doc.createElement(tag);if(text!==undefined)el.textContent=text;parent?.append(el);return el;};
+  const stateWindow=createStateWindow(doc);
   const panel=node('section',undefined,doc.body);panel.id='lorestate-prototype-settings';panel.setAttribute('aria-label','LoreState 原型设置');
   const status=node('p','选择状态栏条目，再粘贴 HTML。保存后在下一次 AI 回复建立状态。',panel);status.setAttribute('role','status');
   const report=text=>{status.textContent=text;};
@@ -423,7 +447,7 @@ function startPrototype(defaultHtml) {
   });
   button('重新校验全部楼层',manager,async()=>{await refresh();syncFloors();});
   button('复制诊断报告',manager,async()=>{
-    const result=getResult(),payload={version:'0.5.1',floor:Number(floorSelect.value),lastGoodFloor:result.lastGoodFloor,errors:result.errors,runtimeLogs};
+    const result=getResult(),payload={version:'0.5.2',floor:Number(floorSelect.value),lastGoodFloor:result.lastGoodFloor,errors:result.errors,runtimeLogs};
     repairBox.hidden=false;repairBox.value=JSON.stringify(payload,null,2);draft=null;applyRepair.disabled=true;
     try{await navigator.clipboard.writeText(repairBox.value);summary.textContent='诊断报告已复制，不含完整消息和状态正文。';}catch{summary.textContent='请从下方文本框手动复制诊断报告。';}
   });
@@ -506,7 +530,7 @@ function startPrototype(defaultHtml) {
   button('应用所选预设',panel,async()=>{const config=settings(),preset=listPresets(config).find(p=>p.id===presetSelect.value);if(!preset)throw new Error('请先保存一份预设');validateSkin(preset.html);if(!config.ready)throw new Error('请先点击“保存 HTML 并启用本聊天”完成初始配置');writeConfig({...config,presets:listPresets(config),html:preset.html,activePresetId:preset.id});html.value=preset.html;renderKey='';await refresh();report(`已应用“${preset.name}”，聊天状态保留。`);});
   button('删除所选预设',panel,()=>{writeConfig(deletePreset(settings(),presetSelect.value));syncPresets();report('已删除所选预设，当前展示保留。');});
   syncPresets();
-  const preview=node('iframe',undefined,panel);preview.title='LoreState HTML 预览';preview.setAttribute('sandbox','');preview.style.cssText='width:100%;height:260px;border:0;border-radius:8px';
+  const preview=createStateFrame(doc,'LoreState HTML 预览');panel.append(preview);
   const getResult=(config=settings(),list=messages())=>replayState(list,config.schema,chatSettings().start??1);
   button('预览 HTML（不保存）',panel,()=>{
     const {schema}=inspectTemplate(html.value),config=settings();
@@ -546,7 +570,7 @@ function startPrototype(defaultHtml) {
     maker.value=playPrompt(entry.content,config.schema,getResult(config),doc.getElementById('send_textarea')?.value??'');report('此处仅预览提示，没有调用模型。');
   });
   button('暂停本聊天',panel,async()=>{
-    updateVariablesWith(v=>({...v,[PROTO_KEY]:{...chatSettings(),enabled:false}}),{type:'chat'});uninject?.();uninject=null;view?.remove();report('已暂停；数据和 HTML 保留，标签过滤正则保留。');
+    updateVariablesWith(v=>({...v,[PROTO_KEY]:{...chatSettings(),enabled:false}}),{type:'chat'});uninject?.();uninject=null;stateWindow.close();view?.remove();report('已暂停；数据和 HTML 保留，标签过滤正则保留。');
   });
   button('重新读取当前聊天状态',panel,async()=>{renderKey='';await refresh();const result=getResult();report(result.errors.length?`重新校验后仍有 ${result.errors.length} 轮失败，请打开状态管理器。`:'全部参与回放的楼层已通过校验。');});
   async function loadSettings(){try{syncPresets();await loadBooks();}catch(e){fault(e,'设置读取失败');}}
@@ -570,12 +594,13 @@ function startPrototype(defaultHtml) {
     const message=doc.querySelector(`#chat .mes[mesid="${last.message_id}"]`);if(!message)return;
     const config=settings(),key=JSON.stringify([last.message_id,result.state,result.errors,config.html]);
     if(view?.isConnected&&renderKey===key)return;
-    view?.remove();view=node('section',undefined,message.querySelector('.mes_block')||message);view.className='lorestate-prototype-view';view.style.cssText='margin:12px 0;padding:10px;border-top:1px solid #778063';
+    view?.remove();view=node('section',undefined,message.querySelector('.mes_block')||message);view.className='lorestate-prototype-view';view.style.cssText='display:block;position:relative;width:100%;max-width:100%;min-width:0;box-sizing:border-box;flex:1 0 100%;grid-column:1 / -1;clear:both;margin:12px 0;padding:12px 0;border-top:1px solid #778063';
     node('small',result.errors.length?`状态存在缺口：${result.errors.length} 轮失败，最早第 ${result.errors[0].floor} 楼；最后连续正常楼层 ${result.lastGoodFloor??'尚无'}。后续有效更新已应用，需核对剧情。`:result.state?'LoreState · 当前状态':'LoreState · 等待首次完整状态',view);
     button('查看历史与诊断',view,()=>openManager(result.errors[0]?.floor));
-    function showFrame(state,parent,title){const frame=node('iframe',undefined,parent);frame.title=title;frame.setAttribute('sandbox','');frame.srcdoc=renderTemplate(config.html,state);frame.style.cssText='display:block;width:100%;height:260px;border:0;border-radius:8px;margin-top:8px';}
     if(result.state){
-      showFrame(result.state,view,'LoreState 当前状态');
+      const source=renderTemplate(config.html,result.state);
+      const expand=button('展开状态窗口',view,()=>stateWindow.open(source));expand.style.cssText='display:inline-block;min-height:44px;margin:8px 8px 12px 0;padding:8px 12px;cursor:pointer';
+      const frame=createStateFrame(doc,'LoreState 当前状态');frame.srcdoc=source;view.append(frame);stateWindow.update(source);
       const cold=Object.values(result.state.people).filter(p=>p.presence==='cold');
       if(cold.length){const archive=node('details',undefined,view);node('summary',`本地离场记忆 · ${cold.length} 人`,archive);
         for(const p of cold){const item=node('details',undefined,archive);node('summary',`${p.name} · ${p.id} · ${p.identity}`,item);
@@ -626,10 +651,10 @@ function startPrototype(defaultHtml) {
   for(const event of ['MESSAGE_RECEIVED','CHARACTER_MESSAGE_RENDERED','MESSAGE_UPDATED','MESSAGE_EDITED','MESSAGE_DELETED','MESSAGE_SWIPED','GENERATION_ENDED','MORE_MESSAGES_LOADED'])if(tavern_events[event])eventOn(tavern_events[event],schedule);
   if(tavern_events.GENERATION_STARTED)eventOn(tavern_events.GENERATION_STARTED,()=>{generating=true;});
   for(const event of ['GENERATION_ENDED','GENERATION_STOPPED'])if(tavern_events[event])eventOn(tavern_events[event],()=>{generating=false;schedule();});
-  eventOn(tavern_events.CHAT_CHANGED,()=>{uninject?.();uninject=null;view?.remove();renderKey='';noticeKey='';notice.hidden=true;runtimeLogs=[];draft=null;report('设置随角色保存；修改后请预览并保存。');manager.close();generating=false;schedule();});
+  eventOn(tavern_events.CHAT_CHANGED,()=>{uninject?.();uninject=null;stateWindow.close();view?.remove();renderKey='';noticeKey='';notice.hidden=true;runtimeLogs=[];draft=null;report('设置随角色保存；修改后请预览并保存。');manager.close();generating=false;schedule();});
   eventOn(tavern_events.GENERATION_AFTER_COMMANDS,beforeGenerate);
   eventOn(getButtonEvent('LoreState 设置'),()=>open().catch(e=>fault(e,'设置打开失败')));
-  function dispose(){closed=true;menuObserver?.disconnect();menu.remove();panel.remove();manager.remove();notice.remove();view?.remove();uninject?.();}
+  function dispose(){closed=true;menuObserver?.disconnect();stateWindow.dispose();menu.remove();panel.remove();manager.remove();notice.remove();view?.remove();uninject?.();}
   window.addEventListener('pagehide',dispose,{once:true});schedule();
 }
 

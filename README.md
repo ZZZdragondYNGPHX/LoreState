@@ -1,5 +1,7 @@
 # LoreState
 
+0.5.2 正文显示修复：全宽状态栏与可展开大窗口。[远程脚本](prototype/dist/v0.5.2/lorestate-script.json) · [离线脚本](prototype/dist/v0.5.2/lorestate-script-offline.json)。
+
 0.5.1 UI 试用版：魔法棒单一 LoreState 入口，状态历史／诊断修复／设置三个页签。[远程脚本](prototype/dist/v0.5.1/lorestate-script.json) · [离线脚本](prototype/dist/v0.5.1/lorestate-script-offline.json)。新 UI 已通过浏览器回归，待用户实机验收。
 
 开发请先阅读 [开发说明](docs/开发说明.md) 与 [当前交接](交接文档.md)。统一构建命令为 `npm run build`。

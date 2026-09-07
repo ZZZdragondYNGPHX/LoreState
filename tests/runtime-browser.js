@@ -75,4 +75,12 @@ await check('快速切换聊天不保留旧弹窗或写入旧状态',async()=>{
   list=[{message_id:1,role:'assistant',message:wrap('新聊天','full'),swipe_id:0}];chatId='other';chatRef=[];variables.chat={[PROTO_KEY]:{enabled:true,start:1}};
   await emit('MESSAGE_UPDATED');await emit('CHAT_CHANGED');assert(!manager.open);assert(notice.hidden);assert(variables.chat[PROTO_KEY].current.state.shared.地点==='新聊天');
 });
+await check('正文全宽、大窗口展开与关闭恢复焦点',async()=>{
+  const view=document.querySelector('.lorestate-prototype-view'),frame=view.querySelector('iframe');
+  assert(frame.getBoundingClientRect().width>=view.clientWidth-2);assert(frame.getBoundingClientRect().height>=360);
+  const expand=button('展开状态窗口',view);expand.focus();await click('展开状态窗口',view);
+  const window=document.getElementById('lorestate-state-window'),large=window.querySelector('iframe');
+  assert(window.open);assert(large.getBoundingClientRect().height>300);assert(large.getBoundingClientRect().width>=window.clientWidth-34);assert(large.getAttribute('sandbox')==='');
+  assert(large.srcdoc===frame.srcdoc);button('关闭状态窗口',window).click();await tick();assert(!window.open);assert(document.activeElement===expand);
+});
 output.textContent=results.join('\n');if(new URLSearchParams(location.search).has('preview'))await click('LoreState');window.testResults=results;

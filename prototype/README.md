@@ -1,5 +1,7 @@
 # LoreState 统一文字状态
 
+**0.5.2 正文显示修复**：[远程脚本](dist/v0.5.2/lorestate-script.json) · [离线脚本](dist/v0.5.2/lorestate-script-offline.json)。状态栏铺满正文宽度，采用更大高度；点击 **展开状态窗口** 可居中大窗查看。保留原脚本数据，只启用一个版本。
+
 **0.5.1 UI 试用版**：[离线组件](dist/v0.5.1/lorestate-script-offline.json)。魔法棒只保留 **LoreState** 一个入口，窗口内按 **状态历史／诊断修复／设置** 切换。设置分为世界书、外观模板、预设和聊天维护；编辑草稿在切页时保留。新 UI 已通过浏览器回归，待真实酒馆验收，远程入口固定 `prototype-v0.5.1`，可导入 [远程组件](dist/v0.5.1/lorestate-script.json)。
 
 当前新增 **0.5.0 本地候选版**：组件位于 `dist/v0.5.0/`，测试使用 `lorestate-script-offline.json`。核心诊断、历史楼层、修复写回、重载持久化与撤销已在 SillyTavern 1.18.0／酒馆助手 4.9.5 实机验证；远程入口固定 `prototype-v0.5.0`。原 `dist/` 根目录的 0.4.0 组件与缄愿笔记示例保留。
