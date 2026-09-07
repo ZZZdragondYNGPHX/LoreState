@@ -1,5 +1,29 @@
 # 原型验证边界
 
+## prototype-v0.5.0 本地候选版 · 2026-09-07
+
+范围：component，仅通用酒馆助手脚本；保留脚本 ID、按钮、数据导出策略。旧版本组件及缄愿笔记世界书未升级；无 Git 提交、安装、推送或远程发布。构建入口输出 `dist/v0.5.0/` 与 `artifact/bundle.js`。主测试入口为离线组件；远程入口是待发布配置。
+
+最终源码 SHA-256：core.js `BFC405156AD9107E51AC641A4C9F8B8FBBC181377668CC966929D3A56EF70D06`；runtime.js `14310ACCEE1E03E3A5D09671234595220A4EE347457DC5AC22D13262C24CFA3F`。最终 bundle 哈希见新目录 receipt.json。
+
+自动化：52 项 Node 测试通过。新增覆盖错误人物／行列、历史缺口、原文修复后重算、历史与未来隔离、删尾／选中分支替换、初始化前楼层、文字实体修复与正文保护、差异类型。
+
+模拟宿主浏览器：Edge headless，tests/runtime-browser.html 的 7 项交互检查通过，覆盖立即告警、魔法棒旧楼层、格式修复／撤销、告警去重、预览后分支变化拒绝、生成中快照不更新、切换聊天隔离；tests/template-browser.html 原有 8 项检查通过。模拟 API 不能证明真实酒馆持久化或事件时序。
+
+最终构建复验：`tests/runtime-browser.html?bundle=1` 使用实际 artifact/bundle.js，7 项交互再次通过、无 pageerror。390px 视口内管理器 clientWidth/scrollWidth 均为 350，无内部横向溢出，截图已人工目视检查（本地 artifacts/diagnostics-mobile.png）。JavaScript 语法、组件格式、git diff --check 通过；新旧组件除 content/info 外所有原有元数据逐项相等。离线脚本内容与 bundle 一致，最终 SHA-256 `F8C44E3B1A1ECBBCF80288B490EF8205EE50F0A4DAFB398AD4F13A5FE78CC46A`。
+
+参考：MVU commit `61010dab47bc3a08a1b626320bf7fc8c9573eca4` 的 src/function/update_variables.ts（具体操作错误和通知）、src/button.ts（重处理／回放）；其酒馆助手子模块 `c1d0953` 的 src/panel/toolbox/variable_manager/Message.vue 和 MessageItem.vue（楼层浏览与消息变量）。本次为独立实现，没有引入 MVU、Vue 或变量编辑器依赖。
+
+API 依据：已安装酒馆助手 4.9.5 的 `@types/function/chat_message.d.ts` 与 `src/function/chat_message.ts`，核对 `getChatMessages(...,{include_swipes:true})`、`swipe_id/swipes`、`setChatMessages([{message_id,message}],{refresh:'affected'})`；修复写回已实测。实机发现单靠生成事件配对会在宿主命令／编辑路径产生假忙碌，最终按已安装 `src/function/builtin.ts` 使用 `TavernHelper.builtin.duringGenerating()` 读取 SillyTavern `is_send_press`，事件状态仅作旧宿主回退。目标为 ST 1.18.0／酒馆助手 4.9.5，置信度 high。
+
+指南收据：sillytavern-component-update 路由，快照 2026-08-18；A0 完整阅读并取得用户开工确认，A2/A6/B2 仅查阅入口适用边界，未从其旧版快照推定新 API。无设计／动效候选采用。
+
+实机：SillyTavern 1.18.0／酒馆助手 4.9.5，专用 `LoreState-Unified-20260907` 角色与独立聊天，未调用模型。验证第 2、3、4 楼完整历史状态与逐轮差异；向第 4 楼注入独立 `&` 后，弹窗准确报告 `第 4 楼 · Shared · 原文第 1 行 53 列`，错误轮整批不应用并回退到第 3 楼。验证“查看诊断”直达错误楼层、`&amp;` 修复预览、真实消息写回、一次撤销备份、重载后状态与备份保留、撤销后错误恢复；最后用酒馆原生编辑恢复第 4 楼正确原文，确认状态重新回到森林且无 LoreState 控制台警告。测试结束时停用角色测试脚本和额外导入副本，恢复原有全局脚本开关。
+
+实机过程中发现并修复两项问题：告警“查看诊断”原先保留上次浏览楼层；生成事件在宿主编辑路径中可能不配对，导致修复按钮永久误报忙碌。修正版重新装入同一角色脚本后，上述完整链路通过。
+
+仍未实测：真实模型流式输出／中止、原生重抽与删尾组合、未加载的超长历史定位、聊天导出再导入、真实窄屏触控、长聊天性能、用户游玩卡。`realHostVerified` 表示本版新增核心诊断和修复链路已在目标宿主通过，不代表这些边界已完成，也不代表 driver-accepted。
+
 ## prototype-v0.4.0 · 2026-09-07
 
 交付为 component 构建，远程导入固定 prototype-v0.4.0 标签，同时提供离线版。新版不兼容旧平面/人物协议或旧配置。

@@ -20,6 +20,7 @@ function parseFields(source, fields, mode) {
   checkFields(fields);
   let rest=source.trim(); const changes=[];const seen=new Set();
   while(rest){
+    try {
     const m=rest.match(/^<([\p{L}_][\p{L}\p{N}_-]*)(?:\s+action=(?:"(remove)"|'(remove)'))?\s*(?:\/>|>([^<]*)<\/\1>)/u);
     if(!m)throw new Error('栏目标签格式无效；原型只接受单层文字栏目');
     const name=m[1],remove=!!(m[2]||m[3]);
@@ -29,6 +30,7 @@ function parseFields(source, fields, mode) {
     if(remove && value)throw new Error('移除标签不能同时提供新内容');
     if(!remove&&(!value||value.length>6000))throw new Error(`${name} 内容须为非空文字，最多 6000 字符`);
     changes.push({name,remove,value});rest=rest.slice(m[0].length).trim();
+    } catch(error) { error.fragment=rest.slice(0,160); throw error; }
   }
   return {mode,changes};
 }
@@ -64,7 +66,7 @@ function personAttributes(source){
   for(const [key,limit] of [['name',80],['identity',200]])if(attrs[key]!==undefined&&(!attrs[key].trim()||attrs[key].length>limit))throw new Error('姓名或识别信息长度无效');
   return attrs;
 }
-export function applyState(previous,source,schema){
+function applyStateInternal(previous,source,schema){
   checkSchema(schema);
   if(typeof source!=='string'||source.length>200000)throw new Error('消息过长');
   const blocks=[...source.matchAll(new RegExp(TAG_PATTERN,'g'))];
@@ -73,6 +75,7 @@ export function applyState(previous,source,schema){
   if(!wrapper||wrapper[1]!== (previous?'delta':'full'))throw new Error('需要 version="2" 的统一协议：首次 full，之后 delta');
   const draft=structuredClone(previous??{version:2,shared:{},people:{}}),seen=new Set();let rest=wrapper[2].trim(), sharedSeen=false;
   while(rest){
+    try {
     if(rest.startsWith('<Shared>')){
       const shared=rest.match(/^<Shared>([\s\S]*?)<\/Shared>/);
       if(!shared||sharedSeen||!schema.shared.length)throw new Error('公共状态重复、未配置或格式错误');
@@ -96,16 +99,63 @@ export function applyState(previous,source,schema){
       old.fields=applyFields(old.fields,patch,schema.person);old.presence=attrs.presence??old.presence;
     }
     rest=rest.slice(m[0].length).trim();
+    } catch(error) {
+      error.scope=rest.startsWith('<Shared>')?'Shared':`Person ${rest.match(/\bid=["']([^"']+)/)?.[1]??'未知编号'}`;
+      error.fragment??=rest.slice(0,160);
+      error.offset=source.indexOf(rest)+Math.max(0,rest.indexOf(error.fragment));throw error;
+    }
   }
   if(!previous&&schema.shared.length&&!sharedSeen)throw new Error('首次需要完整 Shared 公共状态');
   if(Object.keys(draft.people).length>PERSON_LIMIT||JSON.stringify(draft).length>1000000)throw new Error('人物记忆超过本地容量限制');
   return draft;
 }
+export function applyState(previous,source,schema){
+  try{return applyStateInternal(previous,source,schema);}catch(error){
+    const blockStart=typeof source==='string'?source.indexOf('<LoreState'):-1;
+    const offset=error.offset??blockStart;
+    if(offset>=0){const lines=source.slice(0,offset).split('\n');error.line=lines.length;error.column=lines.at(-1).length+1;}
+    throw error;
+  }
+}
+export function repairHint(message){
+  if(message.includes('&'))return '文字中的独立 & 应转义为 &amp;。可预览基础格式修复。';
+  if(message.includes('未知或重复栏目'))return '核对栏目名称与 HTML 配置；同一范围内每个栏目只能出现一次。';
+  if(message.includes('冷档'))return '先用空 delta 唤醒人物，下一轮读取旧资料后再更新。';
+  if(message.includes('full')||message.includes('完整'))return '首次使用 version="2" mode="full"；已初始化后使用 delta。新人物须填写全部人物栏目。';
+  if(message.includes('更新块'))return '检查是否缺失、未闭合或重复输出 LoreState 更新块；保留唯一完整更新块。';
+  return '核对错误位置附近的标签、人物编号与栏目内容，修正原始消息后重新校验。';
+}
 export function replayState(messages,schema,start=1){
-  checkSchema(schema);let state=null;const errors=[];
+  checkSchema(schema);let state=null,lastGoodFloor=null,lastAppliedFloor=null;const errors=[];
   for(const m of messages){if(m.message_id<start||m.role!=='assistant'||m.is_hidden)continue;
-    try{state=applyState(state,m.message,schema);}catch(e){errors.push({floor:m.message_id,message:e.message});}}
-  return {state,errors};
+    try{state=applyState(state,m.message,schema);lastAppliedFloor=m.message_id;if(!errors.length)lastGoodFloor=m.message_id;}
+    catch(e){errors.push({floor:m.message_id,message:e.message,scope:e.scope??'LoreState',line:e.line??null,column:e.column??null,hint:repairHint(e.message)});}}
+  return {state,errors,lastGoodFloor,lastAppliedFloor,tainted:errors.length>0};
+}
+export function stateChanges(before,after){
+  const changes=[];
+  function visit(a,b,path){
+    if(JSON.stringify(a)===JSON.stringify(b))return;
+    if((a&&typeof a==='object')||(b&&typeof b==='object')){
+      for(const key of new Set([...Object.keys(a??{}),...Object.keys(b??{})]))visit(a?.[key],b?.[key],[...path,key]);
+    }else changes.push({path:path.join(' / '),kind:a===undefined?'新增':b===undefined?'删除':'修改',before:a??null,after:b??null});
+  }
+  for(const scope of ['shared','people'])visit(before?.[scope],after?.[scope],[scope]);return changes;
+}
+export function inspectFloor(messages,schema,start,floor){
+  const target=messages.find(m=>m.message_id===floor&&m.role==='assistant'&&!m.is_hidden);
+  if(!target)throw new Error('目标 AI 楼层不存在或已隐藏，请刷新楼层列表');
+  const before=replayState(messages.filter(m=>m.message_id<floor),schema,start);
+  const result=replayState(messages.filter(m=>m.message_id<=floor),schema,start);
+  return {...result,floor,source:target.message,changes:stateChanges(before.state,result.state),error:result.errors.find(e=>e.floor===floor)??null,excluded:floor<start};
+}
+// Only repair unescaped ampersands in text nodes of one complete update block.
+// The caller must preview, validate and explicitly apply; never guess missing facts.
+export function proposeRepair(source){
+  const blocks=[...source.matchAll(new RegExp(TAG_PATTERN,'g'))];
+  if(blocks.length!==1)return null;
+  const block=blocks[0],fixed=block[0].replace(/>([^<]*)</g,(_,text)=>'>'+text.replace(/&(?!amp;|lt;|gt;|quot;|apos;|#\d+;|#x[\da-fA-F]+;)/g,'&amp;')+'<');
+  return fixed===block[0]?null:source.slice(0,block.index)+fixed+source.slice(block.index+block[0].length);
 }
 export function projectPeople(state,text=''){
   const people=Object.values(state?.people??{}),full=[],index=[],retrieved=[];
