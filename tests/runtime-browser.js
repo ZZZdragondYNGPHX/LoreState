@@ -27,7 +27,7 @@ function button(label,root=document){return [...root.querySelectorAll('button')]
 async function click(label,root=document){const el=button(label,root);assert(el,'找不到 '+label);await el.onclick();await tick();}
 for(const m of list){const el=document.createElement('div');el.className='mes';el.setAttribute('mesid',m.message_id);document.getElementById('chat').append(el);}
 if(new URLSearchParams(location.search).has('bundle')){
-  const source=await(await fetch('../artifact/bundle.js')).text();Function(source)();
+  const source=await(await fetch('../artifact/bundle.js?v=0.6.0')).text();Function(source)();
 }else startPrototype(html);
 await tick();
 const manager=document.querySelector('[aria-label="LoreState 控制中心"]'),notice=document.querySelector('aside[role="alert"]');
@@ -82,5 +82,31 @@ await check('正文全宽、大窗口展开与关闭恢复焦点',async()=>{
   const window=document.getElementById('lorestate-state-window'),large=window.querySelector('iframe');
   assert(window.open);assert(large.getBoundingClientRect().height>300);assert(large.getBoundingClientRect().width>=window.clientWidth-34);assert(large.getAttribute('sandbox')==='');
   assert(large.srcdoc===frame.srcdoc);button('关闭状态窗口',window).click();await tick();assert(!window.open);assert(document.activeElement===expand);
+});
+await check('完整快照回档、原子写入、保留正文与撤销',async()=>{
+  variables.chat.unrelated={keep:true};
+  list.push({message_id:3,role:'assistant',message:wrap('未来地点'),swipe_id:0});await emit('MESSAGE_UPDATED');
+  await click('LoreState');
+  const select=manager.querySelector('[aria-label="历史状态快照"]');
+  const saved=variables.chat[PROTO_KEY].snapshots;assert(saved.length===2);
+  select.value=saved.find(s=>s.floor===1).id;
+  await click('预览快照回档');const original=JSON.stringify(list);await click('确认回档');
+  assert(JSON.stringify(list)===original);assert(variables.chat.unrelated.keep);
+  assert(variables.chat[PROTO_KEY].current.state.shared.地点==='新聊天');
+  await click('撤销上次回档');assert(variables.chat[PROTO_KEY].current.state.shared.地点==='未来地点');
+  select.value=saved.find(s=>s.floor===1).id;await click('预览快照回档');
+  list[1].message+='编辑';await click('确认回档');assert(!variables.chat[PROTO_KEY].checkpoint);
+  await click('预览快照回档');await click('确认回档');
+  list.push({message_id:5,role:'assistant',message:wrap('回档后的新地点'),swipe_id:0});await emit('MESSAGE_UPDATED');
+  assert(variables.chat[PROTO_KEY].current.state.shared.地点==='回档后的新地点');
+  await click('撤销上次回档');assert(variables.chat[PROTO_KEY].checkpoint);assert(notice.textContent.includes('聊天已变化'));
+  manager.close();
+});
+await check('重新启动保留快照和回档基线，不重复归档',async()=>{
+  const count=variables.chat[PROTO_KEY].snapshots.length;
+  variables.chat=JSON.parse(JSON.stringify(variables.chat));
+  window.dispatchEvent(new Event('pagehide'));handlers.clear();startPrototype(html);await tick();await tick();
+  assert(variables.chat[PROTO_KEY].snapshots.length===count);
+  assert(variables.chat[PROTO_KEY].current.state.shared.地点==='回档后的新地点');
 });
 output.textContent=results.join('\n');if(new URLSearchParams(location.search).has('preview'))await click('LoreState');window.testResults=results;

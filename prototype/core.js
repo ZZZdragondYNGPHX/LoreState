@@ -125,8 +125,8 @@ export function repairHint(message){
   if(message.includes('更新块'))return '检查是否缺失、未闭合或重复输出 LoreState 更新块；保留唯一完整更新块。';
   return '核对错误位置附近的标签、人物编号与栏目内容，修正原始消息后重新校验。';
 }
-export function replayState(messages,schema,start=1){
-  checkSchema(schema);let state=null,lastGoodFloor=null,lastAppliedFloor=null;const errors=[];
+export function replayState(messages,schema,start=1,seed=null){
+  checkSchema(schema);let state=structuredClone(seed?.state??null),lastGoodFloor=seed?.lastGoodFloor??null,lastAppliedFloor=seed?.lastAppliedFloor??null;const errors=structuredClone(seed?.errors??[]);
   for(const m of messages){if(m.message_id<start||m.role!=='assistant'||m.is_hidden)continue;
     try{state=applyState(state,m.message,schema);lastAppliedFloor=m.message_id;if(!errors.length)lastGoodFloor=m.message_id;}
     catch(e){errors.push({floor:m.message_id,message:e.message,scope:e.scope??'LoreState',line:e.line??null,column:e.column??null,hint:repairHint(e.message)});}}

@@ -1,5 +1,5 @@
 // Presentation only: no host data writes or persisted navigation state.
-export function createControlCenter({doc,manager,panel,summary,status,floorSelect,details,diagnostics,repairBox,actions,loadSettings,settingsGroups}) {
+export function createControlCenter({doc,manager,panel,summary,status,floorSelect,details,diagnostics,repairBox,snapshotPanel,actions,loadSettings,settingsGroups}) {
   const make=(tag,text,parent)=>{const el=doc.createElement(tag);if(text)el.textContent=text;parent?.append(el);return el;};
   manager.replaceChildren();manager.removeAttribute('style');manager.setAttribute('aria-label','LoreState 控制中心');
   panel.removeAttribute('style');
@@ -44,7 +44,7 @@ export function createControlCenter({doc,manager,panel,summary,status,floorSelec
   const body=make('div',null,manager);body.className='ls-body';
   summary.className='ls-health';body.append(summary);
   const statePage=make('section',null,body),repairPage=make('section',null,body);body.append(panel);
-  statePage.append(details);repairPage.append(diagnostics);
+  statePage.append(details);repairPage.append(diagnostics);if(snapshotPanel){make('h3','历史快照与回档',repairPage);repairPage.append(snapshotPanel);}
   const group=(parent,title,controls)=>{const section=make('section',null,parent);section.className='ls-section';make('h3',title,section);const row=make('div',null,section);row.className='ls-actions';for(const el of controls.filter(Boolean))row.append(el);return section;};
   group(repairPage,'检查与报告',['重新校验全部楼层','复制诊断报告'].map(x=>actions.get(x)));
   const repair=group(repairPage,'基础格式修复',['预览基础格式修复','应用预览修复'].map(x=>actions.get(x)));make('p','先预览并核对原文，再应用修复。只处理可确定的格式问题。',repair);repair.append(repairBox);

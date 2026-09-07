@@ -1,5 +1,7 @@
 # LoreState
 
+0.6.0 试用版：逐楼完整快照、预览回档与撤销，保留聊天正文。[离线脚本](prototype/dist/v0.6.0/lorestate-script-offline.json) · [回档说明](prototype/snapshots.md)。远程入口固定 prototype-v0.6.0，本版真实酒馆验收待完成。
+
 0.5.2 正文显示修复：全宽状态栏与可展开大窗口。[远程脚本](prototype/dist/v0.5.2/lorestate-script.json) · [离线脚本](prototype/dist/v0.5.2/lorestate-script-offline.json)。
 
 0.5.1 UI 试用版：魔法棒单一 LoreState 入口，状态历史／诊断修复／设置三个页签。[远程脚本](prototype/dist/v0.5.1/lorestate-script.json) · [离线脚本](prototype/dist/v0.5.1/lorestate-script-offline.json)。新 UI 已通过浏览器回归，待用户实机验收。

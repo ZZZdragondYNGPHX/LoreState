@@ -127,8 +127,8 @@ function repairHint(message){
   if(message.includes('更新块'))return '检查是否缺失、未闭合或重复输出 LoreState 更新块；保留唯一完整更新块。';
   return '核对错误位置附近的标签、人物编号与栏目内容，修正原始消息后重新校验。';
 }
-function replayState(messages,schema,start=1){
-  checkSchema(schema);let state=null,lastGoodFloor=null,lastAppliedFloor=null;const errors=[];
+function replayState(messages,schema,start=1,seed=null){
+  checkSchema(schema);let state=structuredClone(seed?.state??null),lastGoodFloor=seed?.lastGoodFloor??null,lastAppliedFloor=seed?.lastAppliedFloor??null;const errors=structuredClone(seed?.errors??[]);
   for(const m of messages){if(m.message_id<start||m.role!=='assistant'||m.is_hidden)continue;
     try{state=applyState(state,m.message,schema);lastAppliedFloor=m.message_id;if(!errors.length)lastGoodFloor=m.message_id;}
     catch(e){errors.push({floor:m.message_id,message:e.message,scope:e.scope??'LoreState',line:e.line??null,column:e.column??null,hint:repairHint(e.message)});}}
@@ -264,7 +264,7 @@ function deletePreset(config,id){
 function sameSchema(a,b){return !!a&&!!b&&sameFields(a.shared,b.shared)&&sameFields(a.person,b.person);}
 
 // Presentation only: no host data writes or persisted navigation state.
-function createControlCenter({doc,manager,panel,summary,status,floorSelect,details,diagnostics,repairBox,actions,loadSettings,settingsGroups}) {
+function createControlCenter({doc,manager,panel,summary,status,floorSelect,details,diagnostics,repairBox,snapshotPanel,actions,loadSettings,settingsGroups}) {
   const make=(tag,text,parent)=>{const el=doc.createElement(tag);if(text)el.textContent=text;parent?.append(el);return el;};
   manager.replaceChildren();manager.removeAttribute('style');manager.setAttribute('aria-label','LoreState 控制中心');
   panel.removeAttribute('style');
@@ -309,7 +309,7 @@ function createControlCenter({doc,manager,panel,summary,status,floorSelect,detai
   const body=make('div',null,manager);body.className='ls-body';
   summary.className='ls-health';body.append(summary);
   const statePage=make('section',null,body),repairPage=make('section',null,body);body.append(panel);
-  statePage.append(details);repairPage.append(diagnostics);
+  statePage.append(details);repairPage.append(diagnostics);if(snapshotPanel){make('h3','历史快照与回档',repairPage);repairPage.append(snapshotPanel);}
   const group=(parent,title,controls)=>{const section=make('section',null,parent);section.className='ls-section';make('h3',title,section);const row=make('div',null,section);row.className='ls-actions';for(const el of controls.filter(Boolean))row.append(el);return section;};
   group(repairPage,'检查与报告',['重新校验全部楼层','复制诊断报告'].map(x=>actions.get(x)));
   const repair=group(repairPage,'基础格式修复',['预览基础格式修复','应用预览修复'].map(x=>actions.get(x)));make('p','先预览并核对原文，再应用修复。只处理可确定的格式问题。',repair);repair.append(repairBox);
@@ -360,13 +360,54 @@ function createStateWindow(doc){
 }
 
 
+function historyIdentity(messages){
+  return JSON.stringify(messages.map(m=>[m.message_id,m.role,!!m.is_hidden,m.swipe_id??0,m.message]));
+}
+function snapshotSchema(schema,start){return JSON.stringify([schema,start]);}
+async function snapshotHash(text){
+  const bytes=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(text));
+  return Array.from(new Uint8Array(bytes),b=>b.toString(16).padStart(2,'0')).join('');
+}
+function checkpointSeed(checkpoint,schema,start,messages){
+  if(!checkpoint)return null;
+  if(checkpoint.schema!==snapshotSchema(schema,start))throw new Error('回档后的栏目或初始化起点发生变化，请先撤销回档');
+  if(historyIdentity(messages.filter(m=>m.message_id<=checkpoint.cutoff))!==checkpoint.prefix)throw new Error('回档前保留的消息或回复分支已变化。为避免错用状态，已停止回放；请重新预览一个快照');
+  return structuredClone(checkpoint.result);
+}
+function replaySnapshots(messages,schema,start,checkpoint){
+  const seed=checkpointSeed(checkpoint,schema,start,messages);
+  return replayState(checkpoint?messages.filter(m=>m.message_id>checkpoint.cutoff):messages,schema,start,seed);
+}
+async function collectSnapshots(messages,schema,start,checkpoint,existing=[]){
+  const schemaKey=snapshotSchema(schema,start),known=new Set(existing.map(s=>s.id)),added=[];
+  let result=checkpointSeed(checkpoint,schema,start,messages),chain=await snapshotHash(JSON.stringify([schemaKey,checkpoint?.id??null]));
+  for(const m of messages){
+    chain=await snapshotHash(chain+historyIdentity([m]));
+    if(checkpoint&&m.message_id<=checkpoint.cutoff)continue;
+    if(m.message_id<start||m.role!=='assistant'||m.is_hidden)continue;
+    result=replayState([m],schema,start,result);
+    if(!known.has(chain)){
+      added.push({id:chain,floor:m.message_id,swipe:m.swipe_id??0,schema:schemaKey,createdAt:new Date().toISOString(),result:structuredClone(result)});
+      known.add(chain);
+    }
+  }
+  return [...existing,...added];
+}
+function planRestore(snapshot,messages,schema,start,previousCheckpoint=null){
+  if(!snapshot||snapshot.schema!==snapshotSchema(schema,start))throw new Error('快照与当前栏目或初始化起点不兼容');
+  if(!snapshot.result?.state||snapshot.result.tainted||snapshot.result.errors?.length)throw new Error('该快照存在历史缺口，不能作为可靠回档点，请选择正常快照');
+  const prefix=historyIdentity(messages),cutoff=messages.at(-1)?.message_id??-1;
+  return {checkpoint:{id:crypto.randomUUID(),snapshotId:snapshot.id,floor:snapshot.floor,swipe:snapshot.swipe,schema:snapshot.schema,prefix,cutoff,result:structuredClone(snapshot.result)},undo:{checkpoint:structuredClone(previousCheckpoint),prefix},snapshot:structuredClone(snapshot)};
+}
+
+
 // Runs inside the owning Tavern Helper character script, including remote imports.
 function startPrototype(defaultHtml) {
   const doc=window.parent.document,ctx=()=>window.parent.SillyTavern.getContext();
   if(doc.getElementById('lorestate-prototype-settings'))throw new Error('已有 LoreState 原型脚本运行，请勿重复启用');
   const settings=()=>getVariables({type:'script'})[PROTO_KEY]??{};
   const chatSettings=()=>getVariables({type:'chat'})[PROTO_KEY]??{};
-  const messages=()=>getChatMessages('0-{{lastMessageId}}');
+  const messages=()=>getChatMessages('0-{{lastMessageId}}',{include_swipes:true}).map(m=>({message_id:m.message_id,role:m.role,is_hidden:m.is_hidden,swipe_id:m.swipe_id??0,message:m.swipes?.[m.swipe_id??0]??m.message??''}));
   const identity=()=>[ctx().chat,ctx().getCurrentChatId()];
   const matches=([chat,id])=>!closed&&ctx().chat===chat&&ctx().getCurrentChatId()===id;
   let closed=false,queue=Promise.resolve(),pending=false,uninject=null,view=null,renderKey='',menuObserver;
@@ -380,7 +421,7 @@ function startPrototype(defaultHtml) {
   const notice=node('aside',undefined,doc.body);notice.hidden=true;notice.setAttribute('role','alert');
   notice.style.cssText='position:fixed;right:12px;top:12px;z-index:100000;max-width:min(440px,92vw);padding:16px;background:#382621;color:#fff;border:2px solid #efb06a;border-radius:8px;white-space:pre-wrap';
   const noticeText=node('p','',notice);
-  button('查看诊断',notice,()=>openManager(getResult().errors[0]?.floor));button('关闭提醒',notice,()=>{notice.hidden=true;});
+  button('查看诊断',notice,()=>openManager(chatSettings().current?.errors?.[0]?.floor));button('关闭提醒',notice,()=>{notice.hidden=true;});
   let noticeKey='',runtimeLogs=[],draft=null;
   function fault(error,stage){
     const message=String(error?.message??error).slice(0,500);
@@ -410,6 +451,7 @@ function startPrototype(defaultHtml) {
     showObject('查看原始状态数据',state);
   }
   function showFloor(){
+    syncSnapshots();
     draft=null;repairBox.hidden=true;applyRepair.disabled=true;details.replaceChildren();diagnostics.replaceChildren();
     if(!floorSelect.value){summary.textContent='当前聊天没有可查看的 AI 楼层。';return;}
     const config=settings();if(!config.schema){summary.textContent='请先配置并启用 LoreState。';return;}
@@ -419,6 +461,7 @@ function startPrototype(defaultHtml) {
     summary.dataset.error=String(item.tainted);
     if(!item.errors.length)node('p','截至本层没有发现更新错误。',diagnostics);
     for(const error of item.errors)node('p',errorText(error),diagnostics).style.whiteSpace='pre-wrap';
+    if(chatSettings().checkpoint)node('p','已启用状态回档。这里展示原文回放；当前生效状态请看正文状态栏。',details);
     showState(item.state);
     const changes=node('details',undefined,details);node('summary',`本轮变化 · ${item.changes.length} 项`,changes);
     if(!item.changes.length)node('p',item.error?'本轮失败，没有应用变化。':'本轮没有状态变化。',changes);
@@ -447,13 +490,14 @@ function startPrototype(defaultHtml) {
   });
   button('重新校验全部楼层',manager,async()=>{await refresh();syncFloors();});
   button('复制诊断报告',manager,async()=>{
-    const result=getResult(),payload={version:'0.5.2',floor:Number(floorSelect.value),lastGoodFloor:result.lastGoodFloor,errors:result.errors,runtimeLogs};
+    const result=getResult(),payload={version:'0.6.0',floor:Number(floorSelect.value),lastGoodFloor:result.lastGoodFloor,errors:result.errors,runtimeLogs};
     repairBox.hidden=false;repairBox.value=JSON.stringify(payload,null,2);draft=null;applyRepair.disabled=true;
     try{await navigator.clipboard.writeText(repairBox.value);summary.textContent='诊断报告已复制，不含完整消息和状态正文。';}catch{summary.textContent='请从下方文本框手动复制诊断报告。';}
   });
   button('预览基础格式修复',manager,()=>{
     const id=identity(),list=messages(),floor=Number(floorSelect.value),original=list.find(m=>m.message_id===floor);
     if(!original)throw new Error('请先选择 AI 楼层');
+    if(chatSettings().checkpoint)throw new Error('回档期间请通过快照恢复状态；格式修复需先撤销回档');
     const repaired=proposeRepair(original.message);if(!repaired){summary.textContent='没有可自动修复的独立 &。请按诊断提示在酒馆编辑原始标签，再重新校验。';return;}
     const candidate=list.map(m=>m===original?{...m,message:repaired}:m),config=settings();
     const check=inspectFloor(candidate,config.schema,chatSettings().start??1,floor);
@@ -485,6 +529,42 @@ function startPrototype(defaultHtml) {
     await refresh();syncFloors(backup.floor);
   });
   button('查看格式修复备份',manager,()=>{repairBox.value=chatSettings().repairBackup?.original??'没有备份';repairBox.hidden=false;draft=null;applyRepair.disabled=true;});
+  let restoreDraft=null,capturedKey='';
+  const snapshotPanel=node('section'),snapshotSelect=node('select',undefined,snapshotPanel);
+  snapshotSelect.setAttribute('aria-label','历史状态快照');
+  const snapshotInfo=node('p','',snapshotPanel),snapshotPreview=node('pre','',snapshotPanel);
+  snapshotPreview.style.cssText='white-space:pre-wrap;overflow-wrap:anywhere;max-height:360px;overflow:auto';
+  function syncSnapshots(){
+    const old=snapshotSelect.value, saved=chatSettings();snapshotSelect.replaceChildren();
+    for(const snap of [...(saved.snapshots??[])].reverse()){
+      const o=node('option',`第 ${snap.floor} 楼 · 回复 ${snap.swipe+1} · ${snap.result.tainted?'有缺口':'正常'} · ${snap.id.slice(0,8)}`,snapshotSelect);o.value=snap.id;
+    }
+    if([...snapshotSelect.options].some(o=>o.value===old))snapshotSelect.value=old;
+    snapshotInfo.textContent=`已保存 ${saved.snapshots?.length??0} 份完整状态快照，不自动裁剪。`+(saved.checkpoint?`当前从第 ${saved.checkpoint.floor} 楼快照继续。`:'')+' 回档保留所有正文，旧剧情仍在 AI 上下文中。';
+  }
+  snapshotSelect.onchange=()=>{restoreDraft=null;snapshotPreview.textContent='';};
+  button('预览快照回档',snapshotPanel,()=>{
+    const saved=chatSettings(),config=settings(),list=messages();
+    const plan=planRestore(saved.snapshots?.find(s=>s.id===snapshotSelect.value),list,config.schema,saved.start??1,saved.checkpoint??null);
+    restoreDraft={...plan,identity:identity(),previous:JSON.stringify(saved.checkpoint??null)};
+    snapshotPreview.textContent='确认后仅恢复以下完整状态，已有后续正文不再参与状态回放。\n'+JSON.stringify(plan.snapshot.result.state,null,2);
+  });
+  button('确认回档',snapshotPanel,async()=>{
+    const plan=restoreDraft,saved=chatSettings();
+    if(hostGenerating())throw new Error('请等待生成结束后回档');
+    if(!plan||!matches(plan.identity)||historyIdentity(messages())!==plan.undo.prefix||snapshotSchema(settings().schema,saved.start??1)!==plan.checkpoint.schema||JSON.stringify(saved.checkpoint??null)!==plan.previous)throw new Error('请重新预览快照，聊天或配置可能已变化');
+    updateVariablesWith(v=>({...v,[PROTO_KEY]:{...v[PROTO_KEY],checkpoint:plan.checkpoint,restoreUndo:plan.undo,current:structuredClone(plan.checkpoint.result)}}),{type:'chat'});
+    restoreDraft=null;snapshotPreview.textContent='回档完成。正文保留，新回复从此状态继续。';renderKey='';await refresh();syncSnapshots();
+  });
+  button('撤销上次回档',snapshotPanel,async()=>{
+    if(hostGenerating())throw new Error('请等待生成结束后撤销');
+    const saved=chatSettings(),undo=saved.restoreUndo;
+    if(!undo)throw new Error('没有可撤销的回档');
+    if(historyIdentity(messages())!==undo.prefix)throw new Error('回档后聊天已变化，请重新选择并预览快照，避免覆盖新进度');
+    const result=replaySnapshots(messages(),settings().schema,saved.start??1,undo.checkpoint);
+    updateVariablesWith(v=>{const next={...v[PROTO_KEY],checkpoint:undo.checkpoint,current:result};delete next.restoreUndo;return {...v,[PROTO_KEY]:next};},{type:'chat'});
+    restoreDraft=null;snapshotPreview.textContent='已撤销上次回档。';renderKey='';await refresh();syncSnapshots();
+  });
   manager.append(repairBox,details);
   const bookLabel=node('label','1. 角色／聊天绑定的世界书',panel),books=node('select',undefined,bookLabel);books.setAttribute('aria-label','世界书');
   const entryLabel=node('label','状态栏条目',panel),entries=node('select',undefined,entryLabel);entries.setAttribute('aria-label','状态栏条目');
@@ -531,7 +611,7 @@ function startPrototype(defaultHtml) {
   button('删除所选预设',panel,()=>{writeConfig(deletePreset(settings(),presetSelect.value));syncPresets();report('已删除所选预设，当前展示保留。');});
   syncPresets();
   const preview=createStateFrame(doc,'LoreState HTML 预览');panel.append(preview);
-  const getResult=(config=settings(),list=messages())=>replayState(list,config.schema,chatSettings().start??1);
+  const getResult=(config=settings(),list=messages())=>replaySnapshots(list,config.schema,chatSettings().start??1,chatSettings().checkpoint);
   button('预览 HTML（不保存）',panel,()=>{
     const {schema}=inspectTemplate(html.value),config=settings();
     const example=fields=>Object.fromEntries(fields.map(f=>[f,`${f}的示例文字`]));
@@ -578,7 +658,7 @@ function startPrototype(defaultHtml) {
   const a=title=>actions.get(title);
   const ruleDisclosure=node('details');node('summary','查看条目原文',ruleDisclosure);ruleDisclosure.append(rules);
   const makerDisclosure=node('details');node('summary','制作提示词与下一轮提示预览',makerDisclosure);makerDisclosure.append(a('生成并复制 HTML 制作提示词'),a('查看下一轮状态提示'),maker);
-  const center=createControlCenter({doc,manager,panel,summary,status,floorSelect,details,diagnostics,repairBox,actions,loadSettings,settingsGroups:[
+  const center=createControlCenter({doc,manager,panel,summary,status,floorSelect,details,diagnostics,repairBox,snapshotPanel,actions,loadSettings,settingsGroups:[
     ['1 · 世界书与规则',[bookLabel,entryLabel,a('刷新世界书列表'),ruleDisclosure]],
     ['2 · 外观模板',[makerDisclosure,htmlLabel,a('预览 HTML（不保存）'),preview,a('保存 HTML 并启用本聊天')]],
     ['3 · 外观预设',[presetLabel,a('应用所选预设'),nameLabel,a('另存为新预设'),a('覆盖所选预设'),a('删除所选预设')]],
@@ -592,10 +672,11 @@ function startPrototype(defaultHtml) {
   function paint(result,list){
     const last=list.findLast(m=>m.role==='assistant'&&!m.is_hidden);if(!last)return;
     const message=doc.querySelector(`#chat .mes[mesid="${last.message_id}"]`);if(!message)return;
-    const config=settings(),key=JSON.stringify([last.message_id,result.state,result.errors,config.html]);
+    const config=settings(),key=JSON.stringify([last.message_id,result.state,result.errors,config.html,chatSettings().checkpoint?.id]);
     if(view?.isConnected&&renderKey===key)return;
     view?.remove();view=node('section',undefined,message.querySelector('.mes_block')||message);view.className='lorestate-prototype-view';view.style.cssText='display:block;position:relative;width:100%;max-width:100%;min-width:0;box-sizing:border-box;flex:1 0 100%;grid-column:1 / -1;clear:both;margin:12px 0;padding:12px 0;border-top:1px solid #778063';
     node('small',result.errors.length?`状态存在缺口：${result.errors.length} 轮失败，最早第 ${result.errors[0].floor} 楼；最后连续正常楼层 ${result.lastGoodFloor??'尚无'}。后续有效更新已应用，需核对剧情。`:result.state?'LoreState · 当前状态':'LoreState · 等待首次完整状态',view);
+    if(chatSettings().checkpoint)node('p',`状态已回档至第 ${chatSettings().checkpoint.floor} 楼快照；旧正文保留。`,view);
     button('查看历史与诊断',view,()=>openManager(result.errors[0]?.floor));
     if(result.state){
       const source=renderTemplate(config.html,result.state);
@@ -615,9 +696,13 @@ function startPrototype(defaultHtml) {
     const config=settings();if(!active(config)){view?.remove();return;}
     const id=identity(),list=messages(),result=getResult(config,list);
     if(!matches(id))return;
-    // Raw messages remain the replay source; this snapshot is a convenient persisted last-good view.
-    const record={state:result.state,errors:result.errors,lastGoodFloor:result.lastGoodFloor,tainted:result.tainted,lastFloor:list.at(-1)?.message_id??-1};
-    const old=chatSettings();if(JSON.stringify(old.current)!==JSON.stringify(record))updateVariablesWith(v=>({...v,[PROTO_KEY]:{...old,current:record}}),{type:'chat'});
+    const old=chatSettings(),start=old.start??1,signature=historyIdentity(list),checkpoint=JSON.stringify(old.checkpoint??null);
+    const captureKey=JSON.stringify([ctx().getCurrentChatId(),signature,snapshotSchema(config.schema,start),checkpoint]);
+    const snapshots=capturedKey===captureKey?(old.snapshots??[]):await collectSnapshots(list,config.schema,start,old.checkpoint,old.snapshots??[]);
+    if(!matches(id)||hostGenerating()||historyIdentity(messages())!==signature||snapshotSchema(settings().schema,chatSettings().start??1)!==snapshotSchema(config.schema,start)||JSON.stringify(chatSettings().checkpoint??null)!==checkpoint)return;
+    const record={...result,lastFloor:list.at(-1)?.message_id??-1};
+    updateVariablesWith(v=>{const current=v[PROTO_KEY]??{},merged=new Map((current.snapshots??[]).map(s=>[s.id,s]));for(const snap of snapshots)merged.set(snap.id,snap);return {...v,[PROTO_KEY]:{...current,current:record,snapshots:[...merged.values()]}};},{type:'chat'});
+    capturedKey=captureKey;
     paint(result,list);
     const key=JSON.stringify(result.errors);
     if(result.errors.length&&key!==noticeKey){noticeText.textContent=`LoreState：${result.errors.length} 轮状态更新失败\n${errorText(result.errors[0])}\n最后连续正常楼层：${result.lastGoodFloor??'尚无'}。`;notice.hidden=false;}
@@ -651,7 +736,7 @@ function startPrototype(defaultHtml) {
   for(const event of ['MESSAGE_RECEIVED','CHARACTER_MESSAGE_RENDERED','MESSAGE_UPDATED','MESSAGE_EDITED','MESSAGE_DELETED','MESSAGE_SWIPED','GENERATION_ENDED','MORE_MESSAGES_LOADED'])if(tavern_events[event])eventOn(tavern_events[event],schedule);
   if(tavern_events.GENERATION_STARTED)eventOn(tavern_events.GENERATION_STARTED,()=>{generating=true;});
   for(const event of ['GENERATION_ENDED','GENERATION_STOPPED'])if(tavern_events[event])eventOn(tavern_events[event],()=>{generating=false;schedule();});
-  eventOn(tavern_events.CHAT_CHANGED,()=>{uninject?.();uninject=null;stateWindow.close();view?.remove();renderKey='';noticeKey='';notice.hidden=true;runtimeLogs=[];draft=null;report('设置随角色保存；修改后请预览并保存。');manager.close();generating=false;schedule();});
+  eventOn(tavern_events.CHAT_CHANGED,()=>{uninject?.();uninject=null;stateWindow.close();view?.remove();renderKey='';noticeKey='';notice.hidden=true;runtimeLogs=[];draft=null;restoreDraft=null;capturedKey='';snapshotPreview.textContent='';report('设置随角色保存；修改后请预览并保存。');manager.close();generating=false;schedule();});
   eventOn(tavern_events.GENERATION_AFTER_COMMANDS,beforeGenerate);
   eventOn(getButtonEvent('LoreState 设置'),()=>open().catch(e=>fault(e,'设置打开失败')));
   function dispose(){closed=true;menuObserver?.disconnect();stateWindow.dispose();menu.remove();panel.remove();manager.remove();notice.remove();view?.remove();uninject?.();}
