@@ -1,0 +1,14 @@
+{
+  "errors": [],
+  "plan": {
+    "schemaVersion": 1,
+    "deliveryMode": "component",
+    "kind": "helper-script",
+    "outRoot": "temporary-component-validation/staging",
+    "files": [
+      "lorestate-world-v3.script.json",
+      "component-update-manifest.json"
+    ],
+    "requiresPipeline": false
+  }
+}

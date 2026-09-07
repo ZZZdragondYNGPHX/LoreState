@@ -1,6 +1,6 @@
 import {parseLegacyXml} from '../legacy/migration.js';
-import {xmlText} from '../../../prototype/core.js';
-import {applyState} from '../../../prototype/core.js';
+import {xmlText} from '../legacy/state-v2.js';
+import {applyState} from '../legacy/state-v2.js';
 import {wishnoteFields,wishnoteSchema} from './fields.js';
 
 export function convertWishnoteMemory(hotXml='',coldBook=null){

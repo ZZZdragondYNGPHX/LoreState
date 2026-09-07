@@ -3,41 +3,42 @@ import { checkSchema } from './core.js';
 export function inspectTemplate(html, Parser=DOMParser) {
   if(typeof html!=='string'||!html.trim()||html.length>100000)throw new Error('HTML 必须为非空文字，最多 100000 字符');
   const doc=new Parser().parseFromString(html,'text/html');
+  if(doc.querySelector('[data-lore-person]'))throw new Error('v3 模板请使用 data-lore-entity；不迁移旧人物模板');
   const allowed=new Set('HTML HEAD BODY TITLE META STYLE DIV SECTION ARTICLE HEADER FOOTER MAIN ASIDE NAV P SPAN H1 H2 H3 H4 H5 H6 STRONG EM B I SMALL BR HR UL OL LI DL DT DD TABLE THEAD TBODY TFOOT TR TH TD CAPTION DETAILS SUMMARY LABEL BLOCKQUOTE PRE CODE'.split(' '));
   for(const el of doc.querySelectorAll('*')){
     if(!allowed.has(el.tagName))throw new Error(`HTML 原型不接受 ${el.tagName}，请使用静态 HTML/CSS`);
     for(const attr of el.attributes)if(/^on/i.test(attr.name)||['src','href','srcdoc','action','formaction','http-equiv','contenteditable'].includes(attr.name.toLowerCase()))throw new Error(`HTML 不接受属性 ${attr.name}`);
   }
-  const regions=[...doc.querySelectorAll('[data-lore-person]')];
+  const regions=[...doc.querySelectorAll('[data-lore-entity]')];
   const forbidden=['HTML','HEAD','BODY','STYLE','META','TITLE'];
-  if(regions.length>1||regions.some(el=>forbidden.includes(el.tagName)))throw new Error('只允许一个正文人物容器');
-  const bindings='[data-lore-field],[data-lore-name],[data-lore-id],[data-lore-identity]';
+  if(regions.length>1||regions.some(el=>forbidden.includes(el.tagName)))throw new Error('只允许一个正文实体容器');
+  const bindings='[data-lore-field],[data-lore-name],[data-lore-id],[data-lore-identity],[data-lore-type],[data-lore-confirmed]';
   for(const el of doc.querySelectorAll(bindings)){
-    if(forbidden.includes(el.tagName)||el.hasAttribute('data-lore-person')||el.querySelector(bindings)||['data-lore-field','data-lore-name','data-lore-id','data-lore-identity'].filter(a=>el.hasAttribute(a)).length!==1)throw new Error('绑定须位于独立文字节点');
-    if(!el.hasAttribute('data-lore-field')&&!el.closest('[data-lore-person]'))throw new Error('人物信息必须放在人物容器中');
+    if(forbidden.includes(el.tagName)||el.hasAttribute('data-lore-entity')||el.querySelector(bindings)||['data-lore-field','data-lore-name','data-lore-id','data-lore-identity','data-lore-type','data-lore-confirmed'].filter(a=>el.hasAttribute(a)).length!==1)throw new Error('绑定须位于独立文字节点');
+    if(!el.hasAttribute('data-lore-field')&&!el.closest('[data-lore-entity]'))throw new Error('实体信息必须放在实体容器中');
   }
   const nodes=[...doc.querySelectorAll('[data-lore-field]')];
-  const schema={shared:[],person:[]};
-  for(const el of nodes){const fields=schema[el.closest('[data-lore-person]')?'person':'shared'],name=el.getAttribute('data-lore-field');if(!fields.includes(name))fields.push(name);}
+  const schema={shared:[],entity:[]};
+  for(const el of nodes){const fields=schema[el.closest('[data-lore-entity]')?'entity':'shared'],name=el.getAttribute('data-lore-field');if(!fields.includes(name))fields.push(name);}
   checkSchema(schema);
-  if(regions.length&&!schema.person.length)throw new Error('人物容器至少需要一个人物栏目');
+  if(regions.length&&!schema.entity.length)throw new Error('实体容器至少需要一个实体栏目');
   return {doc,schema};
 }
 export function renderTemplate(html,state,Parser=DOMParser){
   const {doc}=inspectTemplate(html,Parser);
   function fill(root,fields){for(const el of root.querySelectorAll('[data-lore-field]')){const field=el.getAttribute('data-lore-field');el.textContent=Object.hasOwn(fields??{},field)?fields[field]:'尚未记录';}}
-  const region=doc.querySelector('[data-lore-person]');
+  const region=doc.querySelector('[data-lore-entity]');
   if(region){
-    for(const person of Object.values(state?.people??{}).filter(p=>p.presence==='active')){
-      const clone=region.cloneNode(true);fill(clone,person.fields);
-      for(const key of ['name','id','identity'])for(const el of clone.querySelectorAll(`[data-lore-${key}]`))el.textContent=person[key];
+    for(const entity of Object.values(state?.entities??{}).filter(p=>p.presence==='active')){
+      const clone=region.cloneNode(true);fill(clone,entity.fields);
+      for(const key of ['name','id','identity','type','confirmed'])for(const el of clone.querySelectorAll(`[data-lore-${key}]`))el.textContent=entity[key]??'未知';
       // Repeated HTML must not create duplicate document IDs.
       clone.removeAttribute('id');for(const el of clone.querySelectorAll('[id]'))el.removeAttribute('id');
       region.before(clone);
     }
     region.remove();
   }
-  for(const el of doc.querySelectorAll('[data-lore-field]'))if(!el.closest('[data-lore-person]')){const field=el.getAttribute('data-lore-field');el.textContent=Object.hasOwn(state?.shared??{},field)?state.shared[field]:'尚未记录';}
+  for(const el of doc.querySelectorAll('[data-lore-field]'))if(!el.closest('[data-lore-entity]')){const field=el.getAttribute('data-lore-field');el.textContent=Object.hasOwn(state?.shared??{},field)?state.shared[field]:'尚未记录';}
   const csp=doc.createElement('meta');csp.httpEquiv='Content-Security-Policy';csp.content="default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'";doc.head.prepend(csp);
   const base=doc.createElement('style');base.textContent='*{box-sizing:border-box}body{margin:0;padding:12px;color:#e5dfd3;background:#242421;font:14px/1.6 system-ui} [data-lore-field]{white-space:pre-wrap;overflow-wrap:anywhere}';doc.head.insertBefore(base,csp.nextSibling);
   return '<!doctype html>'+doc.documentElement.outerHTML;

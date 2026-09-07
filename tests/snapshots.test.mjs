@@ -1,8 +1,8 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {collectSnapshots,planRestore,replaySnapshots} from '../prototype/snapshots.js';
-const schema={shared:['地点'],person:[]};
-const msg=(floor,value,mode='delta',swipe=0)=>({message_id:floor,role:'assistant',swipe_id:swipe,message:`<LoreState version="2" mode="${mode}"><Shared><地点>${value}</地点></Shared></LoreState>`});
+const schema={shared:['地点'],entity:[]};
+const msg=(floor,value,mode='delta',swipe=0)=>({message_id:floor,role:'assistant',swipe_id:swipe,message:`<LoreState version="3" mode="${mode}"><Shared><地点>${value}</地点></Shared></LoreState>`});
 const history=()=>[msg(1,'车站','full'),msg(3,'公园')];
 test('完整快照持久化、去重、无自动层数裁剪',async()=>{
  const list=history();let saved=await collectSnapshots(list,schema,1,null);

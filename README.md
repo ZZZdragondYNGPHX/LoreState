@@ -1,5 +1,11 @@
 # LoreState
 
+**0.7.0 / v3 世界状态冷热档**：人物、国家、组织、地点、物品与事件统一管理，支持有限关联召回和未完成事件保热。
+
+**作者请从 [作者文档目录](docs/README.md) 开始**，内含条目写法、可复制示例、配套 HTML 与试卡清单。[离线脚本](prototype/dist/v0.7.0/lorestate-script-offline.json) · [远程入口](prototype/dist/v0.7.0/lorestate-script.json)。本版使用新协议和新配置，不迁移旧状态；真实酒馆验收仍待完成。
+
+以下保留历史版本说明，各版本依赖与协议不混用。
+
 0.6.0 试用版：逐楼完整快照、预览回档与撤销，保留聊天正文。[离线脚本](prototype/dist/v0.6.0/lorestate-script-offline.json) · [回档说明](prototype/snapshots.md)。远程入口固定 prototype-v0.6.0，本版真实酒馆验收待完成。
 
 0.5.2 正文显示修复：全宽状态栏与可展开大窗口。[远程脚本](prototype/dist/v0.5.2/lorestate-script.json) · [离线脚本](prototype/dist/v0.5.2/lorestate-script-offline.json)。

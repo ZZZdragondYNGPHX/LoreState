@@ -5,7 +5,7 @@ import {execFileSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {convertWishnoteMemory} from '../examples/wishnote/people/migrate.js';
 import {wishnoteFields,wishnoteSchema,wishnoteBookName} from '../examples/wishnote/people/fields.js';
-import {applyState,playPrompt} from '../prototype/core.js';
+import {applyState,playPrompt} from '../examples/wishnote/legacy/state-v2.js';
 const root=new URL('../',import.meta.url),read=path=>readFile(new URL(path,root),'utf8');
 test('组件构建保持六条叙事原样，配置与栏目对齐',async()=>{
  execFileSync(process.execPath,[fileURLToPath(new URL('../scripts/build-wishnote-people.mjs',import.meta.url))]);

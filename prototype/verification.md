@@ -1,3 +1,29 @@
+# 0.7.0 作者文档与版本分发验证 · 2026-09-07
+
+本次用户授权推送 main 与实现版本。新增 docs 导航、作者入门、条目创作指南、条目与连续更新示例、HTML 模板及常见问题。67 项 Node 测试通过（含教程 XML 连续回放与链接校验）；9 项模板浏览器和 13 项模拟宿主检查通过，作者模板栏目与渲染经过验证。程序 bundle 与上一轮验证保持一致。
+
+指南：tavern-card-builder 路由，库快照 2026-08-18；沿用 A0、A2、A6，补读 A3/A4/B1/C10 相关范围，采用 text-cards 与 lorebook-and-prompts 的职责拆分。没有新增 MVU 或宿主 API 用法。
+
+固定标签 prototype-v0.7.0；Git 分发不代表 CDN 已可访问，也不代表真实酒馆或作者验收通过。未安装至用户卡、未调用模型，realHostVerified=false / driverAccepted=false。下方保存本地实装阶段的验证记录。
+
+---
+
+# 0.7.0 世界实体冷热档 · 本地候选验证
+
+2026-09-07；component 模式。用户授权实装且无需旧数据兼容。
+
+65 项 Node 测试通过；Edge headless 的 8 项模板与 13 项模拟宿主检查通过，运行的是最终 artifact/bundle.js。覆盖国家/人物/物品/组织/地点、事件保热、一跳召回和上限、预算下可选档案撤出、冷热事实原文、确认时间与来源楼层、快照回档、模板类别绑定、冷档展开与提示注入、quiet/impersonate 不注入、修复撤销和聊天隔离。JavaScript 语法、构建、TavernWeave helper-script 格式校验通过。bundle 与离线脚本内容逐字一致。
+
+组件稳定 ID、启用状态、按钮与导出策略保留；新配置命名空间 lorestate_world_v3，不迁移旧状态。旧 Wishnote 转换器固定旧引擎且不参与 v3 构建。旧发布目录和用户既有 release/ 未改动。
+
+最终 bundle SHA-256：`8fb3fe30779cdda09bfafca105f24c71a8133a0d73ceadc2710570df3de1cf8b`。详细源与产物哈希见 [validation.json](dist/v0.7.0/validation.json)。
+
+指南收据：sillytavern-component-update，库快照 2026-08-18；读取 A0 与 A2/A6/B2 相关范围；无设计候选采用。本次不改变宿主 API 签名，目标版本沿用 SillyTavern 1.18.0 / Tavern Helper 4.9.5 的仓库记录，没有新增真实宿主兼容性证据。组件工具完成临时 spec 的 plan/build/validate，最终仓库离线组件另行格式验证。
+
+未执行真实酒馆导入、真实模型调用、用户游玩、安装、Git 提交/推送或发布；published=false、realHostVerified=false、driverAccepted=false。下一关为新测试聊天使用离线组件验证实际冷热决策、事件到期、重抽、编辑、回档与刷新。普通字段仍共用文字栏目，暂不支持单个实体内部的字段冷热；无代词语义检索或后台模拟。
+
+---
+
 # 原型验证边界
 
 ## prototype-v0.5.2 · 2026-09-07

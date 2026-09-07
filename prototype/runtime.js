@@ -47,10 +47,10 @@ export function startPrototype(defaultHtml) {
     if(!state){node('p','尚未建立状态。',details);return;}
     function fields(values,parent){const grid=node('dl',undefined,parent);grid.className='ls-fields';for(const [name,value] of Object.entries(values)){const pair=node('div',undefined,grid);node('dt',name,pair);node('dd',value,pair).style.whiteSpace='pre-wrap';}}
     if(Object.keys(state.shared).length){node('h4','公共状态',details);fields(state.shared,details);}
-    for(const person of Object.values(state.people)){
-      const section=node('details',undefined,details);section.open=person.presence==='active';
-      node('summary',`${person.name} · ${person.id} · ${person.presence==='cold'?'离场':'在场'}`,section);
-      node('p',person.identity,section);fields(person.fields,section);
+    for(const entity of Object.values(state.entities)){
+      const section=node('details',undefined,details);section.open=entity.presence==='active';
+      node('summary',`${entity.type} · ${entity.name} · ${entity.id} · ${entity.presence==='cold'?'冷档':'热档'}${entity.pending?' · 未完成事件':''}`,section);
+      node('p',`${entity.identity} · 最后确认：${entity.confirmed??'剧情时间未知'} · 更新楼层：${entity.confirmedFloor??'未知'} · 关联：${entity.links.join('、')||'无'}`,section);fields(entity.fields,section);
     }
     showObject('查看原始状态数据',state);
   }
@@ -70,7 +70,7 @@ export function startPrototype(defaultHtml) {
     const changes=node('details',undefined,details);node('summary',`本轮变化 · ${item.changes.length} 项`,changes);
     if(!item.changes.length)node('p',item.error?'本轮失败，没有应用变化。':'本轮没有状态变化。',changes);
     for(const change of item.changes){
-      const path=change.path.replace(/^shared /,'公共状态 ').replace(/^people /,'人物 ').replace(' / fields / ',' / ');
+      const path=change.path.replace(/^shared /,'公共状态 ').replace(/^entities /,'实体 ').replace(' / fields / ',' / ');
       node('h4',`${change.kind} · ${path}`,changes);
       node('p',`${change.before??'未记录'} → ${change.after??'已删除'}`,changes).style.whiteSpace='pre-wrap';
     }
@@ -220,8 +220,8 @@ export function startPrototype(defaultHtml) {
     const {schema}=inspectTemplate(html.value),config=settings();
     const example=fields=>Object.fromEntries(fields.map(f=>[f,`${f}的示例文字`]));
     const state=config.schema&&sameSchema(schema,config.schema)?getResult(config).state:null;
-    preview.srcdoc=renderTemplate(html.value,state??{shared:example(schema.shared),people:schema.person.length?{P01:{id:'P01',name:'示例人物',identity:'人物识别信息',presence:'active',fields:example(schema.person)}}:{}});
-    report(`公共栏目：${schema.shared.join('、')||'无'}；人物栏目：${schema.person.join('、')||'无'}。预览未保存。`);
+    preview.srcdoc=renderTemplate(html.value,state??{shared:example(schema.shared),entities:schema.entity.length?{P01:{id:'P01',name:'示例实体',identity:'实体识别信息',type:'通用',confirmed:null,presence:'active',fields:example(schema.entity)}}:{}});
+    report(`公共栏目：${schema.shared.join('、')||'无'}；实体栏目：${schema.entity.join('、')||'无'}。预览未保存。`);
   });
   const regexId='lorestate-text-prototype-tags-v1';
   async function installRegex(){
@@ -286,10 +286,10 @@ export function startPrototype(defaultHtml) {
       const source=renderTemplate(config.html,result.state);
       const expand=button('展开状态窗口',view,()=>stateWindow.open(source));expand.style.cssText='display:inline-block;min-height:44px;margin:8px 8px 12px 0;padding:8px 12px;cursor:pointer';
       const frame=createStateFrame(doc,'LoreState 当前状态');frame.srcdoc=source;view.append(frame);stateWindow.update(source);
-      const cold=Object.values(result.state.people).filter(p=>p.presence==='cold');
-      if(cold.length){const archive=node('details',undefined,view);node('summary',`本地离场记忆 · ${cold.length} 人`,archive);
-        for(const p of cold){const item=node('details',undefined,archive);node('summary',`${p.name} · ${p.id} · ${p.identity}`,item);
-          let loaded=false;item.ontoggle=()=>{if(item.open&&!loaded){for(const f of config.schema.person){node('h4',f,item);const text=node('p',p.fields[f]??'尚未记录',item);text.style.cssText='white-space:pre-wrap;overflow-wrap:anywhere';}loaded=true;}};
+      const cold=Object.values(result.state.entities).filter(p=>p.presence==='cold');
+      if(cold.length){const archive=node('details',undefined,view);node('summary',`本地冷档 · ${cold.length} 个实体`,archive);
+        for(const p of cold){const item=node('details',undefined,archive);node('summary',`${p.type} · ${p.name} · ${p.id} · ${p.identity} · 最后确认：${p.confirmed??'剧情时间未知'} · 更新楼层：${p.confirmedFloor??'未知'}`,item);
+          let loaded=false;item.ontoggle=()=>{if(item.open&&!loaded){for(const f of config.schema.entity){node('h4',f,item);const text=node('p',p.fields[f]??'尚未记录',item);text.style.cssText='white-space:pre-wrap;overflow-wrap:anywhere';}loaded=true;}};
         }
       }
     }

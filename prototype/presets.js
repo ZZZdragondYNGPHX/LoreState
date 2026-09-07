@@ -18,4 +18,4 @@ export function deletePreset(config,id){
   return {...config,presets:listPresets(config).filter(p=>p.id!==id)};
 }
 
-export function sameSchema(a,b){return !!a&&!!b&&sameFields(a.shared,b.shared)&&sameFields(a.person,b.person);}
+export function sameSchema(a,b){return !!a&&!!b&&sameFields(a.shared,b.shared)&&sameFields(a.entity,b.entity);}

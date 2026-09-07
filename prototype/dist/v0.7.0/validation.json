@@ -1,0 +1,40 @@
+{
+  "version": "0.7.0",
+  "deliveryMode": "component",
+  "automated": {
+    "nodeTests": 67,
+    "browserTemplateChecks": 9,
+    "browserRuntimeChecks": 13,
+    "syntax": "passed",
+    "build": "passed",
+    "componentFormat": "passed",
+    "bundleParity": "passed",
+    "authorExamples": "passed"
+  },
+  "sourceBeforeSha256": "fb3f51635c1f0a999dcfe92e8222397e17e54b9a0df507a5dc119aa1ba461f53",
+  "sourceAfterSha256": "c1da50288521aa2338afa7746c52d0a43f62d1e15955d2dae16a5a8ee6bd0c05",
+  "bundleSha256": "8fb3fe30779cdda09bfafca105f24c71a8133a0d73ceadc2710570df3de1cf8b",
+  "artifactSha256": "366ed4eb89f1f736140d986267e43ba5e73bbfadff7eab372d40ddb7dbfaafba",
+  "realHostVerified": false,
+  "driverAccepted": false,
+  "published": true,
+  "installed": false,
+  "remaining": [
+    "新测试聊天导入",
+    "真实模型生成和活动事件判断",
+    "真实宿主编辑重抽回档与刷新持久化"
+  ],
+  "library": {
+    "route": "sillytavern-component-update",
+    "snapshot": "2026-08-18",
+    "loaded": [
+      "ST-A0",
+      "ST-A2",
+      "ST-A6",
+      "ST-B2"
+    ],
+    "designCandidatesAdopted": []
+  },
+  "publicationScope": "Git main and prototype-v0.7.0; CDN unverified",
+  "sourceHashEncoding": "UTF-8 with LF line endings"
+}

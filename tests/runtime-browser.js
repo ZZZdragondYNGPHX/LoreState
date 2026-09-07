@@ -2,9 +2,9 @@ import {startPrototype} from '../prototype/runtime.js';
 import {PROTO_KEY} from '../prototype/core.js';
 const output=document.getElementById('result'),results=[];
 const html='<p data-lore-field="地点"></p>';
-const wrap=(text,mode='delta')=>`<LoreState version="2" mode="${mode}"><Shared><地点>${text}</地点></Shared></LoreState>`;
+const wrap=(text,mode='delta')=>`<LoreState version="3" mode="${mode}"><Shared><地点>${text}</地点></Shared></LoreState>`;
 let list=[{message_id:1,role:'assistant',message:wrap('车站','full'),swipe_id:0},{message_id:3,role:'assistant',message:wrap('A & B'),swipe_id:0}];
-let chatId='test',chatRef=[],variables={script:{[PROTO_KEY]:{ready:true,schema:{shared:['地点'],person:[]},html}},chat:{[PROTO_KEY]:{enabled:true,start:1}}};
+let chatId='test',chatRef=[],variables={script:{[PROTO_KEY]:{ready:true,schema:{shared:['地点'],entity:[]},html}},chat:{[PROTO_KEY]:{enabled:true,start:1}}};
 const handlers=new Map();
 Object.assign(window,{
   getCharWorldbookNames:()=>({primary:'test-book',additional:[]}),
@@ -108,5 +108,21 @@ await check('重新启动保留快照和回档基线，不重复归档',async()=
   window.dispatchEvent(new Event('pagehide'));handlers.clear();startPrototype(html);await tick();await tick();
   assert(variables.chat[PROTO_KEY].snapshots.length===count);
   assert(variables.chat[PROTO_KEY].current.state.shared.地点==='回档后的新地点');
+});
+await check('世界实体冷档展示与生成提示接入，活动事件始终注入且预取不改状态',async()=>{
+  const entityHtml='<p data-lore-field="时间"></p><article data-lore-entity><b data-lore-name></b><small data-lore-type></small><p data-lore-field="概况"></p></article>';
+  variables.script[PROTO_KEY]={ready:true,book:'test-book',uid:1,schema:{shared:['时间'],entity:['概况']},html:entityHtml};
+  variables.chat={[PROTO_KEY]:{enabled:true,start:1}};chatId='world-v3';chatRef=[];
+  list=[{message_id:1,role:'assistant',swipe_id:0,message:'<LoreState version="3" mode="full"><Shared><时间>第三天</时间></Shared><Entity id="N01" name="北境公国" type="国家" identity="北方国家" mode="full" presence="cold"><概况>国库尚有三百金币</概况></Entity><Entity id="E01" name="送货承诺" type="事件" identity="港口订单" mode="full" pending="true"><概况>明天交付货物</概况></Entity></LoreState>'}];
+  await emit('CHAT_CHANGED');await tick();
+  assert(document.body.textContent.includes('本地冷档 · 1 个实体'));assert(document.body.textContent.includes('国家 · 北境公国'));
+  let prompt='';window.injectPrompts=items=>{prompt=items[0].content;return {uninject(){}};};
+  const generate=async()=>{for(const fn of handlers.get('GENERATION_AFTER_COMMANDS')??[])await fn('normal',{},false);};
+  await generate();assert(prompt.includes('明天交付货物'));assert(!prompt.includes('国库尚有三百金币'));
+  const input=document.createElement('textarea');input.id='send_textarea';input.value='访问北境公国';document.body.append(input);
+  const before=JSON.stringify(variables.chat[PROTO_KEY].current.state);await generate();
+  assert(prompt.includes('国库尚有三百金币'));assert(prompt.includes('最后事实更新楼层：1'));assert(JSON.stringify(variables.chat[PROTO_KEY].current.state)===before);
+  for(const type of ['quiet','impersonate']){prompt='';for(const fn of handlers.get('GENERATION_AFTER_COMMANDS')??[])await fn(type,{},false);assert(prompt==='','特殊生成不应注入状态提示');}
+  input.remove();
 });
 output.textContent=results.join('\n');if(new URLSearchParams(location.search).has('preview'))await click('LoreState');window.testResults=results;

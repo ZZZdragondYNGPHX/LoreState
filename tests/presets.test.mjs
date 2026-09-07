@@ -9,9 +9,9 @@ test('不迁移旧版 HTML，另存预设保留当前配置',()=>{
  assert.equal(next.presets.length,1);assert.equal(old.presets,undefined);
 });
 test('栏目顺序可变，增删栏目不可作为换肤',()=>{
- assert.equal(sameSchema({shared:['地点','衣着'],person:[]},{shared:['衣着','地点'],person:[]}),true);
- assert.equal(sameSchema({shared:['地点'],person:[]},{shared:[],person:['地点']}),false);
- assert.equal(sameSchema({shared:['地点'],person:[]},{shared:['地点','衣着'],person:[]}),false);
+ assert.equal(sameSchema({shared:['地点','衣着'],entity:[]},{shared:['衣着','地点'],entity:[]}),true);
+ assert.equal(sameSchema({shared:['地点'],entity:[]},{shared:[],entity:['地点']}),false);
+ assert.equal(sameSchema({shared:['地点'],entity:[]},{shared:['地点','衣着'],entity:[]}),false);
 });
 test('覆盖不增加条目，重名和删除当前预设会拒绝',()=>{
  const original=savePreset({html:'old'},'夜间','new','night');
