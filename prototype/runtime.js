@@ -1,5 +1,6 @@
 import { PROTO_KEY, TAG_PATTERN, replayState, playPrompt, authorPrompt, inspectFloor, proposeRepair } from './core.js';
 import { inspectTemplate, renderTemplate } from './template.js';
+import { createControlCenter } from './control-center.js';
 import { listPresets, sameSchema, savePreset, deletePreset } from './presets.js';
 
 // Runs inside the owning Tavern Helper character script, including remote imports.
@@ -13,13 +14,11 @@ export function startPrototype(defaultHtml) {
   const matches=([chat,id])=>!closed&&ctx().chat===chat&&ctx().getCurrentChatId()===id;
   let closed=false,queue=Promise.resolve(),pending=false,uninject=null,view=null,renderKey='',menuObserver;
   const node=(tag,text,parent)=>{const el=doc.createElement(tag);if(text!==undefined)el.textContent=text;parent?.append(el);return el;};
-  const panel=node('dialog',undefined,doc.body);panel.id='lorestate-prototype-settings';panel.setAttribute('aria-label','LoreState 原型设置');
-  panel.style.cssText='width:min(800px,94vw);max-height:88vh;overflow:auto;background:#252723;color:#eee8dc;border:1px solid #858b6c;border-radius:12px;padding:20px';
-  const style=node('style',undefined,panel);style.textContent='#lorestate-prototype-settings button,#lorestate-prototype-settings select{font:inherit;margin:6px;padding:7px;background:#3a4033;color:#eee;border:1px solid #7b8765;border-radius:5px}#lorestate-prototype-settings textarea{display:block;width:100%;box-sizing:border-box;min-height:110px;background:#191d18;color:#eee;margin:8px 0}#lorestate-prototype-settings label{display:block;margin-top:12px}';
-  node('h2','LoreState · 文字状态原型',panel);
+  const panel=node('section',undefined,doc.body);panel.id='lorestate-prototype-settings';panel.setAttribute('aria-label','LoreState 原型设置');
   const status=node('p','选择状态栏条目，再粘贴 HTML。保存后在下一次 AI 回复建立状态。',panel);status.setAttribute('role','status');
   const report=text=>{status.textContent=text;};
-  const button=(title,parent,fn)=>{const el=node('button',title,parent);el.type='button';el.onclick=async()=>{el.disabled=true;try{await fn();}catch(e){fault(e,'操作失败');}finally{el.disabled=false;}};return el;};
+  const actions=new Map();
+  const button=(title,parent,fn)=>{const el=node('button',title,parent);el.type='button';actions.set(title,el);el.onclick=async()=>{el.disabled=true;try{await fn();}catch(e){fault(e,'操作失败');}finally{el.disabled=false;}};return el;};
   const notice=node('aside',undefined,doc.body);notice.hidden=true;notice.setAttribute('role','alert');
   notice.style.cssText='position:fixed;right:12px;top:12px;z-index:100000;max-width:min(440px,92vw);padding:16px;background:#382621;color:#fff;border:2px solid #efb06a;border-radius:8px;white-space:pre-wrap';
   const noticeText=node('p','',notice);
@@ -33,14 +32,9 @@ export function startPrototype(defaultHtml) {
     console.warn('[LoreState]',stage,message);
   }
   const manager=node('dialog',undefined,doc.body);manager.id='lorestate-state-manager';manager.setAttribute('aria-label','LoreState 状态管理器');
-  manager.style.cssText=panel.style.cssText;
-  const managerStyle=node('style',undefined,manager);managerStyle.textContent='#lorestate-state-manager{box-sizing:border-box}#lorestate-state-manager button,#lorestate-state-manager select{font:inherit;max-width:100%;margin:4px;padding:8px;border:1px solid #859074;border-radius:5px;background:#343d2c;color:#fff}#lorestate-state-manager button:disabled{opacity:.5}#lorestate-state-manager p{overflow-wrap:anywhere}#lorestate-state-manager textarea{box-sizing:border-box;background:#191d18;color:#eee}#lorestate-state-manager details{margin:12px 0}#lorestate-state-manager summary{cursor:pointer}';
-  node('h2','LoreState · 状态管理器',manager);
-  node('p','按当前选中回复分支回放。楼层号与酒馆一致，0 楼通常不参与初始化。历史消息被编辑后，这里显示重算结果。',manager);
-  button('关闭',manager,()=>manager.close());
   const floorSelect=node('select',undefined,manager);floorSelect.setAttribute('aria-label','AI 楼层');
   const summary=node('p','',manager);summary.setAttribute('role','status');
-  const details=node('div',undefined,manager);
+  const details=node('div',undefined,manager),diagnostics=node('div',undefined,manager);
   const repairBox=node('textarea',undefined,manager);repairBox.readOnly=true;repairBox.hidden=true;repairBox.setAttribute('aria-label','修复后的消息预览');repairBox.style.cssText='width:100%;height:180px';
   function floorList(){return messages().filter(m=>m.role==='assistant'&&!m.is_hidden);}
   function errorText(e){return `第 ${e.floor} 楼 · ${e.scope}${e.line?` · 原文第 ${e.line} 行 ${e.column} 列`:''}：${e.message}\n建议：${e.hint}`;}
@@ -48,7 +42,7 @@ export function startPrototype(defaultHtml) {
   function showState(state){
     node('h3','本层完整状态',details);
     if(!state){node('p','尚未建立状态。',details);return;}
-    function fields(values,parent){for(const [name,value] of Object.entries(values)){node('h4',name,parent);node('p',value,parent).style.whiteSpace='pre-wrap';}}
+    function fields(values,parent){const grid=node('dl',undefined,parent);grid.className='ls-fields';for(const [name,value] of Object.entries(values)){const pair=node('div',undefined,grid);node('dt',name,pair);node('dd',value,pair).style.whiteSpace='pre-wrap';}}
     if(Object.keys(state.shared).length){node('h4','公共状态',details);fields(state.shared,details);}
     for(const person of Object.values(state.people)){
       const section=node('details',undefined,details);section.open=person.presence==='active';
@@ -58,20 +52,22 @@ export function startPrototype(defaultHtml) {
     showObject('查看原始状态数据',state);
   }
   function showFloor(){
-    draft=null;repairBox.hidden=true;applyRepair.disabled=true;details.replaceChildren();
+    draft=null;repairBox.hidden=true;applyRepair.disabled=true;details.replaceChildren();diagnostics.replaceChildren();
     if(!floorSelect.value){summary.textContent='当前聊天没有可查看的 AI 楼层。';return;}
     const config=settings();if(!config.schema){summary.textContent='请先配置并启用 LoreState。';return;}
     const item=inspectFloor(messages(),config.schema,chatSettings().start??1,Number(floorSelect.value));
     summary.textContent=item.excluded?'本层在初始化起点之前，未参与状态更新。':item.error?'本层更新失败，整轮未应用。':item.tainted?'本层已应用，但前面存在失败更新，状态有缺口。':'本层更新成功。';
     node('p',`最后连续正常楼层：${item.lastGoodFloor??'尚无'}；最后应用楼层：${item.lastAppliedFloor??'尚无'}`,details);
-    for(const error of item.errors)node('p',errorText(error),details).style.whiteSpace='pre-wrap';
+    summary.dataset.error=String(item.tainted);
+    if(!item.errors.length)node('p','截至本层没有发现更新错误。',diagnostics);
+    for(const error of item.errors)node('p',errorText(error),diagnostics).style.whiteSpace='pre-wrap';
     showState(item.state);
-    node('h3','本轮实际应用的变化',details);
-    if(!item.changes.length)node('p',item.error?'本轮失败，没有应用变化。':'本轮没有状态变化。',details);
+    const changes=node('details',undefined,details);node('summary',`本轮变化 · ${item.changes.length} 项`,changes);
+    if(!item.changes.length)node('p',item.error?'本轮失败，没有应用变化。':'本轮没有状态变化。',changes);
     for(const change of item.changes){
       const path=change.path.replace(/^shared /,'公共状态 ').replace(/^people /,'人物 ').replace(' / fields / ',' / ');
-      node('h4',`${change.kind} · ${path}`,details);
-      node('p',`${change.before??'未记录'} → ${change.after??'已删除'}`,details).style.whiteSpace='pre-wrap';
+      node('h4',`${change.kind} · ${path}`,changes);
+      node('p',`${change.before??'未记录'} → ${change.after??'已删除'}`,changes).style.whiteSpace='pre-wrap';
     }
     const raw=node('details',undefined,details);node('summary','本层消息原文',raw);const pre=node('pre',item.source,raw);pre.style.cssText='white-space:pre-wrap;overflow-wrap:anywhere';
     if(runtimeLogs.length)showObject('本次运行异常（最多 30 条）',runtimeLogs);
@@ -81,7 +77,7 @@ export function startPrototype(defaultHtml) {
     for(const m of list){const option=node('option',`第 ${m.message_id} 楼`,floorSelect);option.value=String(m.message_id);}
     floorSelect.value=list.some(m=>String(m.message_id)===String(preferred))?String(preferred):String(list.at(-1)?.message_id??'');showFloor();
   }
-  function openManager(floor){if(panel.open)panel.close();if(!manager.open)manager.showModal();syncFloors(floor);}
+  function openManager(floor){center.open(floor!==undefined?'diagnostics':'state');syncFloors(floor);}
   floorSelect.onchange=()=>{try{showFloor();}catch(e){fault(e,'历史读取失败');}};
   button('上一 AI 层',manager,()=>{floorSelect.selectedIndex=Math.max(0,floorSelect.selectedIndex-1);showFloor();});
   button('下一 AI 层',manager,()=>{floorSelect.selectedIndex=Math.min(floorSelect.options.length-1,floorSelect.selectedIndex+1);showFloor();});
@@ -93,7 +89,7 @@ export function startPrototype(defaultHtml) {
   });
   button('重新校验全部楼层',manager,async()=>{await refresh();syncFloors();});
   button('复制诊断报告',manager,async()=>{
-    const result=getResult(),payload={version:'0.5.0',floor:Number(floorSelect.value),lastGoodFloor:result.lastGoodFloor,errors:result.errors,runtimeLogs};
+    const result=getResult(),payload={version:'0.5.1',floor:Number(floorSelect.value),lastGoodFloor:result.lastGoodFloor,errors:result.errors,runtimeLogs};
     repairBox.hidden=false;repairBox.value=JSON.stringify(payload,null,2);draft=null;applyRepair.disabled=true;
     try{await navigator.clipboard.writeText(repairBox.value);summary.textContent='诊断报告已复制，不含完整消息和状态正文。';}catch{summary.textContent='请从下方文本框手动复制诊断报告。';}
   });
@@ -132,7 +128,6 @@ export function startPrototype(defaultHtml) {
   });
   button('查看格式修复备份',manager,()=>{repairBox.value=chatSettings().repairBackup?.original??'没有备份';repairBox.hidden=false;draft=null;applyRepair.disabled=true;});
   manager.append(repairBox,details);
-  button('关闭',panel,()=>panel.close());
   const bookLabel=node('label','1. 角色／聊天绑定的世界书',panel),books=node('select',undefined,bookLabel);books.setAttribute('aria-label','世界书');
   const entryLabel=node('label','状态栏条目',panel),entries=node('select',undefined,entryLabel);entries.setAttribute('aria-label','状态栏条目');
   const rules=node('textarea',undefined,panel);rules.readOnly=true;rules.setAttribute('aria-label','条目内容');
@@ -220,11 +215,19 @@ export function startPrototype(defaultHtml) {
     updateVariablesWith(v=>({...v,[PROTO_KEY]:{...chatSettings(),enabled:false}}),{type:'chat'});uninject?.();uninject=null;view?.remove();report('已暂停；数据和 HTML 保留，标签过滤正则保留。');
   });
   button('重新读取当前聊天状态',panel,async()=>{renderKey='';await refresh();const result=getResult();report(result.errors.length?`重新校验后仍有 ${result.errors.length} 轮失败，请打开状态管理器。`:'全部参与回放的楼层已通过校验。');});
-  button('打开状态管理器',panel,()=>openManager());
-  async function open(){if(!panel.open)panel.showModal();html.value=settings().html||html.value;syncPresets();await loadBooks();}
+  async function loadSettings(){try{syncPresets();await loadBooks();}catch(e){fault(e,'设置读取失败');}}
+  async function open(){if(!settings().ready){center.open('settings');await loadSettings();}else openManager();}
+  const a=title=>actions.get(title);
+  const ruleDisclosure=node('details');node('summary','查看条目原文',ruleDisclosure);ruleDisclosure.append(rules);
+  const makerDisclosure=node('details');node('summary','制作提示词与下一轮提示预览',makerDisclosure);makerDisclosure.append(a('生成并复制 HTML 制作提示词'),a('查看下一轮状态提示'),maker);
+  const center=createControlCenter({doc,manager,panel,summary,status,floorSelect,details,diagnostics,repairBox,actions,loadSettings,settingsGroups:[
+    ['1 · 世界书与规则',[bookLabel,entryLabel,a('刷新世界书列表'),ruleDisclosure]],
+    ['2 · 外观模板',[makerDisclosure,htmlLabel,a('预览 HTML（不保存）'),preview,a('保存 HTML 并启用本聊天')]],
+    ['3 · 外观预设',[presetLabel,a('应用所选预设'),nameLabel,a('另存为新预设'),a('覆盖所选预设'),a('删除所选预设')]],
+    ['4 · 聊天维护',[a('重新读取当前聊天状态'),a('暂停本聊天')]],
+  ]});
   const menu=node('div');menu.className='extension_container';
-  const opener=button('LoreState · 原型设置',menu,open);opener.className='list-group-item';opener.style.cssText='background:transparent;color:inherit;border:0;text-align:left;width:100%;font:inherit';
-  const managerOpener=button('LoreState · 状态管理器',menu,()=>openManager());managerOpener.className=opener.className;managerOpener.style.cssText=opener.style.cssText;
+  const opener=button('LoreState',menu,open);opener.className='list-group-item';opener.style.cssText='background:transparent;color:inherit;border:0;text-align:left;width:100%;font:inherit';
   const mount=()=>{const target=doc.getElementById('extensionsMenu');if(target){target.append(menu);menuObserver?.disconnect();}};
   menuObserver=new MutationObserver(mount);menuObserver.observe(doc.body,{childList:true,subtree:true});mount();
   const active=config=>config.ready&&!!ctx().getCurrentChatId()&&chatSettings().enabled!==false;
@@ -289,7 +292,7 @@ export function startPrototype(defaultHtml) {
   for(const event of ['MESSAGE_RECEIVED','CHARACTER_MESSAGE_RENDERED','MESSAGE_UPDATED','MESSAGE_EDITED','MESSAGE_DELETED','MESSAGE_SWIPED','GENERATION_ENDED','MORE_MESSAGES_LOADED'])if(tavern_events[event])eventOn(tavern_events[event],schedule);
   if(tavern_events.GENERATION_STARTED)eventOn(tavern_events.GENERATION_STARTED,()=>{generating=true;});
   for(const event of ['GENERATION_ENDED','GENERATION_STOPPED'])if(tavern_events[event])eventOn(tavern_events[event],()=>{generating=false;schedule();});
-  eventOn(tavern_events.CHAT_CHANGED,()=>{uninject?.();uninject=null;view?.remove();renderKey='';noticeKey='';notice.hidden=true;runtimeLogs=[];draft=null;manager.close();generating=false;schedule();});
+  eventOn(tavern_events.CHAT_CHANGED,()=>{uninject?.();uninject=null;view?.remove();renderKey='';noticeKey='';notice.hidden=true;runtimeLogs=[];draft=null;report('设置随角色保存；修改后请预览并保存。');manager.close();generating=false;schedule();});
   eventOn(tavern_events.GENERATION_AFTER_COMMANDS,beforeGenerate);
   eventOn(getButtonEvent('LoreState 设置'),()=>open().catch(e=>fault(e,'设置打开失败')));
   function dispose(){closed=true;menuObserver?.disconnect();menu.remove();panel.remove();manager.remove();notice.remove();view?.remove();uninject?.();}

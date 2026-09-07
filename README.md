@@ -1,5 +1,7 @@
 # LoreState
 
+0.5.1 UI 试用版：魔法棒单一 LoreState 入口，状态历史／诊断修复／设置三个页签。[远程脚本](prototype/dist/v0.5.1/lorestate-script.json) · [离线脚本](prototype/dist/v0.5.1/lorestate-script-offline.json)。新 UI 已通过浏览器回归，待用户实机验收。
+
 开发请先阅读 [开发说明](docs/开发说明.md) 与 [当前交接](交接文档.md)。统一构建命令为 `npm run build`。
 
 新增 0.5.0 本地候选版：魔法棒历史状态管理器、即时错误定位、格式修复预览与撤销。离线测试组件见 [新版脚本](prototype/dist/v0.5.0/lorestate-script-offline.json)，使用与边界见 [脚本说明](prototype/README.md)。核心功能已完成目标酒馆实机回归，远程入口固定 prototype-v0.5.0，完整边界见验证记录。

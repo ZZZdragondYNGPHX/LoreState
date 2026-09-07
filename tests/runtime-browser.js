@@ -7,6 +7,9 @@ let list=[{message_id:1,role:'assistant',message:wrap('车站','full'),swipe_id:
 let chatId='test',chatRef=[],variables={script:{[PROTO_KEY]:{ready:true,schema:{shared:['地点'],person:[]},html}},chat:{[PROTO_KEY]:{enabled:true,start:1}}};
 const handlers=new Map();
 Object.assign(window,{
+  getCharWorldbookNames:()=>({primary:'test-book',additional:[]}),
+  getChatWorldbookName:()=>null,
+  getWorldbook:async()=>[{uid:1,name:'状态规则',content:'记录地点'}],
   SillyTavern:{getContext:()=>({chat:chatRef,getCurrentChatId:()=>chatId})},
   getVariables:({type})=>variables[type],
   updateVariablesWith:(fn,{type})=>{variables[type]=fn(variables[type]);},
@@ -27,14 +30,28 @@ if(new URLSearchParams(location.search).has('bundle')){
   const source=await(await fetch('../artifact/bundle.js')).text();Function(source)();
 }else startPrototype(html);
 await tick();
-const manager=document.querySelector('[aria-label="LoreState 状态管理器"]'),notice=document.querySelector('aside[role="alert"]');
+const manager=document.querySelector('[aria-label="LoreState 控制中心"]'),notice=document.querySelector('aside[role="alert"]');
 await check('启动立即告警并显示具体错误楼层',async()=>{
   assert(!notice.hidden);assert(notice.textContent.includes('第 3 楼'));
   await click('查看诊断',notice);assert(manager.open);assert(manager.querySelector('select').value==='3');manager.close();
 });
 await check('魔法棒管理器查看旧楼层，不显示未来状态',async()=>{
-  await click('LoreState · 状态管理器');assert(manager.open);
+  await click('LoreState');assert(manager.open);
   await click('上一 AI 层',manager);assert(manager.textContent.includes('车站'));assert(manager.textContent.includes('本层更新成功'));
+});
+await check('单入口、三页签、设置草稿和键盘导航',async()=>{
+  assert(document.querySelectorAll('#extensionsMenu button').length===1);
+  const tabs=[...manager.querySelectorAll('[role="tab"]')];assert(tabs.length===3);
+  tabs[2].click();await tick();assert(!document.getElementById('lorestate-prototype-settings').hidden);assert(document.getElementById('ls-page-state').hidden);
+  const editor=manager.querySelector('[aria-label="HTML 模板"]');const original=editor.value;editor.value='未保存草稿';
+  tabs[0].click();tabs[2].click();await tick();assert(editor.value==='未保存草稿');editor.value=original;
+  tabs[2].dispatchEvent(new KeyboardEvent('keydown',{key:'Home',bubbles:true}));assert(tabs[0].getAttribute('aria-selected')==='true');
+  tabs[1].click();assert(!document.getElementById('ls-page-diagnostics').hidden);
+});
+await check('336px 窄容器三个页面均无横向溢出',async()=>{
+  manager.style.width='336px';
+  for(const tab of manager.querySelectorAll('[role="tab"]')){tab.click();await tick();assert(manager.scrollWidth<=manager.clientWidth+1,'页面横向溢出：'+tab.textContent);}
+  manager.style.width='';manager.querySelector('#ls-tab-diagnostics').click();
 });
 await check('错误轮、修复预览、写回、备份、撤销和告警恢复',async()=>{
   await click('返回最新',manager);assert(manager.textContent.includes('本层更新失败'));
@@ -58,4 +75,4 @@ await check('快速切换聊天不保留旧弹窗或写入旧状态',async()=>{
   list=[{message_id:1,role:'assistant',message:wrap('新聊天','full'),swipe_id:0}];chatId='other';chatRef=[];variables.chat={[PROTO_KEY]:{enabled:true,start:1}};
   await emit('MESSAGE_UPDATED');await emit('CHAT_CHANGED');assert(!manager.open);assert(notice.hidden);assert(variables.chat[PROTO_KEY].current.state.shared.地点==='新聊天');
 });
-output.textContent=results.join('\n');window.testResults=results;
+output.textContent=results.join('\n');if(new URLSearchParams(location.search).has('preview'))await click('LoreState');window.testResults=results;
