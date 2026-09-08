@@ -1,3 +1,53 @@
+# 0.8.0 远端分发 · 2026-09-08
+
+用户已授权推送本次实现；分发目标为 origin/main 与固定标签 prototype-v0.8.0。构建 published=true 表示本次 Git 版本分发，realHostVerified=false 保留。实机测试仍由用户统一完成；未创建 GitHub Release，也未安装脚本。旧 release/ 为既有未跟踪材料，不包含在本次提交中。下方保留本地实施阶段的历史记录。
+
+---
+
+# 0.8.0 批次改进 · 2026-09-08
+
+用户明确授权继续实装，真实宿主测试留待全部实装后统一进行。本轮交付 component：源码、回归、作者操作说明与 0.8.0 本地组件；未安装、调用模型、提交、推送或发布。保留原有 0.7.1 未提交改动和用户 release/。
+
+**Gate 与范围：** 续写入口为 Local Fix / Local Fix Only；存储边界、作者配置/校验、冷档读取凭据分别按 Staged Refactor 实施，每个实现阶段以约 200 行维护代码为预算（测试、构建与说明另列），没有重写旧扩展或引入依赖。证据来自上一轮双更新块冲突、200 层约 30 MB 重复快照，以及已有初值/字段/冷档约束边界。目标是五项已讨论的功能；红线是保留历史版本、原子更新和用户配置，不安装、不调用模型、不发布。基线为 67 项 Node、9 项模板和 22 项模拟宿主检查。
+
+**行为合同：** continue 在读世界书前中止；相同状态与配置正文共享，所有旧快照、分支、错误元数据无损转存；作者初值先于首轮生效，规则按聊天冻结；只允许有有效本地凭据、且确实进入最终提示的冷档当轮更新。凭据以 UUID 标识，保存对应的完整前态及配置，回放进行精确比较，无纯文本“自报已读”旁路。预算裁掉的档案不授予权限。旧无 read 标签保持原有空唤醒行为。错误规则或更新整轮不提交。
+
+**实现边界：** core.js 增加作者配置、初值、声明式校验和 preparePrompt；snapshot-store.js 管理正文/配置去重及读取凭据；runtime.js 接入存储、设置控件、生成和失败清理。HTML 模板结构与旧扩展未变。新快照存档替代旧数组，原数据可通过 readSnapshots 完整还原；不会自动删除历史。无持久化分支迁移器，旧版本不能直接解释新存档与 read 标签，回退需旧脚本及升级前聊天备份。当前历史变化仍全量重放，未声称解决全部长聊天性能问题。
+
+**自动证据：** 79/79 Node 测试通过，新增覆盖作者初值/来源楼层、必填/禁止删除/枚举整批验证、配置冻结、200 层去重、旧快照/分支/删尾恢复、JSON 重载、缺失正文拒绝、凭据权限/前态/配置校验、预算撤档、回放编辑失效、文档示例实解析。Edge headless 9/9 模板和 29/29 最终 bundle 模拟宿主检查通过，包括预览不写、默认配置隔离、首轮 delta、冷档同轮更新、重抽前态、保存/清理异常中止、存档与凭据重载、容量显示。此次未执行真实 SillyTavern。
+
+**容量测量：** 10 个冷档共 50,000 字，首轮 full 后 199 个空 delta。原完整快照 JSON 为 30,413,477 字节；去重后连同 200 条测试读取凭据为 261,307 字节，1 份状态正文、200 份历史记录，减少约 99.14%。这是资料不变的合成场景；持续事实更新会增加完整正文，凭据元数据也会增长。实机耗时和磁盘保存能力仍待用户验收。
+
+**组件证据：** npm run build / npm run check 通过；离线 content 加末尾换行与 bundle 完全一致；与 0.7.1 对比，除 content/info 外稳定 ID、启用状态、按钮、data、export_with 等字段逐项相等。组件工具在 artifacts/component-v0.8.0 进行 plan/build/validate，仓库离线和预留远程组件另行校验。bundle SHA-256：`2fae633b72dc083a97d4fb063de8217e95b3b0e0849706d7e03c76a1e26d2c50`。
+
+**API 与指南：** code-quality-workflow / sillytavern-component-update，库快照 2026-08-18；读取 A0、组件合同，沿用已核对的 SillyTavern 1.18.0 stopGeneration 与事件源码（提交 51ad27fb86d39a3daca3adaa970375c9670c12df）。本地 helper variables.d.ts 证明同步 updater 的 updateVariablesWith 同步返回变量表；本轮仍用已有脚本/聊天变量接口，无新宿主接口。目标酒馆助手 4.9.5 沿用项目基线，未重新发现运行实例。读源、类型声明和模拟不能代替真实运行证据。
+
+**下一关：** [统一实机测试清单](../docs/0.8.0使用与统一验收.md)。真实流式/非流式请求取消、输入框恢复、模型复制 read、聊天导出再导入、长聊天响应时间由用户测试；published=false / realHostVerified=false，未设置 driver-accepted。完整工作区预算检查包含 0.7.1 累积改动、新增组件与文档、原有 release/，不以减少统计范围取得预算通过。
+
+最终 `git diff --check` 通过；全工作区 `check_patch_scope.py --preset staged-refactor --fail-on-warning` 返回超出默认 5 文件/200 行的告警，预算检查未通过。逐项复核改动均属于已授权批次、回归和交付记录，原有 release/ 仍未修改；该结果作为多阶段累计交付的预算例外保留，不宣称自动范围门通过。
+
+---
+
+# 0.7.1 状态准备失败中止生成 · 2026-09-08
+
+交付模式 component；用户授权第一项局部修复。Gate 为 Local Fix / Local Fix Only：只改变生成准备失败分支，不改变解析协议、聊天数据、历史回放和冷热策略。维护代码限 runtime.js、现有浏览器回归与构建版本，另有验证/交接记录和自动生成组件；不改旧扩展、旧发布目录或用户原有未跟踪 release/。功能与测试约 80 行，产物与记录另计；全工作区预算检查包含原有 release/，不将其计数误报为本次改动。回退为撤回本次源码/构建改动并继续使用保留的 0.7.0 组件，不回滚聊天数据。
+
+**API 证据（本机源码，未运行宿主）：** SillyTavern 1.18.0，提交 `51ad27fb86d39a3daca3adaa970375c9670c12df`。public/scripts/st-context.js 暴露 stopGeneration；public/script.js:5548 的实现中止当前 AbortController 并发出 GENERATION_STOPPED。GENERATION_AFTER_COMMANDS 在创建控制器之后触发；public/lib/eventemitter.js:148 会捕获监听器异常，因此只 throw 不能证明生成会中止。通过 owning helper script 的 window.parent.SillyTavern.getContext() 调用核心接口，无新增依赖。目标酒馆助手 4.9.5 沿用既有项目基线；本轮未重新发现其运行实例。该依据证明接口与源代码行为，不代替实际网络请求验收。
+
+**自动证据：** 67/67 Node 测试、9/9 模板浏览器、22/22 模拟宿主浏览器检查通过。新增 9 项浏览器检查覆盖五类失败（世界书读取/关联、预算、回档、注入）、正常恢复/旧注入清理、预览/暂停/特殊生成、过期聊天失败、停止接口失败。五类失败检查在修复前均失败；修复后宿主模拟 AbortSignal 被中止，消息与聊天状态不被改写。重启测试现在仍加载实际 bundle，避免后半段悄然切到源码。中止接口返回 false 或抛错时只提示手动停止，不声称已成功。
+
+`npm run build`、`npm run check`、`git diff --check` 通过；组件工具 plan/build/validate 使用 artifacts/component-v0.7.1 临时 staging。仓库离线/远程 JSON 均通过 helper-script 校验；离线 content 加结尾换行与 bundle 完全一致。与 0.7.0 对比，除 content/info 外所有组件元数据逐项相等。
+
+完整工作区 `check_patch_scope.py --preset local-fix --fail-on-warning` 返回预算告警，未通过默认 2 文件/80 行门槛；范围包含新版本组件、文档及用户已有 release/。人工逐项确认本次新增范围仅为上述单行为修复及其测试/交付记录；这是有说明的交付文件预算例外，不是自动预算通过，也未删除或隐藏原有未跟踪文件来取得通过。
+
+- bundle SHA-256：`eb7532906f851026d096f1179342a1d4583b94645fd3c43329c058b65bfe865e`。
+- 旧 0.7.0 离线组件 SHA-256：`366ed4eb89f1f736140d986267e43ba5e73bbfadff7eab372d40ddb7dbfaafba`；旧产物未修改。
+- 指南收据：code-quality-workflow / sillytavern-component-update，库快照 2026-08-18；读取 A0 与组件格式合同，沿用上轮 ST-B1 / MVU 概念导航。没有采用设计候选。
+
+**边界与下一关：** 未运行真实 SillyTavern、导入用户卡、调用模型、验证流式/非流式网络取消与宿主 UI 恢复；不保证其他插件主动发起的独立请求会停止。宿主中止能力缺失时需要用户手动停止。远程标签尚未发布，必须使用同版离线组件测试；published=false / realHostVerified=false，未设置 driver-accepted。续写与存储优化不在本次实施范围。独立测试聊天中验证失败不发出有效模型请求、修复后恢复正常生成，是下一验收关。
+
+---
+
 # 0.7.0 作者文档与版本分发验证 · 2026-09-07
 
 本次用户授权推送 main 与实现版本。新增 docs 导航、作者入门、条目创作指南、条目与连续更新示例、HTML 模板及常见问题。67 项 Node 测试通过（含教程 XML 连续回放与链接校验）；9 项模板浏览器和 13 项模拟宿主检查通过，作者模板栏目与渲染经过验证。程序 bundle 与上一轮验证保持一致。

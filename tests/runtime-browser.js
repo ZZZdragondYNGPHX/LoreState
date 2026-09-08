@@ -1,5 +1,6 @@
 import {startPrototype} from '../prototype/runtime.js';
 import {PROTO_KEY} from '../prototype/core.js';
+import {readSnapshots} from '../prototype/snapshot-store.js';
 const output=document.getElementById('result'),results=[];
 const html='<p data-lore-field="地点"></p>';
 const wrap=(text,mode='delta')=>`<LoreState version="3" mode="${mode}"><Shared><地点>${text}</地点></Shared></LoreState>`;
@@ -27,7 +28,7 @@ function button(label,root=document){return [...root.querySelectorAll('button')]
 async function click(label,root=document){const el=button(label,root);assert(el,'找不到 '+label);await el.onclick();await tick();}
 for(const m of list){const el=document.createElement('div');el.className='mes';el.setAttribute('mesid',m.message_id);document.getElementById('chat').append(el);}
 if(new URLSearchParams(location.search).has('bundle')){
-  const source=await(await fetch('../artifact/bundle.js?v=0.6.0')).text();Function(source)();
+  const source=await(await fetch('../artifact/bundle.js?v=0.8.0')).text();Function(source)();
 }else startPrototype(html);
 await tick();
 const manager=document.querySelector('[aria-label="LoreState 控制中心"]'),notice=document.querySelector('aside[role="alert"]');
@@ -88,7 +89,7 @@ await check('完整快照回档、原子写入、保留正文与撤销',async()=
   list.push({message_id:3,role:'assistant',message:wrap('未来地点'),swipe_id:0});await emit('MESSAGE_UPDATED');
   await click('LoreState');
   const select=manager.querySelector('[aria-label="历史状态快照"]');
-  const saved=variables.chat[PROTO_KEY].snapshots;assert(saved.length===2);
+  const saved=readSnapshots(variables.chat[PROTO_KEY]);assert(saved.length===2);
   select.value=saved.find(s=>s.floor===1).id;
   await click('预览快照回档');const original=JSON.stringify(list);await click('确认回档');
   assert(JSON.stringify(list)===original);assert(variables.chat.unrelated.keep);
@@ -103,10 +104,12 @@ await check('完整快照回档、原子写入、保留正文与撤销',async()=
   manager.close();
 });
 await check('重新启动保留快照和回档基线，不重复归档',async()=>{
-  const count=variables.chat[PROTO_KEY].snapshots.length;
+  const count=readSnapshots(variables.chat[PROTO_KEY]).length;
   variables.chat=JSON.parse(JSON.stringify(variables.chat));
-  window.dispatchEvent(new Event('pagehide'));handlers.clear();startPrototype(html);await tick();await tick();
-  assert(variables.chat[PROTO_KEY].snapshots.length===count);
+  window.dispatchEvent(new Event('pagehide'));handlers.clear();
+  if(new URLSearchParams(location.search).has('bundle'))Function(await(await fetch('../artifact/bundle.js?v=0.8.0')).text())();else startPrototype(html);
+  await tick();await tick();
+  assert(readSnapshots(variables.chat[PROTO_KEY]).length===count);
   assert(variables.chat[PROTO_KEY].current.state.shared.地点==='回档后的新地点');
 });
 await check('世界实体冷档展示与生成提示接入，活动事件始终注入且预取不改状态',async()=>{
@@ -124,5 +127,114 @@ await check('世界实体冷档展示与生成提示接入，活动事件始终�
   assert(prompt.includes('国库尚有三百金币'));assert(prompt.includes('最后事实更新楼层：1'));assert(JSON.stringify(variables.chat[PROTO_KEY].current.state)===before);
   for(const type of ['quiet','impersonate']){prompt='';for(const fn of handlers.get('GENERATION_AFTER_COMMANDS')??[])await fn(type,{},false);assert(prompt==='','特殊生成不应注入状态提示');}
   input.remove();
+});
+const generate=async(type='normal',dryRun=false)=>{for(const fn of handlers.get('GENERATION_AFTER_COMMANDS')??[])await fn(type,{},dryRun);};
+const originalContext=window.SillyTavern.getContext,originalWorldbook=window.getWorldbook;
+let controller,stops=0,injected=0,cleaned=0;
+window.SillyTavern.getContext=()=>({...originalContext(),stopGeneration(){stops++;controller.abort();return true;}});
+window.injectPrompts=()=>{injected++;return {uninject(){cleaned++;}};};
+for(const failure of ['世界书读取失败','世界书关联失效','提示预算超限','回档前缀失效','注入失败'])await check(`生成准备失败阻断请求：${failure}`,async()=>{
+  controller=new AbortController();const config=variables.script[PROTO_KEY],saved=variables.chat[PROTO_KEY],oldCheckpoint=saved.checkpoint,inject=window.injectPrompts;
+  const before=JSON.stringify(list),previousStops=stops,previousInjections=injected;
+  if(failure==='世界书读取失败')window.getWorldbook=async()=>{throw new Error('读取失败');};
+  if(failure==='世界书关联失效')window.getWorldbook=async()=>[];
+  if(failure==='提示预算超限')window.getWorldbook=async()=>[{uid:config.uid,content:'字'.repeat(24000)}];
+  if(failure==='回档前缀失效')saved.checkpoint={schema:JSON.stringify([config.schema,saved.start]),cutoff:1,prefix:'失效前缀'};
+  if(failure==='注入失败')window.injectPrompts=()=>{throw new Error('注入失败');};
+  try{
+    const stateBefore=JSON.stringify(variables.chat);await generate();
+    assert(controller.signal.aborted&&stops===previousStops+1,'失败必须中止宿主请求');
+    assert(injected===previousInjections,'失败不应留下新的状态注入');
+    assert(JSON.stringify(list)===before&&JSON.stringify(variables.chat)===stateBefore,'生成准备不能改写消息或状态');
+    assert(document.querySelector('aside[role="alert"]').textContent.includes('本轮生成已停止'));
+  }finally{window.getWorldbook=originalWorldbook;window.injectPrompts=inject;if(oldCheckpoint===undefined)delete saved.checkpoint;else saved.checkpoint=oldCheckpoint;}
+});
+await check('修正配置后正常生成恢复，旧注入被清理',async()=>{
+  controller=new AbortController();const count=stops,previousInjections=injected,previousCleaned=cleaned;
+  await generate();await generate();
+  assert(!controller.signal.aborted&&stops===count&&injected===previousInjections+2);
+  assert(cleaned>=previousCleaned+1,'不能叠加旧状态注入');
+});
+await check('预览、暂停和特殊生成不误触发中止',async()=>{
+  controller=new AbortController();const count=stops,previousInjections=injected,saved=variables.chat[PROTO_KEY];
+  window.getWorldbook=async()=>{throw new Error('不应读取');};
+  try{await generate('normal',true);await generate('quiet');await generate('impersonate');saved.enabled=false;await generate();}
+  finally{saved.enabled=true;window.getWorldbook=originalWorldbook;}
+  assert(stops===count&&injected===previousInjections&&!controller.signal.aborted);
+});
+await check('旧聊天异步失败不会中止新聊天生成',async()=>{
+  controller=new AbortController();const count=stops,id=chatId,ref=chatRef;let reject;
+  window.getWorldbook=()=>new Promise((_,fail)=>{reject=fail;});
+  const pending=generate();chatId='new-generation';chatRef=[];reject(new Error('旧聊天读取失败'));
+  try{await pending;assert(stops===count&&!controller.signal.aborted);}
+  finally{chatId=id;chatRef=ref;window.getWorldbook=originalWorldbook;}
+});
+await check('宿主中止失败时提示手动停止，不虚报成功',async()=>{
+  window.getWorldbook=async()=>{throw new Error('读取失败');};
+  const context=window.SillyTavern.getContext;
+  try{for(const stopGeneration of [()=>false,()=>{throw new Error('停止接口异常');}]){
+    window.SillyTavern.getContext=()=>({...originalContext(),stopGeneration});await generate();
+    const text=document.querySelector('aside[role="alert"]').textContent;
+    assert(text.includes('手动停止')&&!text.includes('本轮生成已停止'));
+  }}finally{window.SillyTavern.getContext=context;window.getWorldbook=originalWorldbook;}
+});
+await check('读取凭据保存失败时撤销注入并中止，清理异常也不能绕过中止',async()=>{
+  const write=window.updateVariablesWith,inject=window.injectPrompts;let removed=0;
+  window.injectPrompts=()=>({uninject(){removed++;}});controller=new AbortController();
+  window.updateVariablesWith=()=>{throw new Error('模拟保存失败');};
+  try{await generate();assert(controller.signal.aborted&&removed===1);}
+  finally{window.updateVariablesWith=write;}
+  window.injectPrompts=()=>({uninject(){throw new Error('模拟清理失败');}});controller=new AbortController();await generate();controller=new AbortController();await generate();assert(controller.signal.aborted);
+  window.injectPrompts=inject;
+});
+await check('同层续写在读取世界书前中止，不改变历史或状态',async()=>{
+  controller=new AbortController();const count=stops,before=JSON.stringify(variables.chat),history=JSON.stringify(list);let reads=0;
+  window.getWorldbook=async()=>{reads++;return [];};
+  try{await generate('continue');assert(controller.signal.aborted&&stops===count+1&&reads===0);assert(JSON.stringify(variables.chat)===before&&JSON.stringify(list)===history);}
+  finally{window.getWorldbook=originalWorldbook;}
+});
+let authorPromptText='';
+await check('作者初始档案预览、保存默认值与当前空聊天应用分离',async()=>{
+  variables.script[PROTO_KEY]={ready:true,book:'test-book',uid:1,schema:{shared:['地点'],entity:['状态']},html:'<p data-lore-field="地点"></p><article data-lore-entity><b data-lore-name></b><p data-lore-field="状态"></p></article>'};
+  variables.chat={[PROTO_KEY]:{enabled:true,start:1}};chatId='author-policy';chatRef=[];list=[{message_id:0,role:'assistant',message:'开场白',swipe_id:0}];await emit('CHAT_CHANGED');
+  await click('LoreState');document.querySelector('#ls-tab-settings').click();await tick();
+  const initial=document.querySelector('[aria-label="作者初始档案"]'),constraints=document.querySelector('[aria-label="字段约束"]');
+  initial.value='<LoreState version="3" mode="full"><Shared><地点>作者港口</地点></Shared><Entity id="P1" name="访客" identity="约定来访者" mode="full" presence="cold"><状态>等待</状态></Entity></LoreState>';
+  constraints.value='{"shared":{"地点":{"required":true}},"entity":{"状态":{"enum":["等待","完成","未知"]}}}';
+  await click('预览作者配置');assert(!variables.script[PROTO_KEY].authorPolicy&&!variables.chat[PROTO_KEY].policy.initial,'预览不可写入');
+  await click('保存为新聊天默认配置');assert(variables.script[PROTO_KEY].authorPolicy.initial.includes('作者港口'));assert(!variables.chat[PROTO_KEY].policy.initial,'保存默认值不能重解释当前聊天');
+  await click('应用到尚未开始的本聊天');assert(variables.chat[PROTO_KEY].current.state.shared.地点==='作者港口');assert(variables.chat[PROTO_KEY].current.state.entities.P1.confirmedFloor===null);
+});
+await check('初始冷档在首轮完整预取后可当轮更新并保存凭据',async()=>{
+  controller=new AbortController();window.injectPrompts=items=>{authorPromptText=items[0].content;return {uninject(){}};};
+  const input=document.createElement('textarea');input.id='send_textarea';input.value='与 P1 见面';document.body.append(input);
+  await generate();input.remove();assert(!controller.signal.aborted);assert(authorPromptText.includes('mode="delta"'));assert(authorPromptText.includes('当轮可更新的冷档编号：P1'));
+  const token=authorPromptText.match(/read="([a-f\d-]+)"/)[1];assert(variables.chat[PROTO_KEY].snapshotStore.receipts[token]);
+  list.push({message_id:1,role:'user',message:'与 P1 见面',swipe_id:0},{message_id:2,role:'assistant',swipe_id:0,message:`<LoreState version="3" mode="delta" read="${token}"><Entity id="P1" mode="delta"><状态>完成</状态></Entity></LoreState>`});
+  const el=document.createElement('div');el.className='mes';el.setAttribute('mesid','2');document.getElementById('chat').append(el);
+  await emit('GENERATION_ENDED');const saved=variables.chat[PROTO_KEY];assert(saved.current.errors.length===0);assert(saved.current.state.entities.P1.fields.状态==='完成');assert(saved.current.state.entities.P1.presence==='cold');assert(saved.current.state.entities.P1.confirmedFloor===2);
+  assert(!saved.snapshots&&readSnapshots(saved).length===1);assert(Object.keys(saved.snapshotStore.states).length===2,'凭据前态与更新后态各保留一份');
+});
+await check('生成重抽从更新前初值读取，字段约束阻止整批错误',async()=>{
+  controller=new AbortController();await generate('regenerate');assert(authorPromptText.includes('<状态>等待</状态>'),'重抽必须排除末尾更新后的状态');
+  const token=authorPromptText.match(/read="([a-f\d-]+)"/)[1],old=list[2];
+  list[2]={...old,swipe_id:0,message:`<LoreState version="3" mode="delta" read="${token}"><Shared><地点>不应提交</地点></Shared><Entity id="P1" mode="delta"><状态>非法值</状态></Entity></LoreState>`};
+  await emit('MESSAGE_EDITED');assert(variables.chat[PROTO_KEY].current.errors.length===1);assert(variables.chat[PROTO_KEY].current.state.shared.地点==='作者港口');
+  list[2]=old;await emit('MESSAGE_EDITED');assert(variables.chat[PROTO_KEY].current.errors.length===0);
+});
+await check('已有聊天拒绝应用新初值，新默认值只影响后续新聊天',async()=>{
+  await click('LoreState');const initial=document.querySelector('[aria-label="作者初始档案"]');initial.value=initial.value.replace('作者港口','新默认地点');
+  await click('预览作者配置');await click('保存为新聊天默认配置');const before=JSON.stringify(variables.chat[PROTO_KEY].policy);
+  await click('应用到尚未开始的本聊天');assert(JSON.stringify(variables.chat[PROTO_KEY].policy)===before);assert(document.querySelector('aside[role="alert"]').textContent.includes('已有状态历史'));
+  const prior=variables.chat;variables.chat={[PROTO_KEY]:{enabled:true,start:1}};chatId='new-author-default';chatRef=[];list=[{message_id:0,role:'assistant',message:'开场白',swipe_id:0}];await emit('CHAT_CHANGED');
+  assert(variables.chat[PROTO_KEY].current.state.shared.地点==='新默认地点');assert(prior[PROTO_KEY].current.state.shared.地点==='作者港口');
+});
+await check('去重存档与读取凭据序列化重载后仍能回放，容量可见',async()=>{
+  const input=document.createElement('textarea');input.id='send_textarea';input.value='P1';document.body.append(input);controller=new AbortController();await generate();input.remove();
+  const token=authorPromptText.match(/read="([a-f\d-]+)"/)[1];list.push({message_id:1,role:'assistant',swipe_id:0,message:`<LoreState version="3" mode="delta" read="${token}"><Entity id="P1" mode="delta"><状态>完成</状态></Entity></LoreState>`});await emit('GENERATION_ENDED');
+  const count=readSnapshots(variables.chat[PROTO_KEY]).length;variables.chat=JSON.parse(JSON.stringify(variables.chat));window.dispatchEvent(new Event('pagehide'));handlers.clear();
+  if(new URLSearchParams(location.search).has('bundle'))Function(await(await fetch('../artifact/bundle.js?v=0.8.0')).text())();else startPrototype(html);
+  await tick();await tick();assert(variables.chat[PROTO_KEY].current.state.entities.P1.fields.状态==='完成');assert(variables.chat[PROTO_KEY].current.errors.length===0);assert(readSnapshots(variables.chat[PROTO_KEY]).length===count);
+  await click('LoreState');assert(document.body.textContent.includes('MiB'));assert(document.body.textContent.includes('共用'));
 });
 output.textContent=results.join('\n');if(new URLSearchParams(location.search).has('preview'))await click('LoreState');window.testResults=results;

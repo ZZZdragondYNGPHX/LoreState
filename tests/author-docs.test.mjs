@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile,access} from 'node:fs/promises';
-import {applyState,playPrompt} from '../prototype/core.js';
+import {applyState,playPrompt,authorPolicy,initialResult} from '../prototype/core.js';
 const read=name=>readFile(new URL('../docs/'+name,import.meta.url),'utf8');
 
 test('作者教程的最小与旅行示例按顺序通过真实解析器且保留预期事实',async()=>{
@@ -20,10 +20,17 @@ test('作者教程的最小与旅行示例按顺序通过真实解析器且保�
 });
 
 test('作者文档的本地链接均指向实际文件',async()=>{
-  for(const name of ['README.md','作者入门.md','状态栏条目创作指南.md','状态栏条目与对话示例.md','HTML模板适配指南.md','常见问题与试卡清单.md']){
+  for(const name of ['README.md','作者入门.md','状态栏条目创作指南.md','状态栏条目与对话示例.md','HTML模板适配指南.md','常见问题与试卡清单.md','0.8.0使用与统一验收.md']){
     for(const match of (await read(name)).matchAll(/\]\(([^)]+)\)/g)){
       const target=match[1];if(target.startsWith('#')||/^https?:/.test(target))continue;
       await access(new URL('../docs/'+target,import.meta.url));
     }
   }
+});
+
+test('0.8.0 可复制初始档案与字段规则通过真实校验',async()=>{
+  const source=await read('0.8.0使用与统一验收.md'),schema={shared:['地点','时间'],entity:['状态']};
+  const initial=source.match(/```xml\s*\n([\s\S]*?)```/)[1],constraints=JSON.parse(source.match(/```json\s*\n([\s\S]*?)```/)[1]);
+  const configured={...schema,...authorPolicy(schema,initial,constraints)},result=initialResult(configured);
+  assert.equal(result.state.entities.P1.fields.状态,'等待');assert.equal(result.state.shared.时间,'第三天清晨');assert.ok(playPrompt('',configured,result).includes('mode="delta"'));
 });

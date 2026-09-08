@@ -1,6 +1,7 @@
 import { historyIdentity, snapshotSchema, collectSnapshots, replaySnapshots, planRestore } from './snapshots.js';
+import { emptySnapshotStore, readSnapshots, packSnapshots, addReadReceipt, readReceipt, snapshotStorageInfo } from './snapshot-store.js';
 import { createStateFrame, createStateWindow } from './state-frame.js';
-import { PROTO_KEY, TAG_PATTERN, replayState, playPrompt, authorPrompt, inspectFloor, proposeRepair } from './core.js';
+import { PROTO_KEY, TAG_PATTERN, replayState, playPrompt, preparePrompt, authorPrompt, authorPolicy, initialResult, inspectFloor, proposeRepair } from './core.js';
 import { inspectTemplate, renderTemplate } from './template.js';
 import { createControlCenter } from './control-center.js';
 import { listPresets, sameSchema, savePreset, deletePreset } from './presets.js';
@@ -11,7 +12,17 @@ export function startPrototype(defaultHtml) {
   if(doc.getElementById('lorestate-prototype-settings'))throw new Error('已有 LoreState 原型脚本运行，请勿重复启用');
   const settings=()=>getVariables({type:'script'})[PROTO_KEY]??{};
   const chatSettings=()=>getVariables({type:'chat'})[PROTO_KEY]??{};
-  const messages=()=>getChatMessages('0-{{lastMessageId}}',{include_swipes:true}).map(m=>({message_id:m.message_id,role:m.role,is_hidden:m.is_hidden,swipe_id:m.swipe_id??0,message:m.swipes?.[m.swipe_id??0]??m.message??''}));
+  const messages=()=>{const store=chatSettings().snapshotStore;return getChatMessages('0-{{lastMessageId}}',{include_swipes:true}).map(m=>{
+    const message=m.swipes?.[m.swipe_id??0]??m.message??'';
+    return {message_id:m.message_id,role:m.role,is_hidden:m.is_hidden,swipe_id:m.swipe_id??0,message,readReceipt:readReceipt(message,store)};
+  });};
+  const currentPolicy=(config=settings())=>chatSettings().policy??(messages().some(m=>m.message_id>=(chatSettings().start??1)&&m.role==='assistant'&&!m.is_hidden)?{}:config.authorPolicy??{});
+  const schemaFor=(config=settings())=>config.schema?{...config.schema,...currentPolicy(config)}:undefined;
+  function freezePolicy(){
+    if(chatSettings().policy!==undefined)return;
+    const policy=structuredClone(currentPolicy());
+    updateVariablesWith(v=>({...v,[PROTO_KEY]:{...v[PROTO_KEY],policy}}),{type:'chat'});
+  }
   const identity=()=>[ctx().chat,ctx().getCurrentChatId()];
   const matches=([chat,id])=>!closed&&ctx().chat===chat&&ctx().getCurrentChatId()===id;
   let closed=false,queue=Promise.resolve(),pending=false,uninject=null,view=null,renderKey='',menuObserver;
@@ -58,8 +69,8 @@ export function startPrototype(defaultHtml) {
     syncSnapshots();
     draft=null;repairBox.hidden=true;applyRepair.disabled=true;details.replaceChildren();diagnostics.replaceChildren();
     if(!floorSelect.value){summary.textContent='当前聊天没有可查看的 AI 楼层。';return;}
-    const config=settings();if(!config.schema){summary.textContent='请先配置并启用 LoreState。';return;}
-    const item=inspectFloor(messages(),config.schema,chatSettings().start??1,Number(floorSelect.value));
+    const config=settings();if(!schemaFor(config)){summary.textContent='请先配置并启用 LoreState。';return;}
+    const item=inspectFloor(messages(),schemaFor(config),chatSettings().start??1,Number(floorSelect.value));
     summary.textContent=item.excluded?'本层在初始化起点之前，未参与状态更新。':item.error?'本层更新失败，整轮未应用。':item.tainted?'本层已应用，但前面存在失败更新，状态有缺口。':'本层更新成功。';
     node('p',`最后连续正常楼层：${item.lastGoodFloor??'尚无'}；最后应用楼层：${item.lastAppliedFloor??'尚无'}`,details);
     summary.dataset.error=String(item.tainted);
@@ -104,18 +115,18 @@ export function startPrototype(defaultHtml) {
     if(chatSettings().checkpoint)throw new Error('回档期间请通过快照恢复状态；格式修复需先撤销回档');
     const repaired=proposeRepair(original.message);if(!repaired){summary.textContent='没有可自动修复的独立 &。请按诊断提示在酒馆编辑原始标签，再重新校验。';return;}
     const candidate=list.map(m=>m===original?{...m,message:repaired}:m),config=settings();
-    const check=inspectFloor(candidate,config.schema,chatSettings().start??1,floor);
+    const check=inspectFloor(candidate,schemaFor(config),chatSettings().start??1,floor);
     if(check.excluded)throw new Error('该楼层不参与状态更新，请使用酒馆原生编辑');
     if(check.error)throw new Error(`格式修复后仍未通过校验：${check.error.message}。请手动编辑原始标签。`);
     const branch=getChatMessages(floor,{include_swipes:true})[0];
-    draft={id,floor,original:original.message,repaired,swipe:branch.swipe_id,schema:JSON.stringify(config.schema),start:chatSettings().start??1,history:JSON.stringify(list)};
+    draft={id,floor,original:original.message,repaired,swipe:branch.swipe_id,schema:JSON.stringify(schemaFor(config)),start:chatSettings().start??1,history:JSON.stringify(list)};
     repairBox.value=repaired;repairBox.hidden=false;applyRepair.disabled=false;summary.textContent='预览仅把文字中的独立 & 转为 &amp;。本层校验通过；点击应用会修改当前选中回复，并保留一次撤销备份。';
   });
   const applyRepair=button('应用预览修复',manager,async()=>{
     if(hostGenerating())throw new Error('请等待本轮生成结束后再修复');
     const plan=draft;if(!plan)throw new Error('请先预览修复');
     const config=settings(),current=getChatMessages(plan.floor,{include_swipes:true})[0];
-    if(!matches(plan.id)||JSON.stringify(messages())!==plan.history||current?.swipe_id!==plan.swipe||JSON.stringify(config.schema)!==plan.schema||(chatSettings().start??1)!==plan.start)throw new Error('聊天、分支或配置已变化，请重新预览');
+    if(!matches(plan.id)||JSON.stringify(messages())!==plan.history||current?.swipe_id!==plan.swipe||JSON.stringify(schemaFor(config))!==plan.schema||(chatSettings().start??1)!==plan.start)throw new Error('聊天、分支或配置已变化，请重新预览');
     if(typeof setChatMessages!=='function')throw new Error('酒馆助手缺少消息写入能力，请手动编辑原文');
     updateVariablesWith(v=>({...v,[PROTO_KEY]:{...v[PROTO_KEY],repairBackup:{floor:plan.floor,swipe:plan.swipe,original:plan.original,repaired:plan.repaired}}}),{type:'chat'});
     await setChatMessages([{message_id:plan.floor,message:plan.repaired}],{refresh:'affected'});
@@ -140,23 +151,24 @@ export function startPrototype(defaultHtml) {
   snapshotPreview.style.cssText='white-space:pre-wrap;overflow-wrap:anywhere;max-height:360px;overflow:auto';
   function syncSnapshots(){
     const old=snapshotSelect.value, saved=chatSettings();snapshotSelect.replaceChildren();
-    for(const snap of [...(saved.snapshots??[])].reverse()){
+    for(const snap of [...readSnapshots(saved)].reverse()){
       const o=node('option',`第 ${snap.floor} 楼 · 回复 ${snap.swipe+1} · ${snap.result.tainted?'有缺口':'正常'} · ${snap.id.slice(0,8)}`,snapshotSelect);o.value=snap.id;
     }
     if([...snapshotSelect.options].some(o=>o.value===old))snapshotSelect.value=old;
-    snapshotInfo.textContent=`已保存 ${saved.snapshots?.length??0} 份完整状态快照，不自动裁剪。`+(saved.checkpoint?`当前从第 ${saved.checkpoint.floor} 楼快照继续。`:'')+' 回档保留所有正文，旧剧情仍在 AI 上下文中。';
+    const info=snapshotStorageInfo(saved);
+    snapshotInfo.textContent=`已保存 ${info.count} 份历史快照，共用 ${info.bodies} 份状态正文；存档约 ${(info.bytes/1024/1024).toFixed(2)} MiB，不自动裁剪。`+(info.bytes>20*1024*1024?' 存档较大，建议导出备份后分段聊天。':'')+(saved.checkpoint?`当前从第 ${saved.checkpoint.floor} 楼快照继续。`:'')+' 回档保留所有正文，旧剧情仍在 AI 上下文中。';
   }
   snapshotSelect.onchange=()=>{restoreDraft=null;snapshotPreview.textContent='';};
   button('预览快照回档',snapshotPanel,()=>{
     const saved=chatSettings(),config=settings(),list=messages();
-    const plan=planRestore(saved.snapshots?.find(s=>s.id===snapshotSelect.value),list,config.schema,saved.start??1,saved.checkpoint??null);
+    const plan=planRestore(readSnapshots(saved).find(s=>s.id===snapshotSelect.value),list,schemaFor(config),saved.start??1,saved.checkpoint??null);
     restoreDraft={...plan,identity:identity(),previous:JSON.stringify(saved.checkpoint??null)};
     snapshotPreview.textContent='确认后仅恢复以下完整状态，已有后续正文不再参与状态回放。\n'+JSON.stringify(plan.snapshot.result.state,null,2);
   });
   button('确认回档',snapshotPanel,async()=>{
     const plan=restoreDraft,saved=chatSettings();
     if(hostGenerating())throw new Error('请等待生成结束后回档');
-    if(!plan||!matches(plan.identity)||historyIdentity(messages())!==plan.undo.prefix||snapshotSchema(settings().schema,saved.start??1)!==plan.checkpoint.schema||JSON.stringify(saved.checkpoint??null)!==plan.previous)throw new Error('请重新预览快照，聊天或配置可能已变化');
+    if(!plan||!matches(plan.identity)||historyIdentity(messages())!==plan.undo.prefix||snapshotSchema(schemaFor(),saved.start??1)!==plan.checkpoint.schema||JSON.stringify(saved.checkpoint??null)!==plan.previous)throw new Error('请重新预览快照，聊天或配置可能已变化');
     updateVariablesWith(v=>({...v,[PROTO_KEY]:{...v[PROTO_KEY],checkpoint:plan.checkpoint,restoreUndo:plan.undo,current:structuredClone(plan.checkpoint.result)}}),{type:'chat'});
     restoreDraft=null;snapshotPreview.textContent='回档完成。正文保留，新回复从此状态继续。';renderKey='';await refresh();syncSnapshots();
   });
@@ -165,7 +177,7 @@ export function startPrototype(defaultHtml) {
     const saved=chatSettings(),undo=saved.restoreUndo;
     if(!undo)throw new Error('没有可撤销的回档');
     if(historyIdentity(messages())!==undo.prefix)throw new Error('回档后聊天已变化，请重新选择并预览快照，避免覆盖新进度');
-    const result=replaySnapshots(messages(),settings().schema,saved.start??1,undo.checkpoint);
+    const result=replaySnapshots(messages(),schemaFor(),saved.start??1,undo.checkpoint);
     updateVariablesWith(v=>{const next={...v[PROTO_KEY],checkpoint:undo.checkpoint,current:result};delete next.restoreUndo;return {...v,[PROTO_KEY]:next};},{type:'chat'});
     restoreDraft=null;snapshotPreview.textContent='已撤销上次回档。';renderKey='';await refresh();syncSnapshots();
   });
@@ -207,7 +219,7 @@ export function startPrototype(defaultHtml) {
     presetName.value=listPresets(settings()).find(p=>p.id===presetSelect.value)?.name??'我的样式';
   }
   function writeConfig(config){updateVariablesWith(v=>({...v,[PROTO_KEY]:config}),{type:'script'});}
-  function validateSkin(source){const parsed=inspectTemplate(source),config=settings();if(config.ready&&config.schema&&!sameSchema(parsed.schema,config.schema))throw new Error('预设的栏目必须与当前配置一致；可以调整顺序和外观，不能增删栏目');return parsed;}
+  function validateSkin(source){const parsed=inspectTemplate(source),config=settings();if(config.ready&&schemaFor(config)&&!sameSchema(parsed.schema,schemaFor(config)))throw new Error('预设的栏目必须与当前配置一致；可以调整顺序和外观，不能增删栏目');return parsed;}
   presetSelect.onchange=()=>{presetName.value=listPresets(settings()).find(p=>p.id===presetSelect.value)?.name??'';};
   button('另存为新预设',panel,()=>{validateSkin(html.value);const id=crypto.randomUUID();writeConfig(savePreset(settings(),presetName.value,html.value,id));syncPresets(id);report('已保存新预设。点击“应用所选预设”才会切换当前样式。');});
   button('覆盖所选预设',panel,async()=>{validateSkin(html.value);const config=settings(),id=presetSelect.value;if(!id)throw new Error('请先保存一份预设');let next=savePreset(config,presetName.value,html.value,id);if(id===(config.activePresetId??'default'))next={...next,html:html.value};writeConfig(next);syncPresets(id);renderKey='';await refresh();report('预设已更新，聊天状态保留。');});
@@ -215,11 +227,11 @@ export function startPrototype(defaultHtml) {
   button('删除所选预设',panel,()=>{writeConfig(deletePreset(settings(),presetSelect.value));syncPresets();report('已删除所选预设，当前展示保留。');});
   syncPresets();
   const preview=createStateFrame(doc,'LoreState HTML 预览');panel.append(preview);
-  const getResult=(config=settings(),list=messages())=>replaySnapshots(list,config.schema,chatSettings().start??1,chatSettings().checkpoint);
+  const getResult=(config=settings(),list=messages())=>replaySnapshots(list,schemaFor(config),chatSettings().start??1,chatSettings().checkpoint);
   button('预览 HTML（不保存）',panel,()=>{
     const {schema}=inspectTemplate(html.value),config=settings();
     const example=fields=>Object.fromEntries(fields.map(f=>[f,`${f}的示例文字`]));
-    const state=config.schema&&sameSchema(schema,config.schema)?getResult(config).state:null;
+    const state=schemaFor(config)&&sameSchema(schema,schemaFor(config))?getResult(config).state:null;
     preview.srcdoc=renderTemplate(html.value,state??{shared:example(schema.shared),entities:schema.entity.length?{P01:{id:'P01',name:'示例实体',identity:'实体识别信息',type:'通用',confirmed:null,presence:'active',fields:example(schema.entity)}}:{}});
     report(`公共栏目：${schema.shared.join('、')||'无'}；实体栏目：${schema.entity.join('、')||'无'}。预览未保存。`);
   });
@@ -251,12 +263,39 @@ export function startPrototype(defaultHtml) {
   button('查看下一轮状态提示',panel,async()=>{
     const config=settings(),source=await getWorldbook(config.book),entry=source.find(e=>e.uid===config.uid);
     if(!entry)throw new Error('保存的世界书关联已失效，请重新选择');
-    maker.value=playPrompt(entry.content,config.schema,getResult(config),doc.getElementById('send_textarea')?.value??'');report('此处仅预览提示，没有调用模型。');
+    maker.value=playPrompt(entry.content,schemaFor(config),getResult(config),doc.getElementById('send_textarea')?.value??'');report('此处仅预览提示，没有调用模型。');
   });
   button('暂停本聊天',panel,async()=>{
     updateVariablesWith(v=>({...v,[PROTO_KEY]:{...chatSettings(),enabled:false}}),{type:'chat'});uninject?.();uninject=null;stateWindow.close();view?.remove();report('已暂停；数据和 HTML 保留，标签过滤正则保留。');
   });
   button('重新读取当前聊天状态',panel,async()=>{renderKey='';await refresh();const result=getResult();report(result.errors.length?`重新校验后仍有 ${result.errors.length} 轮失败，请打开状态管理器。`:'全部参与回放的楼层已通过校验。');});
+  const authorHelp=node('p','可选：作者初始档案让首轮直接从确定事实增量更新；字段规则只做文字约束。保存的默认值用于新聊天，已有聊天保留自己的配置。');
+  const initialLabel=node('label','初始档案（完整 LoreState v3 标签；留空则首轮生成）'),initialEditor=node('textarea',undefined,initialLabel);initialEditor.rows=6;initialEditor.setAttribute('aria-label','作者初始档案');initialEditor.value=settings().authorPolicy?.initial??'';
+  const constraintLabel=node('label','字段规则（JSON；可留空）'),constraintEditor=node('textarea',undefined,constraintLabel);constraintEditor.rows=5;constraintEditor.setAttribute('aria-label','字段约束');constraintEditor.value=JSON.stringify(settings().authorPolicy?.constraints??{},null,2);constraintEditor.placeholder='{"shared":{"地点":{"required":true}},"entity":{}}';
+  const policyPreview=node('pre','尚未预览');policyPreview.style.cssText='white-space:pre-wrap;overflow-wrap:anywhere;max-height:280px;overflow:auto';let policyDraft=null;
+  button('生成初始档案模板',panel,()=>{
+    const schema=settings().schema;if(!schema)throw new Error('请先保存 HTML 栏目配置');
+    initialEditor.value='<LoreState version="3" mode="full">'+(schema.shared.length?'\n<Shared>\n'+schema.shared.map(f=>`<${f}>未知</${f}>`).join('\n')+'\n</Shared>':'')+'\n</LoreState>';policyDraft=null;
+  });
+  button('预览作者配置',panel,()=>{
+    if(constraintEditor.value.length>20000)throw new Error('字段规则最多 20000 字符');
+    const schema=settings().schema,policy=authorPolicy(schema,initialEditor.value,JSON.parse(constraintEditor.value.trim()||'{}'));
+    const result=initialResult({...schema,...policy});playPrompt('',{...schema,...policy},result);
+    policyDraft={policy,schema:JSON.stringify(schema),initial:initialEditor.value,constraints:constraintEditor.value};
+    policyPreview.textContent='校验通过，尚未保存。\n'+JSON.stringify({constraints:policy.constraints??{},initialState:result.state},null,2);
+  });
+  function checkedPolicy(){
+    if(hostGenerating())throw new Error('请等待生成结束后修改作者配置');
+    if(!policyDraft||policyDraft.schema!==JSON.stringify(settings().schema)||policyDraft.initial!==initialEditor.value||policyDraft.constraints!==constraintEditor.value)throw new Error('配置已变化，请重新预览');
+    return structuredClone(policyDraft.policy);
+  }
+  button('保存为新聊天默认配置',panel,()=>{const policy=checkedPolicy();freezePolicy();writeConfig({...settings(),authorPolicy:policy});report('已保存新聊天默认配置；当前聊天保持原配置。');});
+  button('应用到尚未开始的本聊天',panel,async()=>{
+    const policy=checkedPolicy(),saved=chatSettings();
+    if(!active(settings()))throw new Error('请先启用本聊天');
+    if(saved.checkpoint||readSnapshots(saved).length||messages().some(m=>m.message_id>=(saved.start??1)&&m.role==='assistant'&&!m.is_hidden))throw new Error('本聊天已有状态历史，请使用新聊天，避免重解释已有剧情');
+    updateVariablesWith(v=>({...v,[PROTO_KEY]:{...v[PROTO_KEY],policy}}),{type:'chat'});renderKey='';capturedKey='';await refresh();report('作者配置已用于本聊天，首轮将按初始档案更新。');
+  });
   async function loadSettings(){try{syncPresets();await loadBooks();}catch(e){fault(e,'设置读取失败');}}
   async function open(){if(!settings().ready){center.open('settings');await loadSettings();}else openManager();}
   const a=title=>actions.get(title);
@@ -266,7 +305,8 @@ export function startPrototype(defaultHtml) {
     ['1 · 世界书与规则',[bookLabel,entryLabel,a('刷新世界书列表'),ruleDisclosure]],
     ['2 · 外观模板',[makerDisclosure,htmlLabel,a('预览 HTML（不保存）'),preview,a('保存 HTML 并启用本聊天')]],
     ['3 · 外观预设',[presetLabel,a('应用所选预设'),nameLabel,a('另存为新预设'),a('覆盖所选预设'),a('删除所选预设')]],
-    ['4 · 聊天维护',[a('重新读取当前聊天状态'),a('暂停本聊天')]],
+    ['4 · 初始档案与字段约束',[authorHelp,initialLabel,a('生成初始档案模板'),constraintLabel,a('预览作者配置'),policyPreview,a('保存为新聊天默认配置'),a('应用到尚未开始的本聊天')]],
+    ['5 · 聊天维护',[a('重新读取当前聊天状态'),a('暂停本聊天')]],
   ]});
   const menu=node('div');menu.className='extension_container';
   const opener=button('LoreState',menu,open);opener.className='list-group-item';opener.style.cssText='background:transparent;color:inherit;border:0;text-align:left;width:100%;font:inherit';
@@ -289,7 +329,7 @@ export function startPrototype(defaultHtml) {
       const cold=Object.values(result.state.entities).filter(p=>p.presence==='cold');
       if(cold.length){const archive=node('details',undefined,view);node('summary',`本地冷档 · ${cold.length} 个实体`,archive);
         for(const p of cold){const item=node('details',undefined,archive);node('summary',`${p.type} · ${p.name} · ${p.id} · ${p.identity} · 最后确认：${p.confirmed??'剧情时间未知'} · 更新楼层：${p.confirmedFloor??'未知'}`,item);
-          let loaded=false;item.ontoggle=()=>{if(item.open&&!loaded){for(const f of config.schema.entity){node('h4',f,item);const text=node('p',p.fields[f]??'尚未记录',item);text.style.cssText='white-space:pre-wrap;overflow-wrap:anywhere';}loaded=true;}};
+          let loaded=false;item.ontoggle=()=>{if(item.open&&!loaded){for(const f of schemaFor(config).entity){node('h4',f,item);const text=node('p',p.fields[f]??'尚未记录',item);text.style.cssText='white-space:pre-wrap;overflow-wrap:anywhere';}loaded=true;}};
         }
       }
     }
@@ -297,15 +337,21 @@ export function startPrototype(defaultHtml) {
   }
   async function refresh(){
     if(hostGenerating())return;
-    const config=settings();if(!active(config)){view?.remove();return;}
-    const id=identity(),list=messages(),result=getResult(config,list);
+    const config=settings();if(!active(config)){view?.remove();return;}freezePolicy();
+    const id=identity(),list=messages(),schema=schemaFor(config),result=getResult(config,list);
     if(!matches(id))return;
     const old=chatSettings(),start=old.start??1,signature=historyIdentity(list),checkpoint=JSON.stringify(old.checkpoint??null);
-    const captureKey=JSON.stringify([ctx().getCurrentChatId(),signature,snapshotSchema(config.schema,start),checkpoint]);
-    const snapshots=capturedKey===captureKey?(old.snapshots??[]):await collectSnapshots(list,config.schema,start,old.checkpoint,old.snapshots??[]);
-    if(!matches(id)||hostGenerating()||historyIdentity(messages())!==signature||snapshotSchema(settings().schema,chatSettings().start??1)!==snapshotSchema(config.schema,start)||JSON.stringify(chatSettings().checkpoint??null)!==checkpoint)return;
+    const schemaKey=snapshotSchema(schema,start),captureKey=JSON.stringify([ctx().getCurrentChatId(),signature,schemaKey,checkpoint]);
+    const snapshots=capturedKey===captureKey?readSnapshots(old):await collectSnapshots(list,schema,start,old.checkpoint,readSnapshots(old));
+    const packed=capturedKey===captureKey&&old.snapshotStore?old.snapshotStore:await packSnapshots(snapshots,old.snapshotStore??emptySnapshotStore());
+    if(!matches(id)||hostGenerating()||historyIdentity(messages())!==signature||snapshotSchema(schemaFor(),chatSettings().start??1)!==schemaKey||JSON.stringify(chatSettings().checkpoint??null)!==checkpoint)return;
     const record={...result,lastFloor:list.at(-1)?.message_id??-1};
-    updateVariablesWith(v=>{const current=v[PROTO_KEY]??{},merged=new Map((current.snapshots??[]).map(s=>[s.id,s]));for(const snap of snapshots)merged.set(snap.id,snap);return {...v,[PROTO_KEY]:{...current,current:record,snapshots:[...merged.values()]}};},{type:'chat'});
+    updateVariablesWith(v=>{
+      const current=v[PROTO_KEY]??{},store=current.snapshotStore??emptySnapshotStore(),merged=new Map(store.snapshots.map(s=>[s.id,s]));
+      for(const snap of packed.snapshots)merged.set(snap.id,snap);
+      const next={...current,current:record,snapshotStore:{...packed,states:{...packed.states,...store.states},schemas:{...packed.schemas,...store.schemas},receipts:{...packed.receipts,...store.receipts},snapshots:[...merged.values()]}};
+      delete next.snapshots;return {...v,[PROTO_KEY]:next};
+    },{type:'chat'});
     capturedKey=captureKey;
     paint(result,list);
     const key=JSON.stringify(result.errors);
@@ -323,19 +369,39 @@ export function startPrototype(defaultHtml) {
     queue=queue.then(async()=>{pending=false;if(!matches(id)){if(!closed)schedule();return;}if(!hostGenerating()){await refresh();if(manager.open&&!draft)syncFloors();}}).catch(e=>fault(e,'状态刷新失败'));
   }
   async function beforeGenerate(type,_options,dryRun){
-    uninject?.();uninject=null;const config=settings();
-    if(dryRun||!active(config)||['quiet','impersonate'].includes(type))return;
-    const id=identity();
+    const config=settings(),id=identity(),prepare=!dryRun&&active(config)&&!['quiet','impersonate'].includes(type);
     try{
+      const cleanup=uninject;uninject=null;cleanup?.();
+      if(!prepare)return;
+      if(type==='continue')throw new Error('暂不支持同层续写，请发送下一轮或重抽，避免同一回复产生重复状态块');
+      freezePolicy();
       const source=await getWorldbook(config.book);if(!matches(id))return;
       const entry=source.find(e=>e.uid===config.uid);
       if(!entry)throw new Error('世界书关联失效，请在原型设置中重新选择');
       let list=messages();if(['swipe','regenerate'].includes(type)&&list.at(-1)?.role==='assistant')list=list.slice(0,-1);
       const result=getResult(config,list);
       const userText=type==='swipe'||type==='regenerate'?list.findLast(m=>m.role==='user')?.message??'':doc.getElementById('send_textarea')?.value||list.findLast(m=>m.role==='user')?.message||'';
-      const content=playPrompt(entry.content,config.schema,result,userText);
+      const schema=schemaFor(config),history=historyIdentity(messages()),token=crypto.randomUUID();
+      const {content,readIds}=preparePrompt(entry.content,schema,result,userText,token);
+      const old=chatSettings(),store=old.snapshotStore??await packSnapshots(readSnapshots(old));
+      const prepared=await addReadReceipt(store,token,result.state,schema,readIds);
+      if(!matches(id))return;
+      if(!active(settings())||historyIdentity(messages())!==history||JSON.stringify(schemaFor())!==JSON.stringify(schema)||JSON.stringify(chatSettings().checkpoint??null)!==JSON.stringify(old.checkpoint??null))throw new Error('生成准备期间历史、回档或配置变化，请重试');
       uninject=injectPrompts([{id:PROTO_KEY,position:'in_chat',depth:0,role:'system',content,should_scan:false}]).uninject;
-    }catch(e){fault(e,'状态提示未注入');}
+      updateVariablesWith(v=>{
+        const current=v[PROTO_KEY]??{},latest=current.snapshotStore??store;
+        return {...v,[PROTO_KEY]:{...current,snapshotStore:{...latest,states:{...latest.states,...prepared.states},schemas:{...latest.schemas,...prepared.schemas},receipts:{...latest.receipts,[token]:prepared.receipts[token]}}}};
+      },{type:'chat'});
+    }catch(e){
+      // ST catches event-listener errors; throwing here alone cannot cancel a request.
+      // A rejected read from a previous chat must not stop the current chat's generation.
+      if(!matches(id))return;
+      if(!prepare){fault(e,'状态提示清理失败');return;}
+      try{const cleanup=uninject;uninject=null;cleanup?.();}catch(cleanupError){console.warn('[LoreState] 提示清理失败',String(cleanupError?.message??cleanupError));}
+      let stopped=false;
+      try{stopped=ctx().stopGeneration();}catch(stopError){console.warn('[LoreState] 无法停止生成',String(stopError?.message??stopError));}
+      fault(e,stopped?'本轮生成已停止，状态提示未注入':'状态提示未注入，请立即手动停止生成');
+    }
   }
   for(const event of ['MESSAGE_RECEIVED','CHARACTER_MESSAGE_RENDERED','MESSAGE_UPDATED','MESSAGE_EDITED','MESSAGE_DELETED','MESSAGE_SWIPED','GENERATION_ENDED','MORE_MESSAGES_LOADED'])if(tavern_events[event])eventOn(tavern_events[event],schedule);
   if(tavern_events.GENERATION_STARTED)eventOn(tavern_events.GENERATION_STARTED,()=>{generating=true;});

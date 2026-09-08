@@ -1,5 +1,7 @@
 # LoreState
 
+**0.8.0 试用版**：[使用与统一验收](docs/0.8.0使用与统一验收.md) · [离线脚本](prototype/dist/v0.8.0/lorestate-script-offline.json)。加入同层续写拦截、快照正文去重、作者初始档案、字段约束与冷档读取凭据。远程入口固定 prototype-v0.8.0；实机测试由用户统一进行，升级前备份聊天。
+
 **0.7.0 / v3 世界状态冷热档**：人物、国家、组织、地点、物品与事件统一管理，支持有限关联召回和未完成事件保热。
 
 **作者请从 [作者文档目录](docs/README.md) 开始**，内含条目写法、可复制示例、配套 HTML 与试卡清单。[离线脚本](prototype/dist/v0.7.0/lorestate-script-offline.json) · [远程入口](prototype/dist/v0.7.0/lorestate-script.json)。本版使用新协议和新配置，不迁移旧状态；真实酒馆验收仍待完成。
