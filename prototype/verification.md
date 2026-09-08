@@ -1,3 +1,25 @@
+# 0.9.0 分发授权补充 · 2026-09-08
+
+用户授权推送 main 与本版固定标签 prototype-v0.9.0。构建收据改为 published=true，仅指 Git 版本分发；realHostVerified=false，不设置 driver-accepted。源码与 bundle 内容不变，前述自动测试及 SHA-256 仍适用。下方未发布描述为本地实施阶段记录。未进行真实酒馆安装或 GitHub Release 发布。
+
+---
+
+# 0.9.0 模块条目 · 本地自动验证（2026-09-08）
+
+- 授权：用户批准“模块格式规范＋分类栏目＋按需规则＋同轮统一更新”的第一版，并明确不需要兼容任何旧数据。交付模式 component；不做旧条目/旧配置转换和旧聊天迁移。
+- 实现：modules.js 解析显式分区；声明决定分类栏目；core 按 Entity.type 校验字段；模板分类分区与声明双向核对；运行时保存、预览、提示注入、冷档详情、预设与历史配置签名均接通模块结构。
+- 规则：目录与通用规则常驻；初轮加载全部规则；后续按完整档案类别和输入模块名加载；预算裁掉可选档案时重新计算规则和读取权限。未声明事件模块时不强制建事件。
+- 自动证据：npm test 89/89；npm run check 通过；npm run build 通过；node scripts/test-browser.mjs 模板 11/11，最终 bundle 模拟宿主 32/32。新模块测试覆盖分类建档、跨模块原子提交、非法字段整批拒绝、冷档凭据、规则选择、预算回退、模块变更中止及作者入口拒绝非模块格式。
+- 组件证据：TavernWeave component plan/build 在本地临时目录完成，无 full-card 输出；离线和远程入口 JSON 均通过 validate-importable-component；最终离线 content 与 artifact/bundle.js 字节一致，receipt SHA-256 一致；ID、enabled、button、data、export_with、name 与 0.8.0 组件一致。远程入口仅为未发布配置。
+- 原构建 SHA-256：2fae633b72dc083a97d4fb063de8217e95b3b0e0849706d7e03c76a1e26d2c50。
+- 本次 bundle SHA-256：376c33c5fe19b8c7a4a6b906e2a629820822987b5b60664e620de5518965ffea。
+- 资料收据：consult-tavernweave-library snapshot 2026-08-18；路线 tavern-card-builder、sillytavern-embedded-ui、sillytavern-component-update；实际读取 A0、B1、C2 的相关段及 variable-systems、component-update-contract、importable-formats。未采用设计候选，未引入新宿主 API、模型或外部依赖。运行目标沿用项目固定的酒馆助手 4.9.5 / SillyTavern 1.18.0，未声称已在该宿主运行。
+- 未测边界：真实酒馆导入、实际模型是否稳定遵守模块规则、跨模块语义一致性、真实重抽/删尾/回档及主题下展示。突然新建未选中的类别只按目录、通用规则和机器约束建档，详细规则下一轮生效；建档当轮必需限制需放通用规则/约束。实体栏目同名约束暂为全局，全部实体栏目去重后最多 32 个。
+- 交付：prototype/dist/v0.9.0/；[使用与试卡](../docs/0.9.0模块条目与试卡.md)、module-example.txt、module-example.html。published=false / realHostVerified=false，未设置 driver-accepted。未安装、调用模型、提交、推送或发布；已有 release/ 未触碰。
+- 下一关：用户在独立测试卡、新配置和新聊天中进行真实试卡；模型表现与最终验收由用户确认。
+
+---
+
 # 0.8.0 远端分发 · 2026-09-08
 
 用户已授权推送本次实现；分发目标为 origin/main 与固定标签 prototype-v0.8.0。构建 published=true 表示本次 Git 版本分发，realHostVerified=false 保留。实机测试仍由用户统一完成；未创建 GitHub Release，也未安装脚本。旧 release/ 为既有未跟踪材料，不包含在本次提交中。下方保留本地实施阶段的历史记录。

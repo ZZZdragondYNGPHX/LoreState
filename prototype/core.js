@@ -1,3 +1,4 @@
+import { parseModules, moduleShape, moduleSignature, entityFields, modulePrompt } from './modules.js';
 // Independent of SillyTavern: a small text-tag protocol for the author-flow prototype.
 export const PROTO_KEY = 'lorestate_world_v3';
 export const TAG_PATTERN = '<LoreState\\b[^>]*>[\\s\\S]*?<\\/LoreState>';
@@ -66,6 +67,12 @@ export function checkSchema(schema) {
   if(!schema || !Array.isArray(schema.shared) || !Array.isArray(schema.entity))throw new Error('需要公共栏目与实体栏目定义');
   for(const fields of [schema.shared,schema.entity])if(fields.length)checkFields(fields);
   if(!schema.shared.length&&!schema.entity.length)throw new Error('至少需要一个文字栏目');
+  if(schema.modules!==undefined){
+    if(!isRecord(schema.modules)||!Object.keys(schema.modules).length||Object.keys(schema.modules).length>16)throw new Error('模块结构无效');
+    for(const [type,fields] of Object.entries(schema.modules)){checkFields([type]);checkFields(fields);}
+    const union=[...new Set(Object.values(schema.modules).flat())];
+    if(union.length!==schema.entity.length||union.some(f=>!schema.entity.includes(f)))throw new Error('模块栏目与实体栏目不一致');
+  }
   if(schema.constraints!==undefined)checkConstraints(schema.constraints,schema);
   if(schema.initial!==undefined&&(typeof schema.initial!=='string'||schema.initial.length>200000))throw new Error('初始档案须为不超过 200000 字符的完整状态标签');
   return schema;
@@ -124,17 +131,19 @@ function applyStateInternal(previous,source,schema,floor,receipt){
     if(!m)throw new Error('实体更新格式无效');
     const attrs=entityAttributes(m[1]),body=m[2]??'',old=draft.entities[attrs.id];
     if(seen.has(attrs.id))throw new Error('同轮实体编号重复');seen.add(attrs.id);
-    const patch=parseFields(body,schema.entity,attrs.mode);
+    const fields=entityFields(schema,old?.type??attrs.type??'通用');
+    const constraints=Object.fromEntries(Object.entries(schema.constraints?.entity??{}).filter(([name])=>fields.includes(name)));
+    const patch=parseFields(body,fields,attrs.mode);
     if(!old){
       if(!attrs.name||!attrs.identity)throw new Error('新实体需要名称与稳定识别信息');
-      draft.entities[attrs.id]={id:attrs.id,name:attrs.name,identity:attrs.identity,type:attrs.type??'通用',links:attrs.links??[],pending:attrs.pending==='true',confirmed:attrs.confirmed??null,presence:attrs.presence??'active',fields:applyFields(null,patch,schema.entity,schema.constraints?.entity)};
+      draft.entities[attrs.id]={id:attrs.id,name:attrs.name,identity:attrs.identity,type:attrs.type??'通用',links:attrs.links??[],pending:attrs.pending==='true',confirmed:attrs.confirmed??null,presence:attrs.presence??'active',fields:applyFields(null,patch,fields,constraints)};
     }else{
       if(attrs.mode!=='delta')throw new Error('已有编号不能重新 full 覆盖');
       if(attrs.name!==undefined&&attrs.name!==old.name||attrs.identity!==undefined&&attrs.identity!==old.identity)throw new Error('已有编号的名称与识别信息不能被重新指派');
       if(attrs.type!==undefined&&attrs.type!==old.type)throw new Error('已有编号的类别不能重新指派');
       // A waking character's old memory must survive the turn that requests retrieval.
       if(old.presence==='cold'&&patch.changes.length&&!readIds.includes(attrs.id))throw new Error('冷档实体先用空 delta 唤醒，下一轮读取资料后再更新；当轮更新需有效读取凭据');
-      old.fields=applyFields(old.fields,patch,schema.entity,schema.constraints?.entity);old.presence=attrs.presence??old.presence;
+      old.fields=applyFields(old.fields,patch,fields,constraints);old.presence=attrs.presence??old.presence;
       if(attrs.links!==undefined)old.links=attrs.links;
       if(attrs.pending!==undefined)old.pending=attrs.pending==='true';
       if(attrs.confirmed!==undefined){if(!patch.changes.length)throw new Error('仅切换冷热不能刷新事实确认时间');old.confirmed=attrs.confirmed;}
@@ -224,22 +233,25 @@ export function projectEntities(state,text=''){
 }
 export function preparePrompt(rules,schema,result,text='',readToken=''){
   checkSchema(schema);const projection=projectEntities(result.state,text);
-  const compose=()=>`LoreState 统一文字状态 v3。作者规则：\n${rules}
+  const parsed=rules?parseModules(rules):null;
+  if(parsed){const declared=moduleShape(parsed);checkSchema(declared);if(moduleSignature(declared)!==moduleSignature(schema)||JSON.stringify(declared.shared)!==JSON.stringify(schema.shared))throw new Error('模块声明与保存配置不一致，请使用新配置和新聊天');}
+  else if(schema.modules&&rules)throw new Error('模块配置需要模块格式的状态栏条目');
+  const compose=()=>`LoreState 统一文字状态 v3。作者规则：\n${parsed?modulePrompt(parsed,projection,text,!result.state):rules}
 
 下面的协议负责状态存储，替代规则内旧的全量复述要求。正文末尾仅输出一个 <LoreState version="3" mode="${result.state?'delta':'full'}"${readToken?` read="${readToken}"`:''}>…</LoreState>。尚无状态时 full，已有状态（含作者初始档案）时 delta；没有变化输出空的 delta 外层。${readToken?'本轮 read 凭据必须原样复制，不沿用历史凭据。':''}
 ${schema.shared.length?`公共栏目：${schema.shared.join('、')}。写在 <Shared>栏目标签</Shared> 内。首次包含所有公共栏目，之后仅写变化栏目；没变化可省略整个 Shared。`:'本卡没有公共栏目，不输出 Shared。'}
-${schema.entity.length?`实体栏目：${schema.entity.join('、')}。新实体用 <Entity id="P01" name="名称" type="人物" identity="稳定识别信息" mode="full" presence="active">全部实体栏目标签</Entity>。已有编号用 <Entity id="P01" mode="delta">变化栏目</Entity>。编号稳定唯一，名称与识别信息不能重新指派；无实体时可省略 Entity。
+${schema.entity.length?`${schema.modules?'实体栏目按模块目录分别定义':'实体栏目：'+schema.entity.join('、')}。新实体用 <Entity id="P01" name="名称" type="人物" identity="稳定识别信息" mode="full" presence="active">所属类别全部栏目标签</Entity>。已有编号用 <Entity id="P01" mode="delta">变化栏目</Entity>。编号稳定唯一，名称与识别信息不能重新指派；无实体时可省略 Entity。
 实体离场用 <Entity id="P01" mode="delta" presence="cold"/>，回归用 <Entity id="P01" mode="delta" presence="active"/>。${readToken?'下方完整取回且列入当轮可更新清单的冷档允许本轮更新；未加载冷档先空 delta 唤醒，下一轮再改。':'冷档唤醒这一轮不修改栏目，下一轮读取完整资料后再改。'}出入场默认由剧情决定；不另建编号替代旧人。`:'本卡没有实体栏目，不输出 Entity。'}
-实体 type 可为人物、国家、组织、地点、物品、事件或作者指定类别，类别建立后不可改。所有实体共用上述文字栏目；类别差异写入栏目文字。Shared 是每轮提供的常驻状态，只按变化更新。
+实体 type 可为人物、国家、组织、地点、物品、事件或作者指定类别，类别建立后不可改。${schema.modules?'只允许模块目录中已声明的类别，各类别只使用自己的栏目。':'所有实体共用上述文字栏目；类别差异写入栏目文字。'}Shared 是每轮提供的常驻状态，只按变化更新。
 冷热表示加载状态。当前无关实体用 presence="cold" 完整保存在本地；不要删除内容来节省提示空间。links="P01 N01" 是最多 8 个已建档实体编号的有向关联，可用 links="" 清空；仅填写与当前行为有关的关联。本轮最多额外取回 8 个一跳关联，不递归。
-未完成承诺、追杀、战争影响、倒计时必须单独建 type="事件" pending="true" 的热档实体，links 指向参与者；即使参与者转冷，事件仍每轮提供。结束时 pending="false"，之后允许转冷。截止时间与触发条件写入事件栏目；每轮结合常驻时间检查，但不得自动假定已经完成。
+${schema.modules&&!Object.hasOwn(schema.modules,'事件')?'本卡未声明事件模块，不建立事件实体；相关事实记入已有类别适用栏目，不模拟到期结果。':'未完成承诺、追杀、战争影响、倒计时必须单独建 type="事件" pending="true" 的热档实体，links 指向参与者；即使参与者转冷，事件仍每轮提供。结束时 pending="false"，之后允许转冷。截止时间与触发条件写入事件栏目；每轮结合常驻时间检查，但不得自动假定已经完成。'}
 事实更新时可用 confirmed="剧情内已知时间" 记录最后确认时间。未记录时为未知；冷热切换和预取不刷新事实时间。重新取回后核对已知事件，缺少证据的离场变化保持未知，不模拟后台故事。索引可能省略部分冷档；精确编号或唯一名称仍可从完整本地档案召回。
 每项写成 <栏目名>完整新文字</栏目名>；一个栏目可包含多行文字，不嵌套标签。遗漏保留；明确移除栏目内容用 <栏目名 action="remove"/>。只更新剧情确实改变的内容；作者或剧情没有明确的初值写“未知”，不擅自补造事实。不要输出 HTML、JSON、脚本或其他状态块。文字中的 & 和 < 转义为 &amp; 和 &lt;，属性中的引号也要转义。
 ${schema.constraints?`字段约束：${JSON.stringify(schema.constraints)}。required 为必填，noRemove 禁止删除，enum 限定完整栏目文字取值；未知值也须在允许列表内。`:''}
 当前有效公共状态：
 ${result.state?stateXml(result.state.shared,schema.shared)||'无公共栏目':'尚未建立'}
 在场及本轮取回的完整实体资料：
-${projection.full.map(p=>`<Entity id="${p.id}" name="${xmlText(p.name)}" identity="${xmlText(p.identity)}" type="${xmlText(p.type)}" presence="${p.presence}" pending="${!!p.pending}" links="${(p.links??[]).join(' ')}" confirmed="${xmlText(p.confirmed??'未知')}">\n最后事实更新楼层：${p.confirmedFloor??'未知'}（只读来源信息，不输出为标签属性）。\n${stateXml(p.fields,schema.entity)}\n</Entity>`).join('\n')||'无'}
+${projection.full.map(p=>`<Entity id="${p.id}" name="${xmlText(p.name)}" identity="${xmlText(p.identity)}" type="${xmlText(p.type)}" presence="${p.presence}" pending="${!!p.pending}" links="${(p.links??[]).join(' ')}" confirmed="${xmlText(p.confirmed??'未知')}">\n最后事实更新楼层：${p.confirmedFloor??'未知'}（只读来源信息，不输出为标签属性）。\n${stateXml(p.fields,entityFields(schema,p.type))}\n</Entity>`).join('\n')||'无'}
 冷档实体索引：${JSON.stringify(projection.index)}\n索引未展示数量：${projection.omitted}；受关联数量或提示预算限制未加载：${projection.deferred.join('、')||'无'}。未加载不等于不存在。
 本轮按输入或关联取回：${projection.retrieved.join('、')||'无'}（不自动改变在场状态）。索引不是完整记忆，不可据此编造旧事实。临时召回未提供资料的实体时，本轮只登记唤醒，依赖旧事实的情节留到下一轮，不得声称已读冷档。
 ${readToken?`当轮可更新的冷档编号：${projection.retrieved.join('、')||'无'}；该权限只对应本次完整资料和 read 凭据。`:''}
@@ -256,10 +268,11 @@ ${result.errors.length?'之前存在未应用更新，以这份有效状态为�
 }
 export function playPrompt(rules,schema,result,text=''){return preparePrompt(rules,schema,result,text).content;}
 export function authorPrompt(rules){
+  const parsed=parseModules(rules);if(!parsed)throw new Error('请使用以【LoreState模块 v1】开头的模块条目，不转换旧条目');checkSchema(moduleShape(parsed));
   return `请根据以下状态栏条目制作 LoreState 的完整静态 HTML，只返回 HTML。
 公共栏目直接用 data-lore-field="栏目名"。需要逐个实体展示时，使用一个 data-lore-entity 容器（覆盖人物、国家、组织、地点、物品、事件等所有类别），容器内的 data-lore-field 属于实体栏目；脚本按在场实体自动复制容器，不需要写循环。公共和实体可以只选其一，也可以并用，无需选择脚本模式。
 实体容器内可用独立文字节点 data-lore-name、data-lore-id、data-lore-identity、data-lore-type、data-lore-confirmed 展示名称、编号、识别信息、类别、最后确认时间。每个绑定节点只放文字，不包含标题或其他绑定节点。实体容器只能有一个，不能嵌套。栏目名以文字或下划线开头，其后仅文字、数字、下划线或连字符，每类最多 32 个；栏目值为普通文字。
 示例：<section><h3>地点</h3><p data-lore-field="地点"></p></section><article data-lore-entity><h3 data-lore-name></h3><p data-lore-field="近况"></p></article>
 使用 CSS 和 details/summary，适应窄屏和长文字。CSS 放 style 中，不使用 JavaScript、事件属性、外部资源、表单、iframe、SVG 或网络请求。不使用 {{变量}}，也不要求 AI 每轮重写 HTML。内容由脚本以 textContent 填入。
-状态栏条目：\n${rules}`;
+模块条目存在时，栏目以声明为准，必须展示所有公共与各类栏目。在唯一实体容器内用 <section data-lore-module="人物"> 包住人物专用栏目，其他模块同理；这些分区不可嵌套。脚本只保留当前类别分区。不可增删或改名声明栏目。\n状态栏条目：\n${rules}`;
 }

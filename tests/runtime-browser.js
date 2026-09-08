@@ -237,4 +237,32 @@ await check('去重存档与读取凭据序列化重载后仍能回放，容量�
   await tick();await tick();assert(variables.chat[PROTO_KEY].current.state.entities.P1.fields.状态==='完成');assert(variables.chat[PROTO_KEY].current.errors.length===0);assert(readSnapshots(variables.chat[PROTO_KEY]).length===count);
   await click('LoreState');assert(document.body.textContent.includes('MiB'));assert(document.body.textContent.includes('共用'));
 });
+const moduleRules=await(await fetch('../prototype/module-example.txt')).text();
+const moduleHtml=await(await fetch('../prototype/module-example.html')).text();
+await check('新聊天从模块条目保存配置，预览分类实体并生成真实注入文本',async()=>{
+  variables.script={[PROTO_KEY]:{}};variables.chat={[PROTO_KEY]:{enabled:true,start:1}};chatId='module-chat';chatRef=[];list=[{message_id:0,role:'assistant',message:'开场白',swipe_id:0}];
+  window.getWorldbook=async()=>[{uid:1,name:'模块状态',content:moduleRules}];
+  await emit('CHAT_CHANGED');await click('LoreState');await click('刷新世界书列表');
+  document.querySelector('[aria-label="HTML 模板"]').value=moduleHtml;
+  await click('预览 HTML（不保存）');assert(!variables.script[PROTO_KEY].schema);
+  await click('保存 HTML 并启用本聊天');assert(variables.script[PROTO_KEY].schema.modules.人物.includes('身体状况'));
+  controller=new AbortController();await generate();assert(!controller.signal.aborted);assert(authorPromptText.includes('模块目录'));assert(authorPromptText.includes('受伤或恢复'));
+});
+await check('模块更新在最终 bundle 中跨类提交，下一轮省略无关详细规则',async()=>{
+  const token=authorPromptText.match(/read="([a-f\d-]+)"/)[1];
+  list.push({message_id:1,role:'assistant',swipe_id:0,message:`正文<LoreState version="3" mode="full" read="${token}"><Shared><地点>港口</地点><时间>清晨</时间></Shared><Entity id="P1" name="林舟" type="人物" identity="书商" mode="full"><身体状况>健康</身体状况><当前目标>返回书店</当前目标></Entity><Entity id="I1" name="铜钥匙" type="物品" identity="仓库钥匙" mode="full"><持有者>守卫</持有者><完好状况>完好</完好状况></Entity></LoreState>`});
+  const el=document.createElement('div');el.className='mes';el.setAttribute('mesid','1');document.getElementById('chat').append(el);
+  await emit('GENERATION_ENDED');assert(variables.chat[PROTO_KEY].current.errors.length===0);assert(variables.chat[PROTO_KEY].current.state.entities.I1.fields.持有者==='守卫');
+  controller=new AbortController();await generate();assert(!controller.signal.aborted);assert(authorPromptText.includes('交付、拾取或遗失'));assert(!authorPromptText.includes('发生明确政治事件'));assert(authorPromptText.includes('国家：政局、外交'));
+  const next=authorPromptText.match(/read="([a-f\d-]+)"/)[1];
+  list.push({message_id:2,role:'assistant',swipe_id:0,message:`<LoreState version="3" mode="delta" read="${next}"><Entity id="P1" mode="delta"><当前目标>取回钥匙</当前目标></Entity><Entity id="I1" mode="delta"><持有者>林舟</持有者></Entity></LoreState>`});
+  const last=document.createElement('div');last.className='mes';last.setAttribute('mesid','2');document.getElementById('chat').append(last);
+  await emit('GENERATION_ENDED');assert(variables.chat[PROTO_KEY].current.errors.length===0);assert(variables.chat[PROTO_KEY].current.state.entities.I1.fields.持有者==='林舟');assert(variables.chat[PROTO_KEY].current.state.entities.P1.fields.当前目标==='取回钥匙');
+});
+await check('模块归属变化在请求前中止，状态与快照不被重解释',async()=>{
+  const before=JSON.stringify(variables.chat[PROTO_KEY]);
+  window.getWorldbook=async()=>[{uid:1,name:'模块状态',content:moduleRules.replace('栏目：政局、外交','栏目：身体状况、外交')}];
+  controller=new AbortController();await generate();assert(controller.signal.aborted);assert(JSON.stringify(variables.chat[PROTO_KEY])===before);
+  window.getWorldbook=originalWorldbook;
+});
 output.textContent=results.join('\n');if(new URLSearchParams(location.search).has('preview'))await click('LoreState');window.testResults=results;

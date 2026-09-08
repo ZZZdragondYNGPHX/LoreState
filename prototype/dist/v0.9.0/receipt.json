@@ -1,0 +1,23 @@
+{
+  "version": "0.9.0",
+  "mode": "component",
+  "published": true,
+  "realHostVerified": false,
+  "scriptId": "0aa89d30-099d-4cf3-8cfb-d367490ec067",
+  "sha256": "376c33c5fe19b8c7a4a6b906e2a629820822987b5b60664e620de5518965ffea",
+  "runtime": {
+    "sillytavern": "1.18.0",
+    "tavernHelper": "4.9.5"
+  },
+  "runtimeDependencies": [
+    "Tavern Helper"
+  ],
+  "remoteLoaders": [
+    {
+      "url": "https://testingcf.jsdelivr.net/gh/ZZZdragondYNGPHX/LoreState@prototype-v0.9.0/artifact/bundle.js",
+      "ref": "prototype-v0.9.0"
+    }
+  ],
+  "entry": "lorestate-script-offline.json",
+  "remoteEntry": "lorestate-script.json"
+}

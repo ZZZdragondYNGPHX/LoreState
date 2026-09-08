@@ -1,3 +1,4 @@
+import { moduleSignature } from './modules.js';
 // Presets contain presentation only; rules and chat state are never copied here.
 export function listPresets(config) {
   if(Array.isArray(config.presets)&&config.presets.length)return config.presets.map(p=>({...p}));
@@ -18,4 +19,4 @@ export function deletePreset(config,id){
   return {...config,presets:listPresets(config).filter(p=>p.id!==id)};
 }
 
-export function sameSchema(a,b){return !!a&&!!b&&sameFields(a.shared,b.shared)&&sameFields(a.entity,b.entity);}
+export function sameSchema(a,b){return !!a&&!!b&&sameFields(a.shared,b.shared)&&sameFields(a.entity,b.entity)&&moduleSignature(a)===moduleSignature(b);}

@@ -1,8 +1,9 @@
+import { entityFields } from './modules.js';
 import { historyIdentity, snapshotSchema, collectSnapshots, replaySnapshots, planRestore } from './snapshots.js';
 import { emptySnapshotStore, readSnapshots, packSnapshots, addReadReceipt, readReceipt, snapshotStorageInfo } from './snapshot-store.js';
 import { createStateFrame, createStateWindow } from './state-frame.js';
 import { PROTO_KEY, TAG_PATTERN, replayState, playPrompt, preparePrompt, authorPrompt, authorPolicy, initialResult, inspectFloor, proposeRepair } from './core.js';
-import { inspectTemplate, renderTemplate } from './template.js';
+import { renderTemplate, templateSchema, validateTemplateSchema } from './template.js';
 import { createControlCenter } from './control-center.js';
 import { listPresets, sameSchema, savePreset, deletePreset } from './presets.js';
 
@@ -219,7 +220,7 @@ export function startPrototype(defaultHtml) {
     presetName.value=listPresets(settings()).find(p=>p.id===presetSelect.value)?.name??'我的样式';
   }
   function writeConfig(config){updateVariablesWith(v=>({...v,[PROTO_KEY]:config}),{type:'script'});}
-  function validateSkin(source){const parsed=inspectTemplate(source),config=settings();if(config.ready&&schemaFor(config)&&!sameSchema(parsed.schema,schemaFor(config)))throw new Error('预设的栏目必须与当前配置一致；可以调整顺序和外观，不能增删栏目');return parsed;}
+  function validateSkin(source){const config=settings(),parsed={schema:validateTemplateSchema(source,config.schema??null)};if(config.ready&&schemaFor(config)&&!sameSchema(parsed.schema,schemaFor(config)))throw new Error('预设的栏目必须与当前配置一致；可以调整顺序和外观，不能增删栏目');return parsed;}
   presetSelect.onchange=()=>{presetName.value=listPresets(settings()).find(p=>p.id===presetSelect.value)?.name??'';};
   button('另存为新预设',panel,()=>{validateSkin(html.value);const id=crypto.randomUUID();writeConfig(savePreset(settings(),presetName.value,html.value,id));syncPresets(id);report('已保存新预设。点击“应用所选预设”才会切换当前样式。');});
   button('覆盖所选预设',panel,async()=>{validateSkin(html.value);const config=settings(),id=presetSelect.value;if(!id)throw new Error('请先保存一份预设');let next=savePreset(config,presetName.value,html.value,id);if(id===(config.activePresetId??'default'))next={...next,html:html.value};writeConfig(next);syncPresets(id);renderKey='';await refresh();report('预设已更新，聊天状态保留。');});
@@ -229,10 +230,10 @@ export function startPrototype(defaultHtml) {
   const preview=createStateFrame(doc,'LoreState HTML 预览');panel.append(preview);
   const getResult=(config=settings(),list=messages())=>replaySnapshots(list,schemaFor(config),chatSettings().start??1,chatSettings().checkpoint);
   button('预览 HTML（不保存）',panel,()=>{
-    const {schema}=inspectTemplate(html.value),config=settings();
+    const schema=templateSchema(html.value,selectedEntry()?.content??''),config=settings();
     const example=fields=>Object.fromEntries(fields.map(f=>[f,`${f}的示例文字`]));
     const state=schemaFor(config)&&sameSchema(schema,schemaFor(config))?getResult(config).state:null;
-    preview.srcdoc=renderTemplate(html.value,state??{shared:example(schema.shared),entities:schema.entity.length?{P01:{id:'P01',name:'示例实体',identity:'实体识别信息',type:'通用',confirmed:null,presence:'active',fields:example(schema.entity)}}:{}});
+    preview.srcdoc=renderTemplate(html.value,state??{shared:example(schema.shared),entities:schema.modules?Object.fromEntries(Object.entries(schema.modules).map(([type,fields],i)=>['X'+i,{id:'X'+i,name:type+'示例',identity:'实体识别信息',type,confirmed:null,presence:'active',fields:example(fields)}])):schema.entity.length?{P01:{id:'P01',name:'示例实体',identity:'实体识别信息',type:'通用',confirmed:null,presence:'active',fields:example(schema.entity)}}:{}});
     report(`公共栏目：${schema.shared.join('、')||'无'}；实体栏目：${schema.entity.join('、')||'无'}。预览未保存。`);
   });
   const regexId='lorestate-text-prototype-tags-v1';
@@ -247,7 +248,7 @@ export function startPrototype(defaultHtml) {
     if(!entry?.content?.trim())throw new Error('请先选中状态栏条目');
     if(!ctx().getCurrentChatId()||!messages().length)throw new Error('请先打开角色聊天');
     if(ctx().chatMetadata?.wishnote_v1?.enabled||ctx().chatMetadata?.lorestate_v1?.enabled)throw new Error('本聊天启用了旧扩展状态，请先停用旧版或使用新测试聊天');
-    const {schema}=inspectTemplate(html.value),previous=settings();
+    const schema=templateSchema(html.value,entry.content),previous=settings();
     if(previous.ready&&previous.schema&&!sameSchema(schema,previous.schema))throw new Error('已有配置不支持改变栏目，以免影响其他聊天。新栏目请使用独立角色脚本。');
     const activePresetId=previous.activePresetId??'default';
     const activeName=listPresets(previous).find(p=>p.id===activePresetId)?.name??'默认样式';
@@ -329,7 +330,7 @@ export function startPrototype(defaultHtml) {
       const cold=Object.values(result.state.entities).filter(p=>p.presence==='cold');
       if(cold.length){const archive=node('details',undefined,view);node('summary',`本地冷档 · ${cold.length} 个实体`,archive);
         for(const p of cold){const item=node('details',undefined,archive);node('summary',`${p.type} · ${p.name} · ${p.id} · ${p.identity} · 最后确认：${p.confirmed??'剧情时间未知'} · 更新楼层：${p.confirmedFloor??'未知'}`,item);
-          let loaded=false;item.ontoggle=()=>{if(item.open&&!loaded){for(const f of schemaFor(config).entity){node('h4',f,item);const text=node('p',p.fields[f]??'尚未记录',item);text.style.cssText='white-space:pre-wrap;overflow-wrap:anywhere';}loaded=true;}};
+          let loaded=false;item.ontoggle=()=>{if(item.open&&!loaded){for(const f of entityFields(schemaFor(config),p.type)){node('h4',f,item);const text=node('p',p.fields[f]??'尚未记录',item);text.style.cssText='white-space:pre-wrap;overflow-wrap:anywhere';}loaded=true;}};
         }
       }
     }

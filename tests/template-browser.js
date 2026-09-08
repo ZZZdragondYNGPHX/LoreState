@@ -28,5 +28,19 @@ try{
   assert(result.body.textContent.includes('林舟'));assert(result.body.textContent.includes('备货'));
   results.push('PASS 作者文档完整模板的栏目与实际绑定');
 }catch(e){results.push('FAIL 作者文档模板: '+e.message);}
+const {templateSchema,validateTemplateSchema}=await import('../prototype/template.js');
+const moduleHtml=await(await fetch('../prototype/module-example.html')).text();
+const moduleRules=await(await fetch('../prototype/module-example.txt')).text();
+check('模块示例按声明建模，各类别仅渲染自己的栏目',()=>{
+  const schema=templateSchema(moduleHtml,moduleRules);assert(schema.modules.人物.includes('身体状况'));
+  const source=renderTemplate(moduleHtml,{shared:{地点:'港口',时间:'清晨'},entities:{P1:{type:'人物',name:'林舟',presence:'active',fields:{身体状况:'健康',当前目标:'回家'}},I1:{type:'物品',name:'钥匙',presence:'active',fields:{持有者:'守卫',完好状况:'完好'}}}});
+  const doc=new DOMParser().parseFromString(source,'text/html'),regions=[...doc.querySelectorAll('[data-lore-entity]')];
+  assert(regions.length===2);assert(regions[0].textContent.includes('健康'));assert(!regions[0].textContent.includes('持有者'));assert(!regions[1].textContent.includes('身体状况'));assert(regions[1].textContent.includes('守卫'));
+  assert(regions[0].querySelectorAll('[data-lore-module]').length===1);
+});
+check('模板拒绝错类绑定、缺失栏目、嵌套分区和错误模块',()=>{
+  const schema=templateSchema(moduleHtml,moduleRules);
+  for(const source of [moduleHtml.replace('data-lore-module="人物"','data-lore-module="物品"'),moduleHtml.replace('data-lore-field="身体状况"','data-lore-field="完好状况"'),moduleHtml.replace('data-lore-module="人物"','data-lore-module="未知"'),moduleHtml.replace('<dl>','<dl data-lore-module="人物">')]){let failed=false;try{validateTemplateSchema(source,schema);}catch{failed=true;}assert(failed);}
+});
 document.getElementById('result').textContent=results.join('\n');
 const frame=document.createElement('iframe');frame.title='混合状态预览';frame.setAttribute('sandbox','');frame.style='width:320px;height:360px';frame.srcdoc=rendered;document.getElementById('preview').append(frame);

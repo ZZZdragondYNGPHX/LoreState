@@ -1,0 +1,22 @@
+{
+  "type": "script",
+  "enabled": true,
+  "name": "LoreState · 文字状态原型",
+  "id": "0aa89d30-099d-4cf3-8cfb-d367490ec067",
+  "content": "import 'https://testingcf.jsdelivr.net/gh/ZZZdragondYNGPHX/LoreState@prototype-v0.9.0/artifact/bundle.js';",
+  "info": "LoreState 0.9.0 试用版；模块条目、分类栏目与按需规则注入；正文后统一更新。保留 v3 世界实体冷热档、有限关联召回与活动事件；本版待真实酒馆验收，目标酒馆助手 4.9.5 / SillyTavern 1.18.0。首次 full，后续 delta。不迁移旧状态；模块结构请用新配置与新聊天，不提供旧数据迁移。 远程入口固定 prototype-v0.9.0；网络不可用时使用同版本离线组件。",
+  "button": {
+    "enabled": true,
+    "buttons": [
+      {
+        "name": "LoreState 设置",
+        "visible": false
+      }
+    ]
+  },
+  "data": {},
+  "export_with": {
+    "data": true,
+    "button": true
+  }
+}
