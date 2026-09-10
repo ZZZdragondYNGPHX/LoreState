@@ -182,7 +182,8 @@ export function repairHint(message){
 }
 export function replayState(messages,schema,start=1,seed=null){
   checkSchema(schema);seed??=initialResult(schema);let state=structuredClone(seed.state),lastGoodFloor=seed.lastGoodFloor??null,lastAppliedFloor=seed.lastAppliedFloor??null;const errors=structuredClone(seed.errors??[]);
-  for(const m of messages){if(m.message_id<start||m.role!=='assistant'||m.is_hidden)continue;
+  // Prompt visibility does not remove a message from the local state ledger.
+  for(const m of messages){if(m.message_id<start||m.role!=='assistant')continue;
     try{state=applyState(state,m.message,schema,m.message_id,m.readReceipt);lastAppliedFloor=m.message_id;if(!errors.length)lastGoodFloor=m.message_id;}
     catch(e){errors.push({floor:m.message_id,message:e.message,scope:e.scope??'LoreState',line:e.line??null,column:e.column??null,hint:repairHint(e.message)});}}
   return {state,errors,lastGoodFloor,lastAppliedFloor,tainted:errors.length>0};
@@ -198,8 +199,8 @@ export function stateChanges(before,after){
   for(const scope of ['shared','entities'])visit(before?.[scope],after?.[scope],[scope]);return changes;
 }
 export function inspectFloor(messages,schema,start,floor){
-  const target=messages.find(m=>m.message_id===floor&&m.role==='assistant'&&!m.is_hidden);
-  if(!target)throw new Error('目标 AI 楼层不存在或已隐藏，请刷新楼层列表');
+  const target=messages.find(m=>m.message_id===floor&&m.role==='assistant');
+  if(!target)throw new Error('目标 AI 楼层不存在，请刷新楼层列表');
   const before=replayState(messages.filter(m=>m.message_id<floor),schema,start);
   const result=replayState(messages.filter(m=>m.message_id<=floor),schema,start);
   return {...result,floor,source:target.message,changes:stateChanges(before.state,result.state),error:result.errors.find(e=>e.floor===floor)??null,excluded:floor<start};

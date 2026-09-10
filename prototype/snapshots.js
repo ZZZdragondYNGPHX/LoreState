@@ -1,7 +1,12 @@
 import { replayState } from './core.js';
 
 export function historyIdentity(messages){
-  return JSON.stringify(messages.map(m=>[m.message_id,m.role,!!m.is_hidden,m.swipe_id??0,m.message]));
+  // Keep the tuple shape for stored prefixes, but visibility is not state history.
+  return JSON.stringify(messages.map(m=>[m.message_id,m.role,false,m.swipe_id??0,m.message]));
+}
+export function historyMatches(messages,prefix){
+  try{return historyIdentity(messages)===JSON.stringify(JSON.parse(prefix).map(row=>row.map((value,i)=>i===2?false:value)));}
+  catch{return false;}
 }
 export function snapshotSchema(schema,start){return JSON.stringify([schema,start]);}
 export async function snapshotHash(text){
@@ -11,7 +16,7 @@ export async function snapshotHash(text){
 export function checkpointSeed(checkpoint,schema,start,messages){
   if(!checkpoint)return null;
   if(checkpoint.schema!==snapshotSchema(schema,start))throw new Error('回档后的栏目或初始化起点发生变化，请先撤销回档');
-  if(historyIdentity(messages.filter(m=>m.message_id<=checkpoint.cutoff))!==checkpoint.prefix)throw new Error('回档前保留的消息或回复分支已变化。为避免错用状态，已停止回放；请重新预览一个快照');
+  if(!historyMatches(messages.filter(m=>m.message_id<=checkpoint.cutoff),checkpoint.prefix))throw new Error('回档前保留的消息或回复分支已变化。为避免错用状态，已停止回放；请重新预览一个快照');
   return structuredClone(checkpoint.result);
 }
 export function replaySnapshots(messages,schema,start,checkpoint){
@@ -24,7 +29,7 @@ export async function collectSnapshots(messages,schema,start,checkpoint,existing
   for(const m of messages){
     chain=await snapshotHash(chain+historyIdentity([m]));
     if(checkpoint&&m.message_id<=checkpoint.cutoff)continue;
-    if(m.message_id<start||m.role!=='assistant'||m.is_hidden)continue;
+    if(m.message_id<start||m.role!=='assistant')continue;
     result=replayState([m],schema,start,result);
     if(!known.has(chain)){
       added.push({id:chain,floor:m.message_id,swipe:m.swipe_id??0,schema:schemaKey,createdAt:new Date().toISOString(),result:structuredClone(result)});

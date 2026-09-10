@@ -1,5 +1,5 @@
 import { entityFields } from './modules.js';
-import { historyIdentity, snapshotSchema, collectSnapshots, replaySnapshots, planRestore } from './snapshots.js';
+import { historyIdentity, historyMatches, snapshotSchema, collectSnapshots, replaySnapshots, planRestore } from './snapshots.js';
 import { emptySnapshotStore, readSnapshots, packSnapshots, addReadReceipt, readReceipt, snapshotStorageInfo } from './snapshot-store.js';
 import { createStateFrame, createStateWindow } from './state-frame.js';
 import { PROTO_KEY, TAG_PATTERN, replayState, playPrompt, preparePrompt, authorPrompt, authorPolicy, initialResult, inspectFloor, proposeRepair } from './core.js';
@@ -17,7 +17,7 @@ export function startPrototype(defaultHtml) {
     const message=m.swipes?.[m.swipe_id??0]??m.message??'';
     return {message_id:m.message_id,role:m.role,is_hidden:m.is_hidden,swipe_id:m.swipe_id??0,message,readReceipt:readReceipt(message,store)};
   });};
-  const currentPolicy=(config=settings())=>chatSettings().policy??(messages().some(m=>m.message_id>=(chatSettings().start??1)&&m.role==='assistant'&&!m.is_hidden)?{}:config.authorPolicy??{});
+  const currentPolicy=(config=settings())=>chatSettings().policy??(messages().some(m=>m.message_id>=(chatSettings().start??1)&&m.role==='assistant')?{}:config.authorPolicy??{});
   const schemaFor=(config=settings())=>config.schema?{...config.schema,...currentPolicy(config)}:undefined;
   function freezePolicy(){
     if(chatSettings().policy!==undefined)return;
@@ -51,7 +51,7 @@ export function startPrototype(defaultHtml) {
   const summary=node('p','',manager);summary.setAttribute('role','status');
   const details=node('div',undefined,manager),diagnostics=node('div',undefined,manager);
   const repairBox=node('textarea',undefined,manager);repairBox.readOnly=true;repairBox.hidden=true;repairBox.setAttribute('aria-label','修复后的消息预览');repairBox.style.cssText='width:100%;height:180px';
-  function floorList(){return messages().filter(m=>m.role==='assistant'&&!m.is_hidden);}
+  function floorList(){return messages().filter(m=>m.role==='assistant');}
   function errorText(e){return `第 ${e.floor} 楼 · ${e.scope}${e.line?` · 原文第 ${e.line} 行 ${e.column} 列`:''}：${e.message}\n建议：${e.hint}`;}
   function showObject(title,value){const section=node('details',undefined,details);node('summary',title,section);const pre=node('pre',JSON.stringify(value,null,2),section);pre.style.cssText='white-space:pre-wrap;overflow-wrap:anywhere';}
   function showState(state){
@@ -177,7 +177,7 @@ export function startPrototype(defaultHtml) {
     if(hostGenerating())throw new Error('请等待生成结束后撤销');
     const saved=chatSettings(),undo=saved.restoreUndo;
     if(!undo)throw new Error('没有可撤销的回档');
-    if(historyIdentity(messages())!==undo.prefix)throw new Error('回档后聊天已变化，请重新选择并预览快照，避免覆盖新进度');
+    if(!historyMatches(messages(),undo.prefix))throw new Error('回档后聊天已变化，请重新选择并预览快照，避免覆盖新进度');
     const result=replaySnapshots(messages(),schemaFor(),saved.start??1,undo.checkpoint);
     updateVariablesWith(v=>{const next={...v[PROTO_KEY],checkpoint:undo.checkpoint,current:result};delete next.restoreUndo;return {...v,[PROTO_KEY]:next};},{type:'chat'});
     restoreDraft=null;snapshotPreview.textContent='已撤销上次回档。';renderKey='';await refresh();syncSnapshots();
@@ -294,7 +294,7 @@ export function startPrototype(defaultHtml) {
   button('应用到尚未开始的本聊天',panel,async()=>{
     const policy=checkedPolicy(),saved=chatSettings();
     if(!active(settings()))throw new Error('请先启用本聊天');
-    if(saved.checkpoint||readSnapshots(saved).length||messages().some(m=>m.message_id>=(saved.start??1)&&m.role==='assistant'&&!m.is_hidden))throw new Error('本聊天已有状态历史，请使用新聊天，避免重解释已有剧情');
+    if(saved.checkpoint||readSnapshots(saved).length||messages().some(m=>m.message_id>=(saved.start??1)&&m.role==='assistant'))throw new Error('本聊天已有状态历史，请使用新聊天，避免重解释已有剧情');
     updateVariablesWith(v=>({...v,[PROTO_KEY]:{...v[PROTO_KEY],policy}}),{type:'chat'});renderKey='';capturedKey='';await refresh();report('作者配置已用于本聊天，首轮将按初始档案更新。');
   });
   async function loadSettings(){try{syncPresets();await loadBooks();}catch(e){fault(e,'设置读取失败');}}
@@ -315,7 +315,7 @@ export function startPrototype(defaultHtml) {
   menuObserver=new MutationObserver(mount);menuObserver.observe(doc.body,{childList:true,subtree:true});mount();
   const active=config=>config.ready&&!!ctx().getCurrentChatId()&&chatSettings().enabled!==false;
   function paint(result,list){
-    const last=list.findLast(m=>m.role==='assistant'&&!m.is_hidden);if(!last)return;
+    const last=list.findLast(m=>m.role==='assistant');if(!last)return;
     const message=doc.querySelector(`#chat .mes[mesid="${last.message_id}"]`);if(!message)return;
     const config=settings(),key=JSON.stringify([last.message_id,result.state,result.errors,config.html,chatSettings().checkpoint?.id]);
     if(view?.isConnected&&renderKey===key)return;

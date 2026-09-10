@@ -259,6 +259,22 @@ await check('模块更新在最终 bundle 中跨类提交，下一轮省略无�
   const last=document.createElement('div');last.className='mes';last.setAttribute('mesid','2');document.getElementById('chat').append(last);
   await emit('GENERATION_ENDED');assert(variables.chat[PROTO_KEY].current.errors.length===0);assert(variables.chat[PROTO_KEY].current.state.entities.I1.fields.持有者==='林舟');assert(variables.chat[PROTO_KEY].current.state.entities.P1.fields.当前目标==='取回钥匙');
 });
+await check('隐藏助手隐藏初始化后，最终脚本仍回放、诊断并为生成提供当前状态',async()=>{
+  const before=JSON.stringify(variables.chat[PROTO_KEY].current.state);
+  const count=readSnapshots(variables.chat[PROTO_KEY]).length;
+  list.find(m=>m.message_id===1).is_hidden=true;
+  await emit('MESSAGE_UPDATED');
+  assert(variables.chat[PROTO_KEY].current.errors.length===0);
+  assert(JSON.stringify(variables.chat[PROTO_KEY].current.state)===before);
+  assert(readSnapshots(variables.chat[PROTO_KEY]).length===count);
+  await click('LoreState');
+  const floors=manager.querySelector('select');
+  assert([...floors.options].some(o=>o.value==='1'));
+  floors.value='1';floors.onchange();assert(manager.textContent.includes('本层更新成功'));
+  controller=new AbortController();await generate();assert(!controller.signal.aborted);
+  assert(authorPromptText.includes('取回钥匙'));
+  assert(list.find(m=>m.message_id===1).is_hidden===true);
+});
 await check('模块归属变化在请求前中止，状态与快照不被重解释',async()=>{
   const before=JSON.stringify(variables.chat[PROTO_KEY]);
   window.getWorldbook=async()=>[{uid:1,name:'模块状态',content:moduleRules.replace('栏目：政局、外交','栏目：身体状况、外交')}];
