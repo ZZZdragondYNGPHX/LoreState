@@ -14,7 +14,7 @@
 
 目前按整个实体控制冷热，不单独切换实体内某个栏目。复杂国家的百科资料与当前战争影响可以拆成国家实体和独立事件，用 `links` 关联。没有自动后台模拟、额外模型请求或语义检索。
 
-状态为 `{version:3, shared:{}, entities:{}}`；脚本配置与聊天使用 `lorestate_world_v3` 命名空间。schema 为 `{shared:[...], entity:[...]}`。旧缄愿笔记示例保留在旧发布线上，其转换工具已固定使用 `examples/wishnote/legacy/state-v2.js`，不参与 v3 构建。
+状态为 `{version:3, shared:{}, entities:{}}`；脚本配置与聊天使用 `lorestate_world_v3` 命名空间。schema 为 `{shared:[...], entity:[...]}`。旧缄愿笔记示例与转换工具已从当前主线移除，不参与 v3 构建；历史发布标签仍按其原始内容保留。
 
 ## 标签例子
 
@@ -72,4 +72,4 @@
 
 自动检查：`npm test`、`npm run check`、`npm run build`、`node scripts/test-browser.mjs`（默认 Windows Edge，可用 LORESTATE_BROWSER 指定浏览器可执行路径）。浏览器回归使用模拟酒馆助手 API，不代表真实酒馆验收。
 
-下一关：在新测试聊天导入离线组件，配置 v3 模板，验证冷档、关联、事件到期提醒、编辑、重抽、回档及刷新持久化。到期判断由模型结合常驻时间和事件文字完成，程序不会擅自宣告事件完成。需由用户确认实际剧情行为；不自动设置 driver-accepted。
+下一关：在新测试聊天导入 main 远程组件，配置 v3 模板，验证冷档、关联、事件到期提醒、编辑、重抽、回档及刷新持久化。到期判断由模型结合常驻时间和事件文字完成，程序不会擅自宣告事件完成。需由用户确认实际剧情行为；不自动设置 driver-accepted。

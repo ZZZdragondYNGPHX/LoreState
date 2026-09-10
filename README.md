@@ -16,9 +16,9 @@ LoreState 为 SillyTavern 文字角色卡保存持续状态。AI 在正文后输
 
 | 入口 | 内容 |
 | --- | --- |
+| [main 远程组件](prototype/dist/main/lorestate-script.json) | 远程入口跟随 `@main`；刷新脚本即可拉取最新代码 |
 | [main 脚本代码](artifact/bundle.js) | 包含隐藏兼容修复；分支会继续变化 |
-| [0.9.2 离线组件](prototype/dist/v0.9.2/lorestate-script-offline.json) | 固定 0.9.2，包含隐藏楼层兼容修复 |
-| [0.9.2 远程入口](prototype/dist/v0.9.2/lorestate-script.json) | 固定 `prototype-v0.9.2`，稳定版本 |
+| [0.9.2 远程入口](prototype/dist/v0.9.2/lorestate-script.json) | 固定 `prototype-v0.9.2` 的历史稳定版本 |
 | [main 分支脚本代码](https://github.com/ZZZdragondYNGPHX/LoreState/blob/main/artifact/bundle.js) | 最新开发版，可能随主分支变化 |
 
 已有 **0.9.0** 配置和聊天可以保留，只更新脚本代码后重新读取状态。跨旧版本升级到模块结构仍须按 0.9.0 指南使用新配置、新聊天；这次修复没有增加旧协议迁移。
@@ -27,7 +27,7 @@ LoreState 为 SillyTavern 文字角色卡保存持续状态。AI 在正文后输
 
 ## 开发
 
-Node.js 22+。从[开发说明](docs/开发说明.md)和[当前交接](交接文档.md)进入。源码在 `prototype/`，分发代码在 `artifact/bundle.js`；发布前须核对构建版本和固定标签，不能覆盖旧标签或把旧分发目录当作最新修复版。
+Node.js 22+。从 [AGENTS.md](AGENTS.md)、[开发说明](docs/开发说明.md) 和[当前交接](交接文档.md)进入。源码在 `prototype/`，分发代码在 `artifact/bundle.js`；运行 `npm run build` 会生成 `main` 远程组件。普通修复不更新 `main` 版本号，用户刷新即可取得新代码；发布固定版本时须新建标签，不能覆盖旧标签。
 
 ## 历史：旧原生扩展
 
@@ -35,11 +35,11 @@ Node.js 22+。从[开发说明](docs/开发说明.md)和[当前交接](交接文
 
 LoreState 是用于 SillyTavern 的通用纯文字状态接口与扩展。吸收 MVU 的增量更新、消息楼层存储和历史事件联动思路，用自然语言保存事实，由程序负责路径校验、原子提交和回放。
 
-main 分支的仓库根目录是通用接口与扩展；[`examples/wishnote`](examples/wishnote) 是缄愿笔记示例。另有可直接安装的 examples/wishnote 分支，它是从 main 派生的特定实现，显示为“LoreState · 缄愿笔记示例”，不代表项目整体。核心没有人物编号、愿望类型或世界观规则，不依赖 MVU、酒馆助手或运行时 CDN。
+main 分支的仓库根目录是通用接口与扩展。旧 `examples/` 示例目录和 `examples/wishnote` 分支已退休，不再作为项目实现或安装入口；历史记录只保留在 Git 历史中。核心没有人物编号、愿望类型或世界观规则，不依赖 MVU、酒馆助手或运行时 CDN。
 
 ## 旧原生扩展使用
 
-需要 SillyTavern 1.18.0 或更高版本及 manifest 声明的宿主能力。将本仓库安装为 UI 扩展，刷新后打开角色聊天，点击输入框旁的 **魔法棒 → LoreState**。在“基线设置”中粘贴基线 JSON，或选择示例的 `baseline.json`，预览并确认。
+需要 SillyTavern 1.18.0 或更高版本及 manifest 声明的宿主能力。将本仓库安装为 UI 扩展，刷新后打开角色聊天，点击输入框旁的 **魔法棒 → LoreState**。在“基线设置”中粘贴基线 JSON，预览并确认。
 
 ```json
 {
@@ -70,7 +70,7 @@ main 分支的仓库根目录是通用接口与扩展；[`examples/wishnote`](ex
 - 不支持同一回复“继续生成”；使用下一轮或重抽。状态提示里的领域规则应与角色卡和世界书保持一致。
 - 宿主保存接口返回不等于磁盘持久化保证；重要节点导出，并刷新核对。
 
-旧 WishNote 扩展使用不同命名空间。迁移时先导出旧备份，运行示例转换工具，在旧面板停用本聊天，再在 LoreState 导入。主扩展不会自动改写旧数据。
+旧 WishNote 扩展使用不同命名空间，相关示例和转换工具已从当前主线退休。主扩展不会自动改写旧数据；仍需处理旧聊天时，请先保留自己的备份，并在独立迁移环境中完成转换。
 
 ## 旧原生扩展开发
 

@@ -2,10 +2,6 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {emptyState,applyPatch,validateState,extractPatch,KEY,GENESIS,nextBase,replay,stripProtocol} from '../src/core.js';
 import {buildPrompt} from '../src/prompt.js';
-import {convertState,convertBackup,convertXml} from '../examples/wishnote/adapter.js';
-import {emptyState as legacyState} from '../examples/wishnote/legacy/core.js';
-import {readFile} from 'node:fs/promises';
-import {digest} from '../src/core.js';
 const patch=(ops,base='base')=>({base,ops});
 const fixture=()=>({...emptyState(),data:{places:{harbor:{description:'潮汐港',owner:'商会'}},notes:{'a/b~c':'旧文字'}}});
 test('任意领域和稳定非数字编号，无愿档结构依赖',()=>{
@@ -50,33 +46,4 @@ test('缺失协议阻断、不污染上一版；当前分支由 mes 决定',asyn
  const chat=await history();chat[1].mes='另一 swipe 无协议';const r=await replay(chat);
  assert.ok(r.error);assert.equal(r.state.data.places.harbor.owner,'商会');
  assert.equal(stripProtocol('正文<LoreStatePatch>{}</LoreStatePatch>'),'正文');
-});
-test('迁移旧版全部原件保留但不注入 provenance',()=>{
- const s=legacyState();s.stat_data.wishnote.people.P01={id:'P01',name:'花',mode:'hot',reality:{F01:'事实'},wishes:{},ties:{},_legacy:{uid:0}};
- const converted=convertState(s);assert.deepEqual(converted.provenance.original,s);
- assert.equal(converted.data.people.P01.reality.F01,'事实');
- assert.ok(!buildPrompt({state:converted,base:'base'}).includes('provenance'));
- assert.ok(!buildPrompt({state:converted,base:'base'}).includes('uid'));
-});
-test('旧备份校验和拒绝伪造',async()=>{await assert.rejects(convertBackup({format:'wishnote-backup',version:1,state:legacyState(),checksum:'wrong'}));});
-test('XML 迁移仍拒绝实体声明',()=>{assert.throws(()=>convertXml('<!DOCTYPE x><WishBook/>'));});
-test('两份发布基线均符合通用结构且领域分离',async()=>{
- for(const id of ['wishnote','world-notes']){
-  const state=JSON.parse(await readFile(new URL(`../examples/${id}/baseline.json`,import.meta.url),'utf8'));
-  validateState(state);assert.equal(state.profile.id,id);
- }
- const source=await readFile(new URL('../src/core.js',import.meta.url),'utf8');
- assert.ok(!/wishnote|WishPatch|peopleOf|恒|程愿/.test(source));
-});
-test('旧备份成功转换与 XML 成功转换',async()=>{
- const s=legacyState();
- const result=await convertBackup({format:'wishnote-backup',version:1,state:s,checksum:await digest(s)});
- assert.deepEqual(result.provenance.original,s);
- const xml='<WishBook><WishPerson id="P01" name="花" mode="hot"><Reality>拥有书房</Reality></WishPerson></WishBook>';
- const converted=convertXml(xml);assert.ok(JSON.stringify(converted.state.data).includes('拥有书房'));
-});
-test('示例世界书的六条叙事规则保持不变',async()=>{
- const read=async path=>JSON.parse(await readFile(new URL(path,import.meta.url),'utf8'));
- const old=await read('../examples/wishnote/legacy/worldbook-v8.json'),current=await read('../examples/wishnote/worldbook.json');
- for(let uid=0;uid<6;uid++)assert.deepEqual(Object.values(current.entries).find(e=>e.uid===uid),Object.values(old.entries).find(e=>e.uid===uid));
 });

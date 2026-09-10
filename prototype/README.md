@@ -1,14 +1,14 @@
 # 当前入口：0.9.2 模块条目与隐藏兼容修复
 
-请从[作者目录](../docs/README.md)、[模块试卡](../docs/0.9.0模块条目与试卡.md)和[隐藏助手兼容与更新](../docs/隐藏助手兼容与更新.md)进入。稳定修复代码见 [artifact/bundle.js](../artifact/bundle.js) 和 [v0.9.2 组件](dist/v0.9.2/lorestate-script-offline.json)；`@main` 是持续更新入口，旧固定标签保持不变。
+请从[作者目录](../docs/README.md)、[模块试卡](../docs/0.9.0模块条目与试卡.md)和[隐藏助手兼容与更新](../docs/隐藏助手兼容与更新.md)进入。当前活动交付是 [main 远程组件](dist/main/lorestate-script.json) 和 [main 脚本代码](../artifact/bundle.js)；刷新脚本即可拉取最新代码。旧固定标签保持不变。
 
-以下保留各阶段说明，版本内的“当前”指当时阶段，不代表最新主线。
+以下保留各阶段说明，版本内的“当前”指当时阶段，不代表最新主线；其中旧离线链接仅是历史记录，不是当前交付入口。
 
 ---
 
 # 当前试用版：0.7.0 世界实体冷热档
 
-[离线测试组件](dist/v0.7.0/lorestate-script-offline.json) · [v3 协议、示例与边界](world-memory.md)。人物、国家、组织、地点、物品和事件共用冷热管理；常驻状态每轮提供，未完成事件保持热档。新协议、新命名空间和新模板，不迁移旧数据。固定版本远程入口为 prototype-v0.7.0；CDN 可用性另验，真实酒馆验收待完成。作者教程见 [docs](../docs/README.md)。
+[0.7.0 历史远程组件](dist/v0.7.0/lorestate-script.json) · [v3 协议、示例与边界](world-memory.md)。人物、国家、组织、地点、物品和事件共用冷热管理；常驻状态每轮提供，未完成事件保持热档。新协议、新命名空间和新模板，不迁移旧数据。固定版本远程入口为 prototype-v0.7.0；CDN 可用性另验，真实酒馆验收待完成。作者教程见 [docs](../docs/README.md)。
 
 下方是旧版发布说明，旧版协议和流程不适用于 v3。
 
@@ -16,11 +16,11 @@
 
 # LoreState 统一文字状态
 
-**0.5.2 正文显示修复**：[远程脚本](dist/v0.5.2/lorestate-script.json) · [离线脚本](dist/v0.5.2/lorestate-script-offline.json)。状态栏铺满正文宽度，采用更大高度；点击 **展开状态窗口** 可居中大窗查看。保留原脚本数据，只启用一个版本。
+**0.5.2 正文显示修复（历史）**：[远程脚本](dist/v0.5.2/lorestate-script.json)。状态栏铺满正文宽度，采用更大高度；点击 **展开状态窗口** 可居中大窗查看。保留原脚本数据，只启用一个版本。
 
-**0.5.1 UI 试用版**：[离线组件](dist/v0.5.1/lorestate-script-offline.json)。魔法棒只保留 **LoreState** 一个入口，窗口内按 **状态历史／诊断修复／设置** 切换。设置分为世界书、外观模板、预设和聊天维护；编辑草稿在切页时保留。新 UI 已通过浏览器回归，待真实酒馆验收，远程入口固定 `prototype-v0.5.1`，可导入 [远程组件](dist/v0.5.1/lorestate-script.json)。
+**0.5.1 UI 试用版（历史）**：魔法棒只保留 **LoreState** 一个入口，窗口内按 **状态历史／诊断修复／设置** 切换。设置分为世界书、外观模板、预设和聊天维护；编辑草稿在切页时保留。新 UI 已通过浏览器回归，待真实酒馆验收，远程入口固定 `prototype-v0.5.1`，可导入 [远程组件](dist/v0.5.1/lorestate-script.json)。
 
-当前新增 **0.5.0 本地候选版**：组件位于 `dist/v0.5.0/`，测试使用 `lorestate-script-offline.json`。核心诊断、历史楼层、修复写回、重载持久化与撤销已在 SillyTavern 1.18.0／酒馆助手 4.9.5 实机验证；远程入口固定 `prototype-v0.5.0`。原 `dist/` 根目录的 0.4.0 组件与缄愿笔记示例保留。
+**0.5.0 历史候选版**：组件位于 `dist/v0.5.0/`。核心诊断、历史楼层、修复写回、重载持久化与撤销已在 SillyTavern 1.18.0／酒馆助手 4.9.5 实机验证；远程入口固定 `prototype-v0.5.0`。原 `dist/` 根目录的 0.4.0 组件保留。
 
 魔法棒 → **LoreState · 状态管理器**：按 AI 楼层查看当前选中回复分支的完整状态（含离场人物）、本轮实际变化、原始消息和截至本层的错误。支持上一／下一 AI 层、返回最新、定位已加载的消息、重新校验及复制诊断。历史状态从消息原文按需回放，不保存每层重复的大快照；已编辑覆盖的旧消息版本无法复原。
 
@@ -34,7 +34,7 @@
 
 ## 作者与读者流程
 
-1. 导入 `dist/v0.5.0/lorestate-script.json` 角色脚本，或使用离线备用版，两者只启用一个。开启脚本数据随卡导出。
+1. 导入 `dist/main/lorestate-script.json` 远程角色脚本，开启脚本数据随卡导出；更新后刷新脚本即可取得 main 最新代码。
 2. 从魔法棒打开 LoreState 设置，选择当前角色绑定的世界书状态栏条目。
 3. 复制 HTML 制作提示词与条目给网页 AI，粘贴生成的 HTML，预览并保存。
 4. 保存会自动添加两条本卡正则：仅显示隐藏、仅提示词过滤；两者都保留正文与消息原文。启用本卡局部正则。
@@ -83,15 +83,14 @@
 
 ```sh
 node scripts/build-prototype.mjs
-node scripts/build-wishnote-people.mjs
 npm test
 npm run check
 ```
 
 浏览器测试：在仓库根目录启动本地静态服务器，打开 `tests/template-browser.html`。
-远程地址固定为 `prototype-v0.4.0`，不会随 main 自动变化。
+构建输出 `artifact/bundle.js`、`dist/main/lorestate-script.json` 和 `dist/main/receipt.json`，只生成远程入口，不生成离线备用版。远程地址跟随 `main`；推送后刷新脚本即可取得新内容。
 
 ```js
-import 'https://testingcf.jsdelivr.net/gh/ZZZdragondYNGPHX/LoreState@prototype-v0.4.0/artifact/bundle.js';
+import 'https://testingcf.jsdelivr.net/gh/ZZZdragondYNGPHX/LoreState@main/artifact/bundle.js';
 ```
 发布状态与实装边界见 [verification.md](verification.md)。

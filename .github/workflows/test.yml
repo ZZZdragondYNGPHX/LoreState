@@ -8,5 +8,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - run: npm run build
+      - run: git diff --exit-code
+      - run: test -z "$(git status --porcelain)"
       - run: npm run check
       - run: npm test

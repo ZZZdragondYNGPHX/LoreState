@@ -18,11 +18,11 @@
 
 增量减少的是反复生成状态栏和携带历史标签的冗余；当前完整文字状态仍会进入上下文，实际 token 变化取决于卡和聊天内容。
 
-当前稳定脚本为 `prototype-v0.9.2`，包含隐藏楼层兼容修复：隐藏助手不再导致本地状态回放丢失初始化。`main` 分支是持续更新入口，可能随开发变化；日常使用建议固定版本。
+当前稳定脚本为 `prototype-v0.9.2` 远程组件，包含隐藏楼层兼容修复：隐藏助手不再导致本地状态回放丢失初始化。`main` 是持续更新远程入口；刷新脚本即可取得后续修复。
 
 **安装**
 
-需要酒馆助手。可以导入下面的脚本 JSON，也可以在酒馆助手中新建角色脚本，填入：
+需要酒馆助手。可以导入下面的远程脚本 JSON，也可以在酒馆助手中新建角色脚本，填入：
 
 ```js
 import 'https://testingcf.jsdelivr.net/gh/ZZZdragondYNGPHX/LoreState@prototype-v0.9.2/artifact/bundle.js';
@@ -37,7 +37,7 @@ import 'https://testingcf.jsdelivr.net/gh/ZZZdragondYNGPHX/LoreState@main/artifa
 启用后从 **魔法棒 → LoreState · 原型设置** 打开。手动新建脚本的作者需要开启脚本数据随卡导出；导入版已配置。
 
 [远程版脚本 JSON · v0.9.2](https://github.com/ZZZdragondYNGPHX/LoreState/raw/refs/tags/prototype-v0.9.2/prototype/dist/v0.9.2/lorestate-script.json)
-[离线备用版 JSON · v0.9.2](https://github.com/ZZZdragondYNGPHX/LoreState/raw/refs/tags/prototype-v0.9.2/prototype/dist/v0.9.2/lorestate-script-offline.json)
+[main 远程版脚本 JSON · 持续更新](https://github.com/ZZZdragondYNGPHX/LoreState/raw/refs/heads/main/prototype/dist/main/lorestate-script.json)
 [main 分支脚本代码 · 持续更新](https://github.com/ZZZdragondYNGPHX/LoreState/blob/main/artifact/bundle.js)
 [项目仓库](https://github.com/ZZZdragondYNGPHX/LoreState)
 
@@ -45,6 +45,6 @@ import 'https://testingcf.jsdelivr.net/gh/ZZZdragondYNGPHX/LoreState@main/artifa
 
 适合地点、衣着、身体状况、待办、关系描述等文字栏目。当前 HTML 支持静态 HTML/CSS 和折叠；不支持自定义 JavaScript、外部图片与字体、复杂嵌套变量、自动数值计算或多人物按需取回。列表按一个栏目的多行文字保存，变化时更新整项。
 
-这是原型试用版。隐藏楼层兼容已通过离线及模拟宿主回归，真实酒馆和实际模型仍需作者验收。欢迎先用测试卡尝试，反馈时附上脚本版本、操作步骤和去除隐私后的错误标签。
+这是原型试用版。隐藏楼层兼容已通过本地自动化及模拟宿主回归，真实酒馆和实际模型仍需作者验收。欢迎先用测试卡尝试，反馈时附上脚本版本、操作步骤和去除隐私后的错误标签。
 
 配套附件：状态栏模板 HTML、世界书条目文本、作者改造教程。

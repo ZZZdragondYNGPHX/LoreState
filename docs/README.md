@@ -1,6 +1,6 @@
 # LoreState 作者文档
 
-当前功能基线是 **0.9.2 模块条目修复版**；固定标签 `prototype-v0.9.2` 包含 **2026-09-10 隐藏楼层兼容修复**。`main` 是持续更新入口，固定版本组件适合日常使用。
+当前功能基线是 **0.9.2 模块条目修复版**；固定标签 `prototype-v0.9.2` 包含 **2026-09-10 隐藏楼层兼容修复**。当前活动交付为 `main` 远程组件，刷新脚本即可拉取最新代码；固定版本组件仍只作历史稳定入口。
 
 ## 按你的情况阅读
 
@@ -23,6 +23,6 @@
 | [状态栏条目与对话示例](状态栏条目与对话示例.md) | 旧版可复制条目与连续更新示例 |
 | [HTML 模板适配指南](HTML模板适配指南.md) | 安全绑定与布局基础 |
 
-[0.9.2 离线组件](../prototype/dist/v0.9.2/lorestate-script-offline.json) · [0.9.2 远程入口](../prototype/dist/v0.9.2/lorestate-script.json) · [main 脚本代码](../artifact/bundle.js) · [v3 协议参考](../prototype/world-memory.md) · [快照与回档](../prototype/snapshots.md) · [验证记录](../prototype/verification.md)
+[main 远程组件](../prototype/dist/main/lorestate-script.json) · [main 脚本代码](../artifact/bundle.js) · [0.9.2 固定远程入口](../prototype/dist/v0.9.2/lorestate-script.json) · [v3 协议参考](../prototype/world-memory.md) · [快照与回档](../prototype/snapshots.md) · [验证记录](../prototype/verification.md)
 
 已有 0.9.0 聊天安装隐藏兼容修复不要求重开聊天。跨旧协议或旧栏目结构升级仍不提供自动迁移。真实酒馆、实际模型与作者游玩验收待完成；Git 推送与自动测试不代表实机验收。
