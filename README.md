@@ -1,30 +1,42 @@
 # LoreState
 
-**0.8.0 试用版**：[使用与统一验收](docs/0.8.0使用与统一验收.md) · [离线脚本](prototype/dist/v0.8.0/lorestate-script-offline.json)。加入同层续写拦截、快照正文去重、作者初始档案、字段约束与冷档读取凭据。远程入口固定 prototype-v0.8.0；实机测试由用户统一进行，升级前备份聊天。
+LoreState 为 SillyTavern 文字角色卡保存持续状态。AI 在正文后输出状态更新，脚本负责校验、合并、历史回放与状态栏展示。人物、国家、组织、地点、物品和事件可以使用各自的栏目；冷档按需读取。
 
-**0.7.0 / v3 世界状态冷热档**：人物、国家、组织、地点、物品与事件统一管理，支持有限关联召回和未完成事件保热。
+当前维护的是 **0.9.0 模块条目脚本**，依赖酒馆助手。`main` 已加入 **2026-09-10 隐藏楼层兼容修复**：旧楼层不发送给 AI 时，其中的状态更新仍参与本地回放。隐藏助手可以继续使用。
 
-**作者请从 [作者文档目录](docs/README.md) 开始**，内含条目写法、可复制示例、配套 HTML 与试卡清单。[离线脚本](prototype/dist/v0.7.0/lorestate-script-offline.json) · [远程入口](prototype/dist/v0.7.0/lorestate-script.json)。本版使用新协议和新配置，不迁移旧状态；真实酒馆验收仍待完成。
+## 从这里开始
 
-以下保留历史版本说明，各版本依赖与协议不混用。
+- **[作者文档目录](docs/README.md)**：入门顺序、模块条目、HTML 与试卡清单。
+- [0.9.0 模块条目与试卡](docs/0.9.0模块条目与试卡.md)：新卡配置和可复制示例。
+- **[隐藏助手兼容与更新](docs/隐藏助手兼容与更新.md)**：已有聊天恢复、脚本更新和验收。
+- [当前脚本代码](artifact/bundle.js)：用于替换现有脚本代码，保留脚本 ID 和配置。
+- [常见问题与试卡清单](docs/常见问题与试卡清单.md)。
 
-0.6.0 试用版：逐楼完整快照、预览回档与撤销，保留聊天正文。[离线脚本](prototype/dist/v0.6.0/lorestate-script-offline.json) · [回档说明](prototype/snapshots.md)。远程入口固定 prototype-v0.6.0，本版真实酒馆验收待完成。
+## 下载与版本边界
 
-0.5.2 正文显示修复：全宽状态栏与可展开大窗口。[远程脚本](prototype/dist/v0.5.2/lorestate-script.json) · [离线脚本](prototype/dist/v0.5.2/lorestate-script-offline.json)。
+| 入口 | 内容 |
+| --- | --- |
+| [main 脚本代码](artifact/bundle.js) | 包含隐藏兼容修复；分支会继续变化 |
+| [0.9.0 离线组件](prototype/dist/v0.9.0/lorestate-script-offline.json) | 原始 0.9.0，不包含本次修复 |
+| [0.9.0 远程入口](prototype/dist/v0.9.0/lorestate-script.json) | 固定 `prototype-v0.9.0`，不会自动获得 main 修复 |
 
-0.5.1 UI 试用版：魔法棒单一 LoreState 入口，状态历史／诊断修复／设置三个页签。[远程脚本](prototype/dist/v0.5.1/lorestate-script.json) · [离线脚本](prototype/dist/v0.5.1/lorestate-script-offline.json)。新 UI 已通过浏览器回归，待用户实机验收。
+已有 **0.9.0** 配置和聊天可以保留，只更新脚本代码后重新读取状态。跨旧版本升级到模块结构仍须按 0.9.0 指南使用新配置、新聊天；这次修复没有增加旧协议迁移。
 
-开发请先阅读 [开发说明](docs/开发说明.md) 与 [当前交接](交接文档.md)。统一构建命令为 `npm run build`。
+目标环境沿用 SillyTavern 1.18.0 / 酒馆助手 4.9.5。修复通过 92 项 Node 测试、11 项模板浏览器检查和 33 项模拟宿主检查；实际酒馆安装、真实模型及游玩验收仍待完成。详见[验证记录](prototype/verification.md)。
 
-新增 0.5.0 本地候选版：魔法棒历史状态管理器、即时错误定位、格式修复预览与撤销。离线测试组件见 [新版脚本](prototype/dist/v0.5.0/lorestate-script-offline.json)，使用与边界见 [脚本说明](prototype/README.md)。核心功能已完成目标酒馆实机回归，远程入口固定 prototype-v0.5.0，完整边界见验证记录。
+## 开发
 
-当前主线为 0.4.0 统一文字状态：公共状态与可选人物档案共用一套流程，不再区分简单／人物模式，不兼容旧脚本协议。酒馆助手脚本路线已提供[文字状态原型与远程加载入口](prototype/README.md)。它依赖酒馆助手，采用首次完整、后续增量的语义化标签；已完成基础实机回归，完整验收边界见 prototype/verification.md。以下说明对应仓库根目录保留的旧扩展。
+Node.js 22+。从[开发说明](docs/开发说明.md)和[当前交接](交接文档.md)进入。源码在 `prototype/`，分发代码在 `artifact/bundle.js`；发布前须核对构建版本和固定标签，不能覆盖旧标签或把旧分发目录当作最新修复版。
+
+## 历史：旧原生扩展
+
+以下说明属于仓库根目录 `src/`、`index.js` 和 `manifest.json` 的旧原生扩展，不是上面的酒馆助手脚本安装流程。旧协议与当前 v3 不混用。
 
 LoreState 是用于 SillyTavern 的通用纯文字状态接口与扩展。吸收 MVU 的增量更新、消息楼层存储和历史事件联动思路，用自然语言保存事实，由程序负责路径校验、原子提交和回放。
 
 main 分支的仓库根目录是通用接口与扩展；[`examples/wishnote`](examples/wishnote) 是缄愿笔记示例。另有可直接安装的 examples/wishnote 分支，它是从 main 派生的特定实现，显示为“LoreState · 缄愿笔记示例”，不代表项目整体。核心没有人物编号、愿望类型或世界观规则，不依赖 MVU、酒馆助手或运行时 CDN。
 
-## 使用
+## 旧原生扩展使用
 
 需要 SillyTavern 1.18.0 或更高版本及 manifest 声明的宿主能力。将本仓库安装为 UI 扩展，刷新后打开角色聊天，点击输入框旁的 **魔法棒 → LoreState**。在“基线设置”中粘贴基线 JSON，或选择示例的 `baseline.json`，预览并确认。
 
@@ -59,7 +71,7 @@ main 分支的仓库根目录是通用接口与扩展；[`examples/wishnote`](ex
 
 旧 WishNote 扩展使用不同命名空间。迁移时先导出旧备份，运行示例转换工具，在旧面板停用本聊天，再在 LoreState 导入。主扩展不会自动改写旧数据。
 
-## 开发
+## 旧原生扩展开发
 
 Node.js 22+，无第三方依赖，无构建步骤。根目录 `manifest.json` 可直接由 SillyTavern 加载。
 
