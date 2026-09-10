@@ -24,7 +24,8 @@ export function createControlCenter({doc,manager,panel,summary,status,floorSelec
   #lorestate-state-manager select,#lorestate-state-manager input,#lorestate-state-manager textarea{font:inherit;width:100%;max-width:100%;min-height:44px;border:1px solid var(--ls-line);border-radius:8px;background:#171c16;color:inherit;padding:10px}
   #lorestate-state-manager select{width:auto}#lorestate-state-manager label{display:block;margin:12px 0 6px;color:var(--ls-muted)}
   #lorestate-state-manager label :is(select,textarea,input){display:block;width:100%;margin-top:6px}
-  #lorestate-state-manager label input[type=checkbox]{display:inline-block;width:20px;height:20px;min-height:20px;padding:0;vertical-align:middle;margin:0 0 0 12px}
+  #lorestate-state-manager label input[type=checkbox]{display:inline-block;width:22px;height:22px;min-height:22px;padding:0;vertical-align:middle;margin:0 0 0 12px;-webkit-appearance:checkbox;appearance:auto;background:initial;border:initial;border-radius:initial;box-shadow:none;accent-color:var(--ls-accent);cursor:pointer;touch-action:manipulation}
+  #lorestate-state-manager label input[type=checkbox]::before{content:none!important}
   #lorestate-state-manager textarea{display:block;min-height:140px;resize:vertical;font:13px/1.6 ui-monospace,monospace;margin:12px 0}
   #lorestate-state-manager details{margin:16px 0;padding:12px 0;border-top:1px solid var(--ls-line)}
   #lorestate-state-manager summary{cursor:pointer;font-weight:600;min-height:32px}
