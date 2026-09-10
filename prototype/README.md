@@ -1,6 +1,6 @@
-# 当前入口：0.9.0 模块条目与 main 隐藏兼容修复
+# 当前入口：0.9.2 模块条目与隐藏兼容修复
 
-请从[作者目录](../docs/README.md)、[模块试卡](../docs/0.9.0模块条目与试卡.md)和[隐藏助手兼容与更新](../docs/隐藏助手兼容与更新.md)进入。当前修复代码见 [artifact/bundle.js](../artifact/bundle.js)；旧固定标签和版本组件未更新。
+请从[作者目录](../docs/README.md)、[模块试卡](../docs/0.9.0模块条目与试卡.md)和[隐藏助手兼容与更新](../docs/隐藏助手兼容与更新.md)进入。稳定修复代码见 [artifact/bundle.js](../artifact/bundle.js) 和 [v0.9.2 组件](dist/v0.9.2/lorestate-script-offline.json)；`@main` 是持续更新入口，旧固定标签保持不变。
 
 以下保留各阶段说明，版本内的“当前”指当时阶段，不代表最新主线。
 

@@ -17,8 +17,9 @@ LoreState 为 SillyTavern 文字角色卡保存持续状态。AI 在正文后输
 | 入口 | 内容 |
 | --- | --- |
 | [main 脚本代码](artifact/bundle.js) | 包含隐藏兼容修复；分支会继续变化 |
-| [0.9.0 离线组件](prototype/dist/v0.9.0/lorestate-script-offline.json) | 原始 0.9.0，不包含本次修复 |
-| [0.9.0 远程入口](prototype/dist/v0.9.0/lorestate-script.json) | 固定 `prototype-v0.9.0`，不会自动获得 main 修复 |
+| [0.9.2 离线组件](prototype/dist/v0.9.2/lorestate-script-offline.json) | 固定 0.9.2，包含隐藏楼层兼容修复 |
+| [0.9.2 远程入口](prototype/dist/v0.9.2/lorestate-script.json) | 固定 `prototype-v0.9.2`，稳定版本 |
+| [main 分支脚本代码](https://github.com/ZZZdragondYNGPHX/LoreState/blob/main/artifact/bundle.js) | 最新开发版，可能随主分支变化 |
 
 已有 **0.9.0** 配置和聊天可以保留，只更新脚本代码后重新读取状态。跨旧版本升级到模块结构仍须按 0.9.0 指南使用新配置、新聊天；这次修复没有增加旧协议迁移。
 
