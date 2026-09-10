@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>旅途手记 · LoreState 模板</title>
+  <style>
+    :root { color-scheme: light; --paper:#f4eedf; --ink:#363b30; --muted:#69745e; --line:#c9cbb7; --accent:#6c8059; }
+    * { box-sizing:border-box; }
+    body { margin:0; padding:16px; background:var(--paper); color:var(--ink); font:14px/1.6 system-ui,sans-serif; }
+    header { display:flex; flex-wrap:wrap; align-items:baseline; justify-content:space-between; gap:4px 16px; padding-bottom:10px; border-bottom:1px solid var(--line); }
+    h2 { margin:0; font-size:18px; font-weight:650; }
+    header small { color:var(--muted); font-size:12px; }
+    main { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; padding-top:12px; }
+    section { min-width:0; border-left:2px solid var(--accent); padding-left:10px; }
+    h3 { margin:0 0 4px; color:var(--muted); font-size:12px; font-weight:600; }
+    p { margin:0; }
+    [data-lore-field] { white-space:pre-wrap; overflow-wrap:anywhere; }
+    @media (max-width:480px) { main { grid-template-columns:1fr; gap:12px; } body { padding:12px; } }
+  </style>
+</head>
+<body>
+  <header><h2>旅途手记</h2><small>此刻的你</small></header>
+  <main>
+    <!-- 标题放在绑定节点外面；p 内文字只是打开文件时的示意，不是初始存档。 -->
+    <section><h3>当前位置</h3><p data-lore-field="地点">城南的旧酒馆，靠窗的位置。</p></section>
+    <section><h3>衣着</h3><p data-lore-field="衣着">灰色斗篷，袖口沾着些许雨水。</p></section>
+    <section><h3>身体状况</h3><p data-lore-field="身体状况">长途步行后有些疲惫，暂未受伤。</p></section>
+  </main>
+</body>
+</html>

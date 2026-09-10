@@ -270,14 +270,14 @@ function projectEntities(state,text=''){
   const index=candidates.slice(0,24).map(({id,name,identity,type,confirmed})=>({id,name,identity,type,confirmed}));
   return {full,index,retrieved,deferred,omitted:candidates.length-index.length,roots};
 }
-function preparePrompt(rules,schema,result,text='',readToken=''){
+function preparePrompt(rules,schema,result,text='',readToken='',purpose='combined'){
   checkSchema(schema);const projection=projectEntities(result.state,text);
   const parsed=rules?parseModules(rules):null;
   if(parsed){const declared=moduleShape(parsed);checkSchema(declared);if(moduleSignature(declared)!==moduleSignature(schema)||JSON.stringify(declared.shared)!==JSON.stringify(schema.shared))throw new Error('模块声明与保存配置不一致，请使用新配置和新聊天');}
   else if(schema.modules&&rules)throw new Error('模块配置需要模块格式的状态栏条目');
   const compose=()=>`LoreState 统一文字状态 v3。作者规则：\n${parsed?modulePrompt(parsed,projection,text,!result.state):rules}
 
-下面的协议负责状态存储，替代规则内旧的全量复述要求。正文末尾仅输出一个 <LoreState version="3" mode="${result.state?'delta':'full'}"${readToken?` read="${readToken}"`:''}>…</LoreState>。外层 mode 只决定整轮状态：尚无状态时 full，已有状态（含作者初始档案）时 delta；已有状态且没有变化才输出空 delta。${readToken?'本轮 read 凭据必须原样复制，不沿用历史凭据。':''}
+${purpose==='narration'?'本轮只续写剧情正文。以下状态为只读记忆，状态由独立模型在正文结束后更新；忽略作者规则中要求输出状态标签的指令，不输出 LoreState、EntityRecord 或其他状态更新块。':`下面的协议负责状态存储，替代规则内旧的全量复述要求。正文末尾仅输出一个 <LoreState version="3" mode="${result.state?'delta':'full'}"${readToken?` read="${readToken}"`:''}>…</LoreState>。外层 mode 只决定整轮状态：尚无状态时 full，已有状态（含作者初始档案）时 delta；已有状态且没有变化才输出空 delta。${readToken?'本轮 read 凭据必须原样复制，不沿用历史凭据。':''}
 每个 Entity 必须独立填写 mode，不能继承外层：编号尚未建档用 mode="full"，已建档（包括冷档）用 mode="delta"。因此外层 delta 内可以同时包含新实体 full 和已有实体 delta。所有 mode 值严格小写，不能写 Delta 或 Full。是否新实体由本地档案编号决定，不由本轮是否出场决定；未加载不等于新实体。
 ${schema.shared.length?`公共栏目：${schema.shared.join('、')}。写在 <Shared>栏目标签</Shared> 内。首次包含所有公共栏目，之后仅写变化栏目；没变化可省略整个 Shared。`:'本卡没有公共栏目，不输出 Shared。'}
 ${schema.entity.length?`${schema.modules?'实体栏目按模块目录分别定义':'实体栏目：'+schema.entity.join('、')}。新实体用 <Entity id="P01" name="名称" type="人物" identity="稳定识别信息" mode="full" presence="active">所属类别全部栏目标签</Entity>。已有编号用 <Entity id="P01" mode="delta">变化栏目</Entity>。编号稳定唯一，名称与识别信息不能重新指派；无实体时可省略 Entity。
@@ -287,7 +287,7 @@ ${schema.entity.length?`${schema.modules?'实体栏目按模块目录分别定�
 ${schema.modules&&!Object.hasOwn(schema.modules,'事件')?'本卡未声明事件模块，不建立事件实体；相关事实记入已有类别适用栏目，不模拟到期结果。':'未完成承诺、追杀、战争影响、倒计时必须单独建 type="事件" pending="true" 的热档实体，links 指向参与者；即使参与者转冷，事件仍每轮提供。结束时 pending="false"，之后允许转冷。截止时间与触发条件写入事件栏目；每轮结合常驻时间检查，但不得自动假定已经完成。'}
 事实更新时可用 confirmed="剧情内已知时间" 记录最后确认时间。未记录时为未知；冷热切换和预取不刷新事实时间。重新取回后核对已知事件，缺少证据的离场变化保持未知，不模拟后台故事。索引可能省略部分冷档；精确编号或唯一名称仍可从完整本地档案召回。
 每项写成 <栏目名>完整新文字</栏目名>；一个栏目可包含多行文字，不嵌套标签。遗漏保留；明确移除栏目内容用 <栏目名 action="remove"/>。只更新剧情确实改变的内容；作者或剧情没有明确的初值写“未知”，不擅自补造事实。不要输出 HTML、JSON、脚本或其他状态块。文字中的 & 和 < 转义为 &amp; 和 &lt;，属性中的引号也要转义。
-${schema.constraints?`字段约束：${JSON.stringify(schema.constraints)}。required 为必填，noRemove 禁止删除，enum 限定完整栏目文字取值；未知值也须在允许列表内。`:''}
+${schema.constraints?`字段约束：${JSON.stringify(schema.constraints)}。required 为必填，noRemove 禁止删除，enum 限定完整栏目文字取值；未知值也须在允许列表内。`:''}`}
 当前有效公共状态：
 ${result.state?stateXml(result.state.shared,schema.shared)||'无公共栏目':'尚未建立'}
 在场及本轮取回的完整实体资料（EntityRecord 为只读资料，不是输出模板；不要复制为更新块）：
@@ -296,7 +296,7 @@ ${projection.full.map(p=>`<EntityRecord id="${p.id}" name="${xmlText(p.name)}" i
 本轮按输入或关联取回：${projection.retrieved.join('、')||'无'}（不自动改变在场状态）。索引不是完整记忆，不可据此编造旧事实。临时召回未提供资料的实体时，本轮只登记唤醒，依赖旧事实的情节留到下一轮，不得声称已读冷档。
 ${readToken?`当轮可更新的冷档编号：${projection.retrieved.join('、')||'无'}；该权限只对应本次完整资料和 read 凭据。`:''}
 ${result.errors.length?'之前存在未应用更新，以这份有效状态为准。':''}
-输出前检查：唯一 LoreState 外层使用本轮指定 mode；每个 Entity 都有自己的小写 mode；新编号 full 且栏目齐全，旧编号 delta；不输出 EntityRecord 或只读来源信息。`;
+${purpose==='narration'?'仅输出剧情正文，不输出状态标签。':'输出前检查：唯一 LoreState 外层使用本轮指定 mode；每个 Entity 都有自己的小写 mode；新编号 full 且栏目齐全，旧编号 delta；不输出 EntityRecord 或只读来源信息。'}`;
   let prompt=compose();
   // Shed optional context as complete records; never truncate facts or hide required events.
   while(prompt.length>24000&&projection.index.length){projection.index.pop();projection.omitted++;prompt=compose();}
@@ -314,7 +314,7 @@ function authorPrompt(rules){
 公共栏目直接用 data-lore-field="栏目名"。需要逐个实体展示时，使用一个 data-lore-entity 容器（覆盖人物、国家、组织、地点、物品、事件等所有类别），容器内的 data-lore-field 属于实体栏目；脚本按在场实体自动复制容器，不需要写循环。公共和实体可以只选其一，也可以并用，无需选择脚本模式。
 实体容器内可用独立文字节点 data-lore-name、data-lore-id、data-lore-identity、data-lore-type、data-lore-confirmed 展示名称、编号、识别信息、类别、最后确认时间。每个绑定节点只放文字，不包含标题或其他绑定节点。实体容器只能有一个，不能嵌套。栏目名以文字或下划线开头，其后仅文字、数字、下划线或连字符，每类最多 32 个；栏目值为普通文字。
 示例：<section><h3>地点</h3><p data-lore-field="地点"></p></section><article data-lore-entity><h3 data-lore-name></h3><p data-lore-field="近况"></p></article>
-使用 CSS 和 details/summary，适应窄屏和长文字。CSS 放 style 中，不使用 JavaScript、事件属性、外部资源、表单、iframe、SVG 或网络请求。不使用 {{变量}}，也不要求 AI 每轮重写 HTML。内容由脚本以 textContent 填入。
+使用 CSS 和 details/summary，适应窄屏和长文字。CSS 放 style 中，不使用 JavaScript、事件属性、外部资源、表单、iframe、SVG 或网络请求。不使用双花括号占位符，也不要求 AI 每轮重写 HTML。内容由脚本以 textContent 填入。
 模块条目存在时，栏目以声明为准，必须展示所有公共与各类栏目。在唯一实体容器内用 <section data-lore-module="人物"> 包住人物专用栏目，其他模块同理；这些分区不可嵌套。脚本只保留当前类别分区。不可增删或改名声明栏目。\n状态栏条目：\n${rules}`;
 }
 
@@ -409,8 +409,212 @@ function deletePreset(config,id){
 
 function sameSchema(a,b){return !!a&&!!b&&sameFields(a.shared,b.shared)&&sameFields(a.entity,b.entity)&&moduleSignature(a)===moduleSignature(b);}
 
+// 内置预设头尾：请填写“UTF-8 文本 → 标准 Base64”的结果，默认留空。
+// Base64 只是可逆编码，不是保密加密；支持编码文本换行，不支持 Base64URL。
+// 仅“内置预设”使用这两个部分；修改后运行 npm run build。
+// 固定状态规则与输出格式仍由 core.js / api-profiles.js 发送，不要移到这里。
+const BUILTIN_PRESET_HEAD_BASE64 = ``;
+
+const BUILTIN_PRESET_TAIL_BASE64 = ``;
+
+function decodeBuiltinPreset(encoded,label='预设'){
+  try{
+    const compact=encoded.replace(/\s/g,'');
+    if(!compact)return '';
+    if(!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(compact))throw new Error();
+    const binary=atob(compact);
+    if(btoa(binary)!==compact)throw new Error();
+    return new TextDecoder('utf-8',{fatal:true}).decode(Uint8Array.from(binary,char=>char.charCodeAt(0)));
+  }catch{
+    throw new Error(`内置预设${label}编码无效，请填写 UTF-8 标准 Base64（保留末尾的 =）`);
+  }
+}
+
+// 与额外模型调用统一组装：头部 → 固定状态任务 → 本轮剧情 → 尾部。
+// 空白头尾不产生空消息；保留非空文本的原始格式。
+function builtinOrderedPrompts(task,headBase64=BUILTIN_PRESET_HEAD_BASE64,tailBase64=BUILTIN_PRESET_TAIL_BASE64){
+  const head=decodeBuiltinPreset(headBase64,'头部'),tail=decodeBuiltinPreset(tailBase64,'尾部');
+  return [
+    ...(head.trim()?[{role:'system',content:head}]:[]),
+    {role:'system',content:task},
+    'user_input',
+    ...(tail.trim()?[{role:'system',content:tail}]:[]),
+  ];
+}
+
+// Local user configuration only. Never copy this namespace to script/card data.
+const API_PROFILE_KEY='lorestate_api_profiles_v1';
+function normalizeApiAddress(value){
+  let url;try{url=new URL(String(value??'').trim());}catch{throw new Error('请填写完整的 API 地址');}
+  if(!['http:','https:'].includes(url.protocol)||url.username||url.password||url.search||url.hash)throw new Error('API 地址只接受 HTTP/HTTPS，凭据请填写在密钥栏');
+  url.pathname=url.pathname.replace(/\/(?:chat\/completions|models)\/?$/,'').replace(/\/$/,'');
+  return url.href.replace(/\/$/,'');
+}
+function normalizeUpdateSettings(value={}){
+  const config={...value,mode:value.mode??'inline',profileId:value.profileId??'',source:value.source??'custom',presetMode:value.presetMode??'builtin',presetName:value.presetName??'',auto:value.auto??true,stream:value.stream??false,attempts:Number(value.attempts??1),timeoutSeconds:Number(value.timeoutSeconds??120)};
+  if(!['inline','extra'].includes(config.mode)||!['custom','current'].includes(config.source)||!['builtin','current','named'].includes(config.presetMode))throw new Error('状态更新方式、模型来源或请求预设无效');
+  if(typeof config.auto!=='boolean'||typeof config.stream!=='boolean')throw new Error('自动更新和流式设置必须为开关');
+  if(!Number.isInteger(config.attempts)||config.attempts<1||config.attempts>5)throw new Error('请求总次数需为 1～5 的整数');
+  if(!Number.isInteger(config.timeoutSeconds)||config.timeoutSeconds<15||config.timeoutSeconds>600)throw new Error('总超时需为 15～600 秒的整数');
+  if(config.presetMode==='named'&&!config.presetName.trim())throw new Error('请选择酒馆请求预设');
+  return config;
+}
+function normalizeApiProfile(profile){
+  const name=String(profile.name??'').trim(),model=String(profile.model??'').trim();
+  if(!name||name.length>40)throw new Error('API 预设名称需为 1～40 个字符');
+  if(!model||model.length>200)throw new Error('请填写模型名称（最多 200 字符）');
+  const url=normalizeApiAddress(profile.url),maxTokens=Number(profile.maxTokens??4096);
+  if(!Number.isInteger(maxTokens)||maxTokens<0||maxTokens>65536)throw new Error('最大回复长度需为 0～65536 的整数，0 表示不发送此参数');
+  const sampling={};
+  for(const [key,label,min,max,fallback] of [['temperature','温度',0,2,0.2],['topP','Top P',0,1,'unset'],['topK','Top K',0,1000,'unset'],['frequencyPenalty','频率惩罚',-2,2,'unset'],['presencePenalty','存在惩罚',-2,2,'unset']]){
+    const raw=profile[key]??fallback;
+    if(raw===''||raw==='unset'){sampling[key]='unset';continue;}
+    const number=Number(raw);if(!Number.isFinite(number)||number<min||number>max||(key==='topK'&&!Number.isInteger(number)))throw new Error(`${label} 参数范围为 ${min}～${max}${key==='topK'?' 的整数':''}`);
+    sampling[key]=key==='topK'&&number===0?'unset':number;
+  }
+  return {id:profile.id,name,url,key:String(profile.key??'').trim(),model,maxTokens,...sampling};
+}
+function saveApiProfile(config,profile){
+  const next=normalizeApiProfile(profile),profiles=config.profiles??[];
+  if(typeof next.id!=='string'||!next.id)throw new Error('API 预设编号缺失');
+  if(profiles.some(p=>p.id!==next.id&&p.name===next.name))throw new Error('已有同名 API 预设');
+  if(!profiles.some(p=>p.id===next.id)&&profiles.length>=20)throw new Error('最多保存 20 个 API 预设');
+  return {...config,profiles:profiles.some(p=>p.id===next.id)?profiles.map(p=>p.id===next.id?next:p):[...profiles,next]};
+}
+function deleteApiProfile(config,id){
+  return {...config,profiles:(config.profiles??[]).filter(p=>p.id!==id)};
+}
+function boundApiProfile(config,id){
+  const profile=(config.profiles??[]).find(p=>p.id===id);
+  if(!profile)throw new Error('状态更新绑定的 API 预设不存在，请重新绑定');
+  return normalizeApiProfile(profile);
+}
+function extraModelRequest(profile,content,story,generationId,options={}){
+  const settings=normalizeUpdateSettings(options),task=content+'\n本次只整理已发生剧情的文字状态，不续写剧情。只返回唯一 LoreState 更新块，不附解释、思考或代码围栏。下一条消息是已发生的剧情资料。';
+  const request={generation_id:generationId,should_stream:settings.stream,should_silence:true,max_chat_history:0,tools:[]};
+  if(settings.source==='custom'){
+    const p=normalizeApiProfile(profile);
+    request.custom_api={apiurl:p.url,key:p.key,model:p.model,source:'openai',max_tokens:p.maxTokens||'unset',temperature:p.temperature,top_p:p.topP,top_k:p.topK,frequency_penalty:p.frequencyPenalty,presence_penalty:p.presencePenalty};
+  }
+  if(settings.presetMode==='builtin')Object.assign(request,{user_input:story,ordered_prompts:builtinOrderedPrompts(task)});
+  // A preset may omit chat_history, in which case Helper skips in-chat injections.
+  // Keep the complete task in user_input so the required protocol cannot disappear.
+  else Object.assign(request,{preset_name:settings.presetMode==='current'?'in_use':settings.presetName,user_input:task+'\n\n已发生的剧情资料：\n'+story,overrides:{chat_history:{prompts:[],with_depth_entries:false,author_note:''}},injects:[{role:'system',content:'本次请求只整理文字状态，请按本次输入中的 LoreState 协议返回更新块，不续写剧情。',position:'in_chat',depth:0,should_scan:false}]});
+  return request;
+}
+
+
+function createApiPanel({doc,read,write,binding,setBinding,run,cancel,undo,onError,listRequestPresets=()=>[],fetchModels}){
+  const make=(tag,text,parent)=>{const el=doc.createElement(tag);if(text)el.textContent=text;parent?.append(el);return el;};
+  const panel=make('section');
+  make('h3','API 预设与状态更新',panel);
+  make('p','API 预设可供不同角色使用。密钥保存在当前酒馆用户的本地设置中，不写入角色卡或聊天记录；完整设置备份仍包含密钥。',panel);
+  const status=make('p','',panel);status.className='ls-health';status.setAttribute('role','status');
+  const group=(title,open=false)=>{const section=make('details',null,panel);section.open=open;make('summary',title,section);return section;};
+  const field=(title,type='text',parent=panel)=>{const label=make('label',title,parent),input=make(type==='select'?'select':'input',null,label);input.setAttribute('aria-label',title);if(type!=='select')input.type=type;return input;};
+  const action=(title,fn,parent=panel)=>{const button=make('button',title,parent);button.type='button';button.onclick=async()=>{button.disabled=true;try{await fn();}catch(e){status.textContent=e.message;onError(e);}finally{button.disabled=false;}};return button;};
+  const choices=(select,items)=>{select.replaceChildren();for(const [value,title] of items)make('option',title,select).value=value;};
+  const requestGroup=group('请求内容',true);
+  const mode=field('状态更新方式','select',requestGroup);choices(mode,[['inline','随正文更新'],['extra','额外模型更新']]);
+  const presetMode=field('请求预设','select',requestGroup);choices(presetMode,[['builtin','内置预设'],['current','当前酒馆预设'],['named','指定酒馆预设']]);
+  const presetName=field('目标酒馆预设','select',requestGroup);
+  make('p','状态规则与输出格式固定发送，不受预设选择影响。预设用于补充语气、文风等要求；内置预设的补充内容默认留空。酒馆预设只用于本次请求，不切换正文预设；指定预设时，其采样参数按酒馆助手规则优先生效。',requestGroup);
+  const strategyGroup=group('请求策略',true);
+  const auto=field('自动更新','checkbox',strategyGroup),stream=field('兼容流式响应','checkbox',strategyGroup),attempts=field('请求总次数','number',strategyGroup),timeout=field('总超时（秒）','number',strategyGroup);
+  attempts.min='1';attempts.max='5';attempts.step='1';timeout.min='15';timeout.max='600';timeout.step='1';
+  make('p','依次请求，失败后重试；次数包含首次请求。总超时覆盖全部尝试，取消或聊天变化不会重试。流式只用于接收响应，完整校验前不写入状态。',strategyGroup);
+  const sourceGroup=group('模型来源',true);
+  const source=field('状态模型来源','select',sourceGroup);choices(source,[['custom','绑定 API 预设'],['current','跟随酒馆当前连接']]);
+  const bound=field('状态更新 API 预设','select',sourceGroup);
+  const profileGroup=group('管理 API 预设',true);
+  const select=field('编辑 API 预设','select',profileGroup),name=field('API 预设名称','text',profileGroup),url=field('API 地址','text',profileGroup),key=field('API 密钥','password',profileGroup),model=field('API 模型名称','text',profileGroup),models=field('可用模型','select',profileGroup);
+  url.placeholder='https://example.com/v1';key.autocomplete='off';name.maxLength=40;model.maxLength=200;
+  let editedId='',modelEpoch=0;
+  const resetModels=()=>{modelEpoch++;choices(models,[['','手动填写模型，或获取列表']]);};
+  models.onchange=()=>{if(models.value)model.value=models.value;};
+  url.oninput=key.oninput=resetModels;
+  action('获取模型列表',async()=>{
+    if(!fetchModels)throw new Error('当前酒馆助手不支持获取模型列表');
+    const address=normalizeApiAddress(url.value),secret=key.value,epoch=++modelEpoch;let timer;
+    status.textContent='正在获取模型列表…';
+    try{
+      const result=await Promise.race([fetchModels({apiurl:address,key:secret}),new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('模型列表请求超时')),30000);})]);
+      if(epoch!==modelEpoch)return;
+      const names=[...new Set((Array.isArray(result)?result:[]).filter(v=>typeof v==='string'&&v.length&&v.length<=200))].sort();
+      choices(models,[['','请选择模型'],...names.map(v=>[v,v])]);status.textContent=names.length?`获取到 ${names.length} 个模型，选择后请保存 API 预设。`:'服务未返回模型列表，请检查连接或手动填写模型名称。';
+    }catch{if(epoch===modelEpoch)throw new Error('获取模型列表失败，请检查地址、密钥和网络，或手动填写模型名称');}
+    finally{clearTimeout(timer);}
+  },profileGroup);
+  const advanced=make('details',null,profileGroup);make('summary','高级采样参数',advanced);
+  make('p','留空表示不发送该采样参数，使用服务默认值。最大回复长度为 0 时不发送；Top K 为 0 时不发送。不同服务支持的参数不同。',advanced);
+  const maxTokens=field('最大回复 tokens','number',advanced),temperature=field('更新温度','number',advanced),topP=field('Top P','number',advanced),topK=field('Top K','number',advanced),frequency=field('频率惩罚','number',advanced),presence=field('存在惩罚','number',advanced);
+  for(const [el,min,max,step] of [[maxTokens,0,65536,1],[temperature,0,2,0.1],[topP,0,1,0.05],[topK,0,1000,1],[frequency,-2,2,0.1],[presence,-2,2,0.1]]){el.min=min;el.max=max;el.step=step;}
+  function load(){
+    resetModels();const p=(read().profiles??[]).find(p=>p.id===select.value);editedId=p?.id??'';
+    for(const [el,value] of [[name,p?.name??''],[url,p?.url??''],[key,p?.key??''],[model,p?.model??''],[maxTokens,p?.maxTokens??4096],[temperature,p?.temperature??0.2],[topP,p?.topP??''],[topK,p?.topK??''],[frequency,p?.frequencyPenalty??''],[presence,p?.presencePenalty??'']])el.value=value==='unset'?'':value;
+  }
+  function visibility(){presetName.parentElement.hidden=presetMode.value!=='named';bound.parentElement.hidden=source.value!=='custom';}
+  presetMode.onchange=source.onchange=visibility;
+  function sync(preferred=editedId){
+    const profiles=read().profiles??[];choices(select,[['','新建预设'],...profiles.map(p=>[p.id,p.name])]);choices(bound,[['','未绑定'],...profiles.map(p=>[p.id,p.name])]);
+    select.value=preferred;const config=normalizeUpdateSettings(binding());bound.value=config.profileId;mode.value=config.mode;source.value=config.source;presetMode.value=config.presetMode;
+    choices(presetName,[['','请选择预设'],...listRequestPresets().map(name=>[name,name])]);presetName.value=config.presetName;
+    auto.checked=config.auto;stream.checked=config.stream;attempts.value=config.attempts;timeout.value=config.timeoutSeconds;
+    const current=profiles.find(p=>p.id===config.profileId);
+    status.textContent=`当前模式：${config.mode==='extra'?'额外模型':'随正文更新'}；状态模型：${config.source==='current'?'酒馆当前连接':current?.name??(config.profileId?'预设已删除，请重新绑定':'未绑定')}。`;
+    load();visibility();
+  }
+  select.onchange=load;
+  const values=()=>({id:editedId||crypto.randomUUID(),name:name.value,url:url.value,key:key.value,model:model.value,maxTokens:maxTokens.value,temperature:temperature.value,topP:topP.value,topK:topK.value,frequencyPenalty:frequency.value,presencePenalty:presence.value});
+  action('保存 API 预设',()=>{const p=values();write(saveApiProfile(read(),p));sync(p.id);status.textContent+=' API 预设已保存。';},profileGroup);
+  action('另存为新 API 预设',()=>{const p={...values(),id:crypto.randomUUID()};write(saveApiProfile(read(),p));sync(p.id);},profileGroup);
+  action('删除 API 预设',()=>{if(!editedId)throw new Error('请选择要删除的预设');write(deleteApiProfile(read(),editedId));sync('');},profileGroup);
+  action('保存状态更新绑定',()=>{
+    const config=normalizeUpdateSettings({...binding(),mode:mode.value,profileId:bound.value,source:source.value,presetMode:presetMode.value,presetName:presetName.value,auto:auto.checked,stream:stream.checked,attempts:attempts.value,timeoutSeconds:timeout.value});
+    if(config.mode==='extra'&&config.source==='custom')boundApiProfile(read(),config.profileId);
+    if(config.presetMode==='named'&&!listRequestPresets().includes(config.presetName))throw new Error('所选酒馆预设已失效');
+    setBinding(config);sync();
+  });
+  make('p','以上请求设置和绑定需保存后生效。关闭自动更新后，可手动整理最新回复。重试与撤销保留剧情正文。',panel);
+  action('重新更新最新回复状态',run);action('取消状态更新',cancel);action('撤销最近一次状态更新',undo);
+  return {panel,sync,report:text=>{status.textContent=text;},clear:()=>{modelEpoch++;key.value='';}};
+}
+
+
+function variableStory(source){
+  const story=source.replace(new RegExp(TAG_PATTERN,'g'),'');
+  if(/<\/?LoreState\b/i.test(story))throw new Error('原消息存在未闭合的状态标签，请先手动修复标签边界后重试');
+  return story;
+}
+function validateExtraUpdate(output,original,previous,schema,floor,receipt){
+  if(typeof output!=='string')throw new Error('状态模型未返回文字更新块');
+  const text=output.trim().replace(/^```(?:xml)?\s*\n([\s\S]*?)\n```$/,'$1').trim();
+  const blocks=[...text.matchAll(new RegExp(TAG_PATTERN,'g'))];
+  if(blocks.length!==1||blocks[0][0]!==text)throw new Error('状态模型必须只返回一个完整 LoreState 更新块');
+  if(!text.startsWith(`<LoreState version="3" mode="${previous?'delta':'full'}" read="${receipt.token}">`))throw new Error('状态模型返回的 mode 或读取凭据不匹配，请重试');
+  // This is the same parser and cold-record permission check used for replay.
+  applyState(previous,text,schema,floor,receipt);
+  variableStory(original); // Validate boundaries before replacing anything.
+  let replaced=false;
+  const updated=original.replace(new RegExp(TAG_PATTERN,'g'),()=>{if(replaced)return '';replaced=true;return text;});
+  return replaced?updated:original+'\n\n'+text;
+}
+
+// Only an append to the exact saved branch can be folded into one state update.
+function settleContinuedMessage(original,current,mode,previous,schema,floor,receipt){
+  if(!current.startsWith(original))throw new Error('续写改动了原回复，无法自动合并，请核对正文和状态');
+  if(current===original)return current;
+  const suffix=current.slice(original.length);
+  const narrative=variableStory(original)+suffix;
+  if(mode==='extra')return variableStory(narrative);
+  const blocks=[...suffix.matchAll(new RegExp(TAG_PATTERN,'g'))];
+  if(blocks.length!==1) return narrative.replace(new RegExp(TAG_PATTERN,'g'),''); // Keep partial tags for diagnostics, retire complete untrusted blocks.
+  try{return validateExtraUpdate(blocks[0][0],narrative,previous,schema,floor,receipt);}
+  catch{return narrative.replace(new RegExp(TAG_PATTERN,'g'),'');}
+}
+
 // Presentation only: no host data writes or persisted navigation state.
-function createControlCenter({doc,manager,panel,summary,status,floorSelect,details,diagnostics,repairBox,snapshotPanel,actions,loadSettings,settingsGroups}) {
+function createControlCenter({doc,manager,panel,summary,status,floorSelect,details,diagnostics,repairBox,snapshotPanel,apiPanel,loadApi,actions,loadSettings,settingsGroups}) {
   const make=(tag,text,parent)=>{const el=doc.createElement(tag);if(text)el.textContent=text;parent?.append(el);return el;};
   manager.replaceChildren();manager.removeAttribute('style');manager.setAttribute('aria-label','LoreState 控制中心');
   panel.removeAttribute('style');
@@ -435,6 +639,7 @@ function createControlCenter({doc,manager,panel,summary,status,floorSelect,detai
   #lorestate-state-manager select,#lorestate-state-manager input,#lorestate-state-manager textarea{font:inherit;width:100%;max-width:100%;min-height:44px;border:1px solid var(--ls-line);border-radius:8px;background:#171c16;color:inherit;padding:10px}
   #lorestate-state-manager select{width:auto}#lorestate-state-manager label{display:block;margin:12px 0 6px;color:var(--ls-muted)}
   #lorestate-state-manager label :is(select,textarea,input){display:block;width:100%;margin-top:6px}
+  #lorestate-state-manager label input[type=checkbox]{display:inline-block;width:20px;height:20px;min-height:20px;vertical-align:middle;margin:0 0 0 12px}
   #lorestate-state-manager textarea{display:block;min-height:140px;resize:vertical;font:13px/1.6 ui-monospace,monospace;margin:12px 0}
   #lorestate-state-manager details{margin:16px 0;padding:12px 0;border-top:1px solid var(--ls-line)}
   #lorestate-state-manager summary{cursor:pointer;font-weight:600;min-height:32px}
@@ -468,13 +673,14 @@ function createControlCenter({doc,manager,panel,summary,status,floorSelect,detai
     for(const el of controls){if(el.tagName==='BUTTON'){if(!row){row=make('div',null,section);row.className='ls-actions';}row.append(el);}else{row=null;section.append(el);}}
   }
   for(const title of ['保存 HTML 并启用本聊天','应用预览修复'])actions.get(title)?.classList.add('ls-primary');
-  const pages={state:statePage,diagnostics:repairPage,settings:panel},tabs={};let active='state';
-  function select(id,focus=false){active=id;for(const [key,page] of Object.entries(pages)){page.hidden=key!==id;tabs[key].setAttribute('aria-selected',String(key===id));tabs[key].tabIndex=key===id?0:-1;}toolbar.hidden=id==='settings';summary.hidden=id==='settings';if(focus)tabs[id].focus();}
-  for(const [id,title] of [['state','状态历史'],['diagnostics','诊断修复'],['settings','设置']]){
+  if(apiPanel)body.append(apiPanel);
+  const pages={state:statePage,diagnostics:repairPage,settings:panel,...(apiPanel?{api:apiPanel}:{})},tabs={};let active='state';
+  function select(id,focus=false){active=id;for(const [key,page] of Object.entries(pages)){page.hidden=key!==id;tabs[key].setAttribute('aria-selected',String(key===id));tabs[key].tabIndex=key===id?0:-1;}toolbar.hidden=['settings','api'].includes(id);summary.hidden=toolbar.hidden;if(focus)tabs[id].focus();}
+  for(const [id,title] of [['state','状态历史'],['diagnostics','诊断修复'],['settings','设置'],...(apiPanel?[['api','API 预设']]:[])]){
     const tab=make('button',title,nav);tab.type='button';tab.id='ls-tab-'+id;tab.setAttribute('role','tab');tab.setAttribute('aria-controls','ls-page-'+id);tabs[id]=tab;
     pages[id].id=id==='settings'?'lorestate-prototype-settings':'ls-page-'+id;tab.setAttribute('aria-controls',pages[id].id);pages[id].setAttribute('role','tabpanel');pages[id].setAttribute('aria-labelledby',tab.id);
-    tab.onclick=()=>{select(id);if(id==='settings')void loadSettings();};
-    tab.onkeydown=e=>{const keys=Object.keys(pages),i=keys.indexOf(active);let next;if(e.key==='ArrowRight')next=keys[(i+1)%3];if(e.key==='ArrowLeft')next=keys[(i+2)%3];if(e.key==='Home')next=keys[0];if(e.key==='End')next=keys[2];if(next){e.preventDefault();tabs[next].click();tabs[next].focus();}};
+    tab.onclick=()=>{select(id);if(id==='settings')void loadSettings();if(id==='api')loadApi?.();};
+    tab.onkeydown=e=>{const keys=Object.keys(pages),i=keys.indexOf(active);let next;if(e.key==='ArrowRight')next=keys[(i+1)%keys.length];if(e.key==='ArrowLeft')next=keys[(i+keys.length-1)%keys.length];if(e.key==='Home')next=keys[0];if(e.key==='End')next=keys.at(-1);if(next){e.preventDefault();tabs[next].click();tabs[next].focus();}};
   }
   let returnFocus;
   manager.addEventListener('close',()=>{if(returnFocus?.isConnected)returnFocus.focus();});
@@ -603,6 +809,20 @@ function startPrototype(defaultHtml) {
   if(doc.getElementById('lorestate-prototype-settings'))throw new Error('已有 LoreState 原型脚本运行，请勿重复启用');
   const settings=()=>getVariables({type:'script'})[PROTO_KEY]??{};
   const chatSettings=()=>getVariables({type:'chat'})[PROTO_KEY]??{};
+  const apiSettings=()=>getVariables({type:'global'})?.[API_PROFILE_KEY]??{profiles:[]};
+  const updateBinding=()=>normalizeUpdateSettings(chatSettings().variableUpdate);
+  const requestPresets=()=>typeof getPresetNames==='function'?getPresetNames():[];
+  const selectedStateModel=binding=>binding.source==='custom'?boundApiProfile(apiSettings(),binding.profileId):null;
+  function checkRequestPreset(binding){
+    if(binding.source==='current'&&ctx().mainApi!=='openai')throw new Error('跟随当前连接需要酒馆使用 Chat Completion；其他连接请绑定独立 API');
+    if(binding.presetMode!=='builtin'&&typeof generate!=='function')throw new Error('当前酒馆助手缺少预设生成接口');
+    if(binding.presetMode==='named'&&!requestPresets().includes(binding.presetName))throw new Error('指定的酒馆请求预设不存在，请重新选择');
+  }
+  function requestContextIdentity(binding){
+    const preset=binding.presetMode==='builtin'?null:typeof getPreset==='function'?getPreset(binding.presetMode==='current'?'in_use':binding.presetName):null;
+    if(binding.presetMode!=='builtin'&&preset===null)throw new Error('当前酒馆助手缺少读取请求预设的接口');
+    return JSON.stringify([preset,binding.source==='current'?[ctx().mainApi,ctx().chatCompletionSettings]:null]);
+  }
   const messages=()=>{const store=chatSettings().snapshotStore;return getChatMessages('0-{{lastMessageId}}',{include_swipes:true}).map(m=>{
     const message=m.swipes?.[m.swipe_id??0]??m.message??'';
     return {message_id:m.message_id,role:m.role,is_hidden:m.is_hidden,swipe_id:m.swipe_id??0,message,readReceipt:readReceipt(message,store)};
@@ -617,6 +837,7 @@ function startPrototype(defaultHtml) {
   const identity=()=>[ctx().chat,ctx().getCurrentChatId()];
   const matches=([chat,id])=>!closed&&ctx().chat===chat&&ctx().getCurrentChatId()===id;
   let closed=false,queue=Promise.resolve(),pending=false,uninject=null,view=null,renderKey='',menuObserver;
+  let extraJob=null,autoUpdate=null,autoTimer=null,chatEpoch=0,continuationWork=null;
   const node=(tag,text,parent)=>{const el=doc.createElement(tag);if(text!==undefined)el.textContent=text;parent?.append(el);return el;};
   const stateWindow=createStateWindow(doc);
   const panel=node('section',undefined,doc.body);panel.id='lorestate-prototype-settings';panel.setAttribute('aria-label','LoreState 原型设置');
@@ -818,7 +1039,11 @@ function startPrototype(defaultHtml) {
   button('删除所选预设',panel,()=>{writeConfig(deletePreset(settings(),presetSelect.value));syncPresets();report('已删除所选预设，当前展示保留。');});
   syncPresets();
   const preview=createStateFrame(doc,'LoreState HTML 预览');panel.append(preview);
-  const getResult=(config=settings(),list=messages())=>replaySnapshots(list,schemaFor(config),chatSettings().start??1,chatSettings().checkpoint);
+  const getResult=(config=settings(),list=messages())=>{
+    const pending=chatSettings().continuationPending;
+    if(pending&&list.some(m=>m.message_id===pending.floor&&m.message!==pending.original))throw new Error('续写尚未整理完成，请重新读取当前聊天状态；原分支变化时需先恢复原分支');
+    return replaySnapshots(list,schemaFor(config),chatSettings().start??1,chatSettings().checkpoint);
+  };
   button('预览 HTML（不保存）',panel,()=>{
     const schema=templateSchema(html.value,selectedEntry()?.content??''),config=settings();
     const example=fields=>Object.fromEntries(fields.map(f=>[f,`${f}的示例文字`]));
@@ -890,9 +1115,18 @@ function startPrototype(defaultHtml) {
   async function loadSettings(){try{syncPresets();await loadBooks();}catch(e){fault(e,'设置读取失败');}}
   async function open(){if(!settings().ready){center.open('settings');await loadSettings();}else openManager();}
   const a=title=>actions.get(title);
+  function cancelExtraUpdate(){
+    autoUpdate=null;clearTimeout(autoTimer);autoTimer=null;
+    if(extraJob)extraJob.cancel();
+  }
+  const apiUi=createApiPanel({doc,read:apiSettings,
+    listRequestPresets:requestPresets,fetchModels:params=>{if(typeof getModelList!=='function')throw new Error('当前酒馆助手缺少模型列表接口');return getModelList(params);},
+    write:config=>{cancelExtraUpdate();updateVariablesWith(v=>({...v,[API_PROFILE_KEY]:config}),{type:'global'});},
+    binding:updateBinding,setBinding:value=>{if(!active(settings()))throw new Error('请先配置并启用本聊天');cancelExtraUpdate();updateVariablesWith(v=>({...v,[PROTO_KEY]:{...v[PROTO_KEY],variableUpdate:value}}),{type:'chat'});},
+    run:()=>runExtraUpdate(),cancel:()=>{const committed=extraJob?.committed;cancelExtraUpdate();apiUi.report(committed?'状态已经写入，如需恢复请撤销最近一次更新。':'状态更新已取消，原消息保留。');},undo:undoExtraUpdate,onError:e=>fault(e,'状态更新操作失败')});
   const ruleDisclosure=node('details');node('summary','查看条目原文',ruleDisclosure);ruleDisclosure.append(rules);
   const makerDisclosure=node('details');node('summary','制作提示词与下一轮提示预览',makerDisclosure);makerDisclosure.append(a('生成并复制 HTML 制作提示词'),a('查看下一轮状态提示'),maker);
-  const center=createControlCenter({doc,manager,panel,summary,status,floorSelect,details,diagnostics,repairBox,snapshotPanel,actions,loadSettings,settingsGroups:[
+  const center=createControlCenter({doc,manager,panel,summary,status,floorSelect,details,diagnostics,repairBox,snapshotPanel,apiPanel:apiUi.panel,loadApi:apiUi.sync,actions,loadSettings,settingsGroups:[
     ['1 · 世界书与规则',[bookLabel,entryLabel,a('刷新世界书列表'),ruleDisclosure]],
     ['2 · 外观模板',[makerDisclosure,htmlLabel,a('预览 HTML（不保存）'),preview,a('保存 HTML 并启用本聊天')]],
     ['3 · 外观预设',[presetLabel,a('应用所选预设'),nameLabel,a('另存为新预设'),a('覆盖所选预设'),a('删除所选预设')]],
@@ -927,7 +1161,8 @@ function startPrototype(defaultHtml) {
     if(result.errors.length)button('重新读取状态',view,()=>refresh());renderKey=key;
   }
   async function refresh(){
-    if(hostGenerating())return;
+    if(hostGenerating()||autoUpdate||autoTimer||(extraJob&&!extraJob.committed))return;
+    await settleContinuation();
     const config=settings();if(!active(config)){view?.remove();return;}freezePolicy();
     const id=identity(),list=messages(),schema=schemaFor(config),result=getResult(config,list);
     if(!matches(id))return;
@@ -955,25 +1190,165 @@ function startPrototype(defaultHtml) {
   // still kept as a compatibility fallback, but can be unbalanced by host-side
   // slash commands and message edits.
   const hostGenerating=()=>window.parent.TavernHelper?.builtin?.duringGenerating?.()??generating;
+  async function settleContinuation(){
+    if(continuationWork)return continuationWork;
+    const saved=chatSettings(),plan=saved.continuationPending;if(!plan)return;
+    const id=identity(),epoch=chatEpoch;
+    continuationWork=(async()=>{
+      const list=messages(),last=list.at(-1),schema=schemaFor();
+      if(last?.message_id!==plan.floor||last.swipe_id!==plan.swipe||historyIdentity(list.slice(0,-1))!==plan.prefix||JSON.stringify(schema)!==plan.schema||JSON.stringify(saved.checkpoint??null)!==plan.checkpoint)throw new Error('续写期间历史、分支或配置变化，请恢复原分支后重试');
+      const previous=replaySnapshots(list.slice(0,-1),schema,saved.start??1,saved.checkpoint);
+      const receipt=readReceipt(`<LoreState read="${plan.token}">`,saved.snapshotStore);
+      const updated=plan.normalized===last.message?last.message:settleContinuedMessage(plan.original,last.message,plan.mode,previous.state,schema,last.message_id,receipt);
+      if(!matches(id)||epoch!==chatEpoch||hostGenerating())return;
+      if(updated!==last.message){
+        // A reload between the message write and metadata cleanup must recognize its own committed result.
+        updateVariablesWith(v=>({...v,[PROTO_KEY]:{...v[PROTO_KEY],continuationPending:{...plan,normalized:updated}}}),{type:'chat'});
+        await setChatMessages([{message_id:last.message_id,message:updated}],{refresh:'affected'});
+      }
+      if(!matches(id)||epoch!==chatEpoch)return;
+      updateVariablesWith(v=>{const next={...v[PROTO_KEY]};delete next.continuationPending;return {...v,[PROTO_KEY]:next};},{type:'chat'});
+    })();
+    try{await continuationWork;}finally{continuationWork=null;}
+  }
+  async function runExtraUpdate(){
+    if(extraJob)throw new Error('状态更新正在进行，请等待或取消');
+    if(hostGenerating())throw new Error('请等待正文生成结束');
+    generating=false; // Live helper readiness supersedes a stale core preview event.
+    await settleContinuation();
+    if(extraJob||hostGenerating())throw new Error('已有生成或状态更新正在进行，请稍后重试');
+    const config=settings(),saved=chatSettings(),binding=updateBinding();
+    if(!active(config)||binding.mode!=='extra')throw new Error('请先启用本聊天的额外模型更新');
+    if(typeof generateRaw!=='function'||typeof stopGenerationById!=='function'||typeof setChatMessages!=='function')throw new Error('需要酒馆助手的独立生成、取消与消息写入接口');
+    checkRequestPreset(binding);
+    const profile=selectedStateModel(binding),id=identity(),epoch=chatEpoch,list=messages(),last=list.at(-1);
+    if(!last||last.role!=='assistant'||last.message_id<(saved.start??1))throw new Error('请在最新一条 AI 回复后更新状态');
+    if(saved.checkpoint&&last.message_id<=saved.checkpoint.cutoff)throw new Error('这条回复属于回档前保留的正文，请先发送新一轮，再更新新回复状态');
+    const story=variableStory(last.message);if(!story.trim())throw new Error('最新 AI 回复没有剧情正文，无法重新判断状态');
+    const schema=schemaFor(config),previous=getResult(config,list.slice(0,-1));
+    if(previous.errors.length)throw new Error('此前楼层存在状态缺口，请先修复历史再更新最新回复');
+    const history=historyIdentity(list),schemaKey=JSON.stringify(schema),configKey=JSON.stringify(config),bindingKey=JSON.stringify(binding),profileKey=JSON.stringify(profile),requestContextKey=requestContextIdentity(binding);
+    const token=crypto.randomUUID();let generationId=crypto.randomUUID();
+    let rejectCancel,timer;
+    const cancelled=new Promise((_,reject)=>{rejectCancel=reject;});
+    const job={cancelled:false,committed:false,cancel(){if(job.cancelled||job.committed)return;job.cancelled=true;try{stopGenerationById(generationId);}catch{}rejectCancel(new Error('状态更新已取消或超时，原消息保留'));}};
+    extraJob=job;autoUpdate=null;
+    const current=()=>matches(id)&&chatEpoch===epoch&&!job.cancelled;
+    const assertCurrent=()=>{
+      if(!current()||hostGenerating()||!active(settings())||historyIdentity(messages())!==history||JSON.stringify(schemaFor())!==schemaKey||JSON.stringify(settings())!==configKey||JSON.stringify(updateBinding())!==bindingKey||JSON.stringify(chatSettings().checkpoint??null)!==JSON.stringify(saved.checkpoint??null)||(chatSettings().start??1)!==(saved.start??1)||JSON.stringify(selectedStateModel(binding))!==profileKey)throw new Error('聊天、回复分支或配置已变化，状态结果未写入');
+      checkRequestPreset(binding);
+      if(requestContextIdentity(binding)!==requestContextKey)throw new Error('酒馆预设或当前连接已变化，状态结果未写入');
+    };
+    apiUi.report(`正在使用“${profile?.name??'酒馆当前连接'}”更新第 ${last.message_id} 楼状态…`);
+    timer=setTimeout(job.cancel,binding.timeoutSeconds*1000);
+    try{
+      await Promise.race([cancelled,(async()=>{
+        const source=await getWorldbook(config.book);assertCurrent();
+        const entry=source.find(e=>e.uid===config.uid);if(!entry)throw new Error('世界书关联失效，请重新选择');
+        const user=list.slice(0,-1).findLast(m=>m.role==='user')?.message??'';
+        const {content,readIds}=preparePrompt(entry.content,schema,previous,user+'\n'+story,token);
+        const store=saved.snapshotStore??await packSnapshots(readSnapshots(saved));assertCurrent();
+        const prepared=await addReadReceipt(store,token,previous.state,schema,readIds);assertCurrent();
+        const narrative='本轮用户输入：\n'+variableStory(user)+'\n\n本轮已经发生的 AI 剧情（只据此更新，不续写）：\n'+story;
+        if(narrative.length+content.length>96000)throw new Error('本轮更新资料超过 96000 字符，请缩短正文后重试；未截断剧情');
+        // Helper 4.9.5 emits the core AFTER_COMMANDS hook even for generateRaw.
+        // Remove our narration injection before that request builds its prompts.
+        const cleanup=uninject;uninject=null;cleanup?.();assertCurrent();
+        const receipt=readReceipt(`<LoreState read="${token}">`,prepared);
+        let updated;
+        for(let attempt=1;attempt<=binding.attempts;attempt++){
+          assertCurrent();generationId=crypto.randomUUID();
+          apiUi.report(`第 ${last.message_id} 楼状态更新：第 ${attempt}/${binding.attempts} 次请求…`);
+          let output,failure;
+          try{
+            const request=extraModelRequest(profile,content,narrative,generationId,binding);
+            output=await (binding.presetMode==='builtin'?generateRaw(request):generate(request));
+          }catch{failure='状态 API 请求失败，请检查连接配置和网络';}
+          assertCurrent();
+          if(!failure){try{updated=validateExtraUpdate(output,last.message,previous.state,schema,last.message_id,receipt);}catch{failure='状态模型输出未通过协议、栏目或读取凭据校验';}}
+          if(!failure)break;
+          if(attempt===binding.attempts)throw new Error(`${failure}；已尝试 ${attempt} 次，原消息保留`);
+        }
+        assertCurrent();
+        // Re-read rules too: an edited worldbook must not commit an outdated request.
+        const latestSource=await getWorldbook(config.book);assertCurrent();
+        if(latestSource.find(e=>e.uid===config.uid)?.content!==entry.content)throw new Error('状态规则已变化，请重新更新');
+        assertCurrent();
+        // Persist the receipt before the message; an interrupted write leaves only an unused receipt and a recovery backup.
+        updateVariablesWith(v=>{const current=v[PROTO_KEY]??{},latest=current.snapshotStore??store;return {...v,[PROTO_KEY]:{...current,snapshotStore:{...latest,states:{...latest.states,...prepared.states},schemas:{...latest.schemas,...prepared.schemas},receipts:{...latest.receipts,[token]:prepared.receipts[token]}},variableUpdateBackup:{floor:last.message_id,swipe:last.swipe_id,original:last.message,updated}}};},{type:'chat'});
+        assertCurrent();
+        await setChatMessages([{message_id:last.message_id,message:updated}],{refresh:'affected'});
+        job.committed=true;
+        clearTimeout(timer);
+        if(!current())return;
+        renderKey='';await refresh();if(!current())return;
+        syncFloors(last.message_id);apiUi.report(`第 ${last.message_id} 楼状态已更新，正文保留。可撤销最近一次更新。`);
+      })()]);
+    }catch(e){if(matches(id)&&chatEpoch===epoch){apiUi.report(e.message);throw e;}}
+    finally{clearTimeout(timer);if(extraJob===job)extraJob=null;if(matches(id)&&chatEpoch===epoch)schedule();}
+  }
+  async function undoExtraUpdate(){
+    if(extraJob||hostGenerating())throw new Error('请等待生成结束或取消状态更新');
+    const saved=chatSettings(),backup=saved.variableUpdateBackup,last=messages().at(-1),id=identity(),epoch=chatEpoch;
+    if(saved.checkpoint&&backup?.floor<=saved.checkpoint.cutoff)throw new Error('不能改写回档前保留的正文');
+    if(!backup)throw new Error('没有可撤销的状态更新');
+    if(last?.message_id!==backup.floor||last.swipe_id!==backup.swipe||last.message!==backup.updated)throw new Error('目标回复或后续历史已变化，不能撤销覆盖');
+    await setChatMessages([{message_id:backup.floor,message:backup.original}],{refresh:'affected'});
+    if(!matches(id)||epoch!==chatEpoch)return;
+    updateVariablesWith(v=>{const next={...v[PROTO_KEY]};delete next.variableUpdateBackup;return {...v,[PROTO_KEY]:next};},{type:'chat'});
+    renderKey='';await refresh();syncFloors(backup.floor);apiUi.report('已撤销最近一次状态更新。');
+  }
+  function finishAutoUpdate(){
+    const planned=autoUpdate;if(!planned)return;autoUpdate=null;
+    const wait=attempt=>{
+      autoTimer=null;
+      if(!matches(planned.id)||chatEpoch!==planned.epoch||closed)return;
+      if(hostGenerating()){if(attempt<100)autoTimer=setTimeout(()=>wait(attempt+1),50);else apiUi.report('正文生成尚未结束，请稍后手动更新状态。');return;}
+      if(historyIdentity(messages())===planned.history)return;
+      const last=messages().at(-1);
+      if(!last||last.role!=='assistant'||(!['swipe','regenerate','continue'].includes(planned.type)&&last.message_id<=planned.lastFloor))return;
+      runExtraUpdate().catch(e=>{if(matches(planned.id)&&chatEpoch===planned.epoch){fault(e,'自动状态更新失败');schedule();}});
+    };
+    autoTimer=setTimeout(()=>wait(0),0);
+  }
   function schedule(){
     if(pending||closed||hostGenerating())return;pending=true;const id=identity();
     queue=queue.then(async()=>{pending=false;if(!matches(id)){if(!closed)schedule();return;}if(!hostGenerating()){await refresh();if(manager.open&&!draft)syncFloors();}}).catch(e=>fault(e,'状态刷新失败'));
   }
   async function beforeGenerate(type,_options,dryRun){
+    // Core generation emits GENERATION_STARTED first; silent Helper generation does not.
+    // Do not recursively prepare narration or stop the core controller for our own request.
+    if(extraJob&&!generating&&!hostGenerating())return;
     const config=settings(),id=identity(),prepare=!dryRun&&active(config)&&!['quiet','impersonate'].includes(type);
     try{
       const cleanup=uninject;uninject=null;cleanup?.();
       if(!prepare)return;
-      if(type==='continue')throw new Error('暂不支持同层续写，请发送下一轮或重抽，避免同一回复产生重复状态块');
+      if(extraJob||autoTimer)throw new Error('状态更新正在进行，请等待完成或取消后再生成正文');
+      autoUpdate=null;
+      if(chatSettings().continuationPending)throw new Error('上次续写尚未整理完成，请先重新读取当前聊天状态');
+      const continuing=type==='continue',target=messages().at(-1);
+      if(continuing){
+        if(!target||target.role!=='assistant'||target.message_id<(chatSettings().start??1))throw new Error('只能续写已参与状态更新的最新 AI 回复');
+        if(typeof setChatMessages!=='function')throw new Error('续写需要酒馆助手的消息写入接口');
+        variableStory(target.message);
+      }
+      if(['continue','swipe','regenerate'].includes(type)&&chatSettings().checkpoint&&target?.message_id<=chatSettings().checkpoint.cutoff)throw new Error('不能改写回档前保留的正文，请发送新一轮继续');
       freezePolicy();
       const source=await getWorldbook(config.book);if(!matches(id))return;
       const entry=source.find(e=>e.uid===config.uid);
       if(!entry)throw new Error('世界书关联失效，请在原型设置中重新选择');
-      let list=messages();if(['swipe','regenerate'].includes(type)&&list.at(-1)?.role==='assistant')list=list.slice(0,-1);
+      let list=messages();if(['swipe','regenerate','continue'].includes(type)&&list.at(-1)?.role==='assistant')list=list.slice(0,-1);
       const result=getResult(config,list);
       const userText=type==='swipe'||type==='regenerate'?list.findLast(m=>m.role==='user')?.message??'':doc.getElementById('send_textarea')?.value||list.findLast(m=>m.role==='user')?.message||'';
       const schema=schemaFor(config),history=historyIdentity(messages()),token=crypto.randomUUID();
-      const {content,readIds}=preparePrompt(entry.content,schema,result,userText,token);
+      const extra=updateBinding().mode==='extra';
+      if(extra){
+        selectedStateModel(updateBinding());checkRequestPreset(updateBinding());
+        if(typeof generateRaw!=='function'||typeof stopGenerationById!=='function')throw new Error('当前酒馆助手缺少独立生成或取消接口');
+        if(result.errors.length)throw new Error('此前状态更新未完成，请先重新更新或修复历史');
+      }
+      const {content:baseContent,readIds}=preparePrompt(entry.content,schema,result,userText+(continuing?'\n'+variableStory(target.message):''),extra?'':token,extra?'narration':'combined');
+      const content=baseContent+(continuing?'\n本次续写同一条 AI 回复。以上状态是该回复开始前的状态。继续原剧情；'+(extra?'不要输出状态块。':'末尾输出一个替代旧块的新状态块，覆盖原回复与本次新增剧情的全部变化；忽略旧块的读取凭据，使用本次指定凭据。'):'');
       const old=chatSettings(),store=old.snapshotStore??await packSnapshots(readSnapshots(old));
       const prepared=await addReadReceipt(store,token,result.state,schema,readIds);
       if(!matches(id))return;
@@ -981,13 +1356,15 @@ function startPrototype(defaultHtml) {
       uninject=injectPrompts([{id:PROTO_KEY,position:'in_chat',depth:0,role:'system',content,should_scan:false}]).uninject;
       updateVariablesWith(v=>{
         const current=v[PROTO_KEY]??{},latest=current.snapshotStore??store;
-        return {...v,[PROTO_KEY]:{...current,snapshotStore:{...latest,states:{...latest.states,...prepared.states},schemas:{...latest.schemas,...prepared.schemas},receipts:{...latest.receipts,[token]:prepared.receipts[token]}}}};
+        return {...v,[PROTO_KEY]:{...current,...(continuing?{continuationPending:{floor:target.message_id,swipe:target.swipe_id,original:target.message,prefix:historyIdentity(list),schema:JSON.stringify(schema),checkpoint:JSON.stringify(old.checkpoint??null),token,mode:extra?'extra':'inline'}}:{}),snapshotStore:{...latest,states:{...latest.states,...prepared.states},schemas:{...latest.schemas,...prepared.schemas},receipts:{...latest.receipts,[token]:prepared.receipts[token]}}}};
       },{type:'chat'});
+      autoUpdate=extra&&updateBinding().auto?{id,epoch:chatEpoch,history,type,lastFloor:messages().at(-1)?.message_id??-1}:null;
     }catch(e){
       // ST catches event-listener errors; throwing here alone cannot cancel a request.
       // A rejected read from a previous chat must not stop the current chat's generation.
       if(!matches(id))return;
       if(!prepare){fault(e,'状态提示清理失败');return;}
+      autoUpdate=null;
       try{const cleanup=uninject;uninject=null;cleanup?.();}catch(cleanupError){console.warn('[LoreState] 提示清理失败',String(cleanupError?.message??cleanupError));}
       let stopped=false;
       try{stopped=ctx().stopGeneration();}catch(stopError){console.warn('[LoreState] 无法停止生成',String(stopError?.message??stopError));}
@@ -996,11 +1373,11 @@ function startPrototype(defaultHtml) {
   }
   for(const event of ['MESSAGE_RECEIVED','CHARACTER_MESSAGE_RENDERED','MESSAGE_UPDATED','MESSAGE_EDITED','MESSAGE_DELETED','MESSAGE_SWIPED','GENERATION_ENDED','MORE_MESSAGES_LOADED'])if(tavern_events[event])eventOn(tavern_events[event],schedule);
   if(tavern_events.GENERATION_STARTED)eventOn(tavern_events.GENERATION_STARTED,()=>{generating=true;});
-  for(const event of ['GENERATION_ENDED','GENERATION_STOPPED'])if(tavern_events[event])eventOn(tavern_events[event],()=>{generating=false;schedule();});
-  eventOn(tavern_events.CHAT_CHANGED,()=>{uninject?.();uninject=null;stateWindow.close();view?.remove();renderKey='';noticeKey='';notice.hidden=true;runtimeLogs=[];draft=null;restoreDraft=null;capturedKey='';snapshotPreview.textContent='';report('设置随角色保存；修改后请预览并保存。');manager.close();generating=false;schedule();});
+  for(const event of ['GENERATION_ENDED','GENERATION_STOPPED'])if(tavern_events[event])eventOn(tavern_events[event],()=>{generating=false;if(event==='GENERATION_ENDED')finishAutoUpdate();else{autoUpdate=null;clearTimeout(autoTimer);autoTimer=null;}schedule();});
+  eventOn(tavern_events.CHAT_CHANGED,()=>{chatEpoch++;cancelExtraUpdate();apiUi.clear();uninject?.();uninject=null;stateWindow.close();view?.remove();renderKey='';noticeKey='';notice.hidden=true;runtimeLogs=[];draft=null;restoreDraft=null;capturedKey='';snapshotPreview.textContent='';report('设置随角色保存；修改后请预览并保存。');manager.close();generating=false;schedule();});
   eventOn(tavern_events.GENERATION_AFTER_COMMANDS,beforeGenerate);
   eventOn(getButtonEvent('LoreState 设置'),()=>open().catch(e=>fault(e,'设置打开失败')));
-  function dispose(){closed=true;menuObserver?.disconnect();stateWindow.dispose();menu.remove();panel.remove();manager.remove();notice.remove();view?.remove();uninject?.();}
+  function dispose(){closed=true;cancelExtraUpdate();apiUi.clear();menuObserver?.disconnect();stateWindow.dispose();menu.remove();panel.remove();manager.remove();notice.remove();view?.remove();uninject?.();}
   window.addEventListener('pagehide',dispose,{once:true});schedule();
 }
 

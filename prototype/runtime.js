@@ -6,6 +6,9 @@ import { PROTO_KEY, TAG_PATTERN, replayState, playPrompt, preparePrompt, authorP
 import { renderTemplate, templateSchema, validateTemplateSchema } from './template.js';
 import { createControlCenter } from './control-center.js';
 import { listPresets, sameSchema, savePreset, deletePreset } from './presets.js';
+import { API_PROFILE_KEY, boundApiProfile, extraModelRequest, normalizeUpdateSettings } from './api-profiles.js';
+import { createApiPanel } from './api-panel.js';
+import { variableStory, validateExtraUpdate, settleContinuedMessage } from './extra-update.js';
 
 // Runs inside the owning Tavern Helper character script, including remote imports.
 export function startPrototype(defaultHtml) {
@@ -13,6 +16,20 @@ export function startPrototype(defaultHtml) {
   if(doc.getElementById('lorestate-prototype-settings'))throw new Error('已有 LoreState 原型脚本运行，请勿重复启用');
   const settings=()=>getVariables({type:'script'})[PROTO_KEY]??{};
   const chatSettings=()=>getVariables({type:'chat'})[PROTO_KEY]??{};
+  const apiSettings=()=>getVariables({type:'global'})?.[API_PROFILE_KEY]??{profiles:[]};
+  const updateBinding=()=>normalizeUpdateSettings(chatSettings().variableUpdate);
+  const requestPresets=()=>typeof getPresetNames==='function'?getPresetNames():[];
+  const selectedStateModel=binding=>binding.source==='custom'?boundApiProfile(apiSettings(),binding.profileId):null;
+  function checkRequestPreset(binding){
+    if(binding.source==='current'&&ctx().mainApi!=='openai')throw new Error('跟随当前连接需要酒馆使用 Chat Completion；其他连接请绑定独立 API');
+    if(binding.presetMode!=='builtin'&&typeof generate!=='function')throw new Error('当前酒馆助手缺少预设生成接口');
+    if(binding.presetMode==='named'&&!requestPresets().includes(binding.presetName))throw new Error('指定的酒馆请求预设不存在，请重新选择');
+  }
+  function requestContextIdentity(binding){
+    const preset=binding.presetMode==='builtin'?null:typeof getPreset==='function'?getPreset(binding.presetMode==='current'?'in_use':binding.presetName):null;
+    if(binding.presetMode!=='builtin'&&preset===null)throw new Error('当前酒馆助手缺少读取请求预设的接口');
+    return JSON.stringify([preset,binding.source==='current'?[ctx().mainApi,ctx().chatCompletionSettings]:null]);
+  }
   const messages=()=>{const store=chatSettings().snapshotStore;return getChatMessages('0-{{lastMessageId}}',{include_swipes:true}).map(m=>{
     const message=m.swipes?.[m.swipe_id??0]??m.message??'';
     return {message_id:m.message_id,role:m.role,is_hidden:m.is_hidden,swipe_id:m.swipe_id??0,message,readReceipt:readReceipt(message,store)};
@@ -27,6 +44,7 @@ export function startPrototype(defaultHtml) {
   const identity=()=>[ctx().chat,ctx().getCurrentChatId()];
   const matches=([chat,id])=>!closed&&ctx().chat===chat&&ctx().getCurrentChatId()===id;
   let closed=false,queue=Promise.resolve(),pending=false,uninject=null,view=null,renderKey='',menuObserver;
+  let extraJob=null,autoUpdate=null,autoTimer=null,chatEpoch=0,continuationWork=null;
   const node=(tag,text,parent)=>{const el=doc.createElement(tag);if(text!==undefined)el.textContent=text;parent?.append(el);return el;};
   const stateWindow=createStateWindow(doc);
   const panel=node('section',undefined,doc.body);panel.id='lorestate-prototype-settings';panel.setAttribute('aria-label','LoreState 原型设置');
@@ -228,7 +246,11 @@ export function startPrototype(defaultHtml) {
   button('删除所选预设',panel,()=>{writeConfig(deletePreset(settings(),presetSelect.value));syncPresets();report('已删除所选预设，当前展示保留。');});
   syncPresets();
   const preview=createStateFrame(doc,'LoreState HTML 预览');panel.append(preview);
-  const getResult=(config=settings(),list=messages())=>replaySnapshots(list,schemaFor(config),chatSettings().start??1,chatSettings().checkpoint);
+  const getResult=(config=settings(),list=messages())=>{
+    const pending=chatSettings().continuationPending;
+    if(pending&&list.some(m=>m.message_id===pending.floor&&m.message!==pending.original))throw new Error('续写尚未整理完成，请重新读取当前聊天状态；原分支变化时需先恢复原分支');
+    return replaySnapshots(list,schemaFor(config),chatSettings().start??1,chatSettings().checkpoint);
+  };
   button('预览 HTML（不保存）',panel,()=>{
     const schema=templateSchema(html.value,selectedEntry()?.content??''),config=settings();
     const example=fields=>Object.fromEntries(fields.map(f=>[f,`${f}的示例文字`]));
@@ -300,9 +322,18 @@ export function startPrototype(defaultHtml) {
   async function loadSettings(){try{syncPresets();await loadBooks();}catch(e){fault(e,'设置读取失败');}}
   async function open(){if(!settings().ready){center.open('settings');await loadSettings();}else openManager();}
   const a=title=>actions.get(title);
+  function cancelExtraUpdate(){
+    autoUpdate=null;clearTimeout(autoTimer);autoTimer=null;
+    if(extraJob)extraJob.cancel();
+  }
+  const apiUi=createApiPanel({doc,read:apiSettings,
+    listRequestPresets:requestPresets,fetchModels:params=>{if(typeof getModelList!=='function')throw new Error('当前酒馆助手缺少模型列表接口');return getModelList(params);},
+    write:config=>{cancelExtraUpdate();updateVariablesWith(v=>({...v,[API_PROFILE_KEY]:config}),{type:'global'});},
+    binding:updateBinding,setBinding:value=>{if(!active(settings()))throw new Error('请先配置并启用本聊天');cancelExtraUpdate();updateVariablesWith(v=>({...v,[PROTO_KEY]:{...v[PROTO_KEY],variableUpdate:value}}),{type:'chat'});},
+    run:()=>runExtraUpdate(),cancel:()=>{const committed=extraJob?.committed;cancelExtraUpdate();apiUi.report(committed?'状态已经写入，如需恢复请撤销最近一次更新。':'状态更新已取消，原消息保留。');},undo:undoExtraUpdate,onError:e=>fault(e,'状态更新操作失败')});
   const ruleDisclosure=node('details');node('summary','查看条目原文',ruleDisclosure);ruleDisclosure.append(rules);
   const makerDisclosure=node('details');node('summary','制作提示词与下一轮提示预览',makerDisclosure);makerDisclosure.append(a('生成并复制 HTML 制作提示词'),a('查看下一轮状态提示'),maker);
-  const center=createControlCenter({doc,manager,panel,summary,status,floorSelect,details,diagnostics,repairBox,snapshotPanel,actions,loadSettings,settingsGroups:[
+  const center=createControlCenter({doc,manager,panel,summary,status,floorSelect,details,diagnostics,repairBox,snapshotPanel,apiPanel:apiUi.panel,loadApi:apiUi.sync,actions,loadSettings,settingsGroups:[
     ['1 · 世界书与规则',[bookLabel,entryLabel,a('刷新世界书列表'),ruleDisclosure]],
     ['2 · 外观模板',[makerDisclosure,htmlLabel,a('预览 HTML（不保存）'),preview,a('保存 HTML 并启用本聊天')]],
     ['3 · 外观预设',[presetLabel,a('应用所选预设'),nameLabel,a('另存为新预设'),a('覆盖所选预设'),a('删除所选预设')]],
@@ -337,7 +368,8 @@ export function startPrototype(defaultHtml) {
     if(result.errors.length)button('重新读取状态',view,()=>refresh());renderKey=key;
   }
   async function refresh(){
-    if(hostGenerating())return;
+    if(hostGenerating()||autoUpdate||autoTimer||(extraJob&&!extraJob.committed))return;
+    await settleContinuation();
     const config=settings();if(!active(config)){view?.remove();return;}freezePolicy();
     const id=identity(),list=messages(),schema=schemaFor(config),result=getResult(config,list);
     if(!matches(id))return;
@@ -365,25 +397,165 @@ export function startPrototype(defaultHtml) {
   // still kept as a compatibility fallback, but can be unbalanced by host-side
   // slash commands and message edits.
   const hostGenerating=()=>window.parent.TavernHelper?.builtin?.duringGenerating?.()??generating;
+  async function settleContinuation(){
+    if(continuationWork)return continuationWork;
+    const saved=chatSettings(),plan=saved.continuationPending;if(!plan)return;
+    const id=identity(),epoch=chatEpoch;
+    continuationWork=(async()=>{
+      const list=messages(),last=list.at(-1),schema=schemaFor();
+      if(last?.message_id!==plan.floor||last.swipe_id!==plan.swipe||historyIdentity(list.slice(0,-1))!==plan.prefix||JSON.stringify(schema)!==plan.schema||JSON.stringify(saved.checkpoint??null)!==plan.checkpoint)throw new Error('续写期间历史、分支或配置变化，请恢复原分支后重试');
+      const previous=replaySnapshots(list.slice(0,-1),schema,saved.start??1,saved.checkpoint);
+      const receipt=readReceipt(`<LoreState read="${plan.token}">`,saved.snapshotStore);
+      const updated=plan.normalized===last.message?last.message:settleContinuedMessage(plan.original,last.message,plan.mode,previous.state,schema,last.message_id,receipt);
+      if(!matches(id)||epoch!==chatEpoch||hostGenerating())return;
+      if(updated!==last.message){
+        // A reload between the message write and metadata cleanup must recognize its own committed result.
+        updateVariablesWith(v=>({...v,[PROTO_KEY]:{...v[PROTO_KEY],continuationPending:{...plan,normalized:updated}}}),{type:'chat'});
+        await setChatMessages([{message_id:last.message_id,message:updated}],{refresh:'affected'});
+      }
+      if(!matches(id)||epoch!==chatEpoch)return;
+      updateVariablesWith(v=>{const next={...v[PROTO_KEY]};delete next.continuationPending;return {...v,[PROTO_KEY]:next};},{type:'chat'});
+    })();
+    try{await continuationWork;}finally{continuationWork=null;}
+  }
+  async function runExtraUpdate(){
+    if(extraJob)throw new Error('状态更新正在进行，请等待或取消');
+    if(hostGenerating())throw new Error('请等待正文生成结束');
+    generating=false; // Live helper readiness supersedes a stale core preview event.
+    await settleContinuation();
+    if(extraJob||hostGenerating())throw new Error('已有生成或状态更新正在进行，请稍后重试');
+    const config=settings(),saved=chatSettings(),binding=updateBinding();
+    if(!active(config)||binding.mode!=='extra')throw new Error('请先启用本聊天的额外模型更新');
+    if(typeof generateRaw!=='function'||typeof stopGenerationById!=='function'||typeof setChatMessages!=='function')throw new Error('需要酒馆助手的独立生成、取消与消息写入接口');
+    checkRequestPreset(binding);
+    const profile=selectedStateModel(binding),id=identity(),epoch=chatEpoch,list=messages(),last=list.at(-1);
+    if(!last||last.role!=='assistant'||last.message_id<(saved.start??1))throw new Error('请在最新一条 AI 回复后更新状态');
+    if(saved.checkpoint&&last.message_id<=saved.checkpoint.cutoff)throw new Error('这条回复属于回档前保留的正文，请先发送新一轮，再更新新回复状态');
+    const story=variableStory(last.message);if(!story.trim())throw new Error('最新 AI 回复没有剧情正文，无法重新判断状态');
+    const schema=schemaFor(config),previous=getResult(config,list.slice(0,-1));
+    if(previous.errors.length)throw new Error('此前楼层存在状态缺口，请先修复历史再更新最新回复');
+    const history=historyIdentity(list),schemaKey=JSON.stringify(schema),configKey=JSON.stringify(config),bindingKey=JSON.stringify(binding),profileKey=JSON.stringify(profile),requestContextKey=requestContextIdentity(binding);
+    const token=crypto.randomUUID();let generationId=crypto.randomUUID();
+    let rejectCancel,timer;
+    const cancelled=new Promise((_,reject)=>{rejectCancel=reject;});
+    const job={cancelled:false,committed:false,cancel(){if(job.cancelled||job.committed)return;job.cancelled=true;try{stopGenerationById(generationId);}catch{}rejectCancel(new Error('状态更新已取消或超时，原消息保留'));}};
+    extraJob=job;autoUpdate=null;
+    const current=()=>matches(id)&&chatEpoch===epoch&&!job.cancelled;
+    const assertCurrent=()=>{
+      if(!current()||hostGenerating()||!active(settings())||historyIdentity(messages())!==history||JSON.stringify(schemaFor())!==schemaKey||JSON.stringify(settings())!==configKey||JSON.stringify(updateBinding())!==bindingKey||JSON.stringify(chatSettings().checkpoint??null)!==JSON.stringify(saved.checkpoint??null)||(chatSettings().start??1)!==(saved.start??1)||JSON.stringify(selectedStateModel(binding))!==profileKey)throw new Error('聊天、回复分支或配置已变化，状态结果未写入');
+      checkRequestPreset(binding);
+      if(requestContextIdentity(binding)!==requestContextKey)throw new Error('酒馆预设或当前连接已变化，状态结果未写入');
+    };
+    apiUi.report(`正在使用“${profile?.name??'酒馆当前连接'}”更新第 ${last.message_id} 楼状态…`);
+    timer=setTimeout(job.cancel,binding.timeoutSeconds*1000);
+    try{
+      await Promise.race([cancelled,(async()=>{
+        const source=await getWorldbook(config.book);assertCurrent();
+        const entry=source.find(e=>e.uid===config.uid);if(!entry)throw new Error('世界书关联失效，请重新选择');
+        const user=list.slice(0,-1).findLast(m=>m.role==='user')?.message??'';
+        const {content,readIds}=preparePrompt(entry.content,schema,previous,user+'\n'+story,token);
+        const store=saved.snapshotStore??await packSnapshots(readSnapshots(saved));assertCurrent();
+        const prepared=await addReadReceipt(store,token,previous.state,schema,readIds);assertCurrent();
+        const narrative='本轮用户输入：\n'+variableStory(user)+'\n\n本轮已经发生的 AI 剧情（只据此更新，不续写）：\n'+story;
+        if(narrative.length+content.length>96000)throw new Error('本轮更新资料超过 96000 字符，请缩短正文后重试；未截断剧情');
+        // Helper 4.9.5 emits the core AFTER_COMMANDS hook even for generateRaw.
+        // Remove our narration injection before that request builds its prompts.
+        const cleanup=uninject;uninject=null;cleanup?.();assertCurrent();
+        const receipt=readReceipt(`<LoreState read="${token}">`,prepared);
+        let updated;
+        for(let attempt=1;attempt<=binding.attempts;attempt++){
+          assertCurrent();generationId=crypto.randomUUID();
+          apiUi.report(`第 ${last.message_id} 楼状态更新：第 ${attempt}/${binding.attempts} 次请求…`);
+          let output,failure;
+          try{
+            const request=extraModelRequest(profile,content,narrative,generationId,binding);
+            output=await (binding.presetMode==='builtin'?generateRaw(request):generate(request));
+          }catch{failure='状态 API 请求失败，请检查连接配置和网络';}
+          assertCurrent();
+          if(!failure){try{updated=validateExtraUpdate(output,last.message,previous.state,schema,last.message_id,receipt);}catch{failure='状态模型输出未通过协议、栏目或读取凭据校验';}}
+          if(!failure)break;
+          if(attempt===binding.attempts)throw new Error(`${failure}；已尝试 ${attempt} 次，原消息保留`);
+        }
+        assertCurrent();
+        // Re-read rules too: an edited worldbook must not commit an outdated request.
+        const latestSource=await getWorldbook(config.book);assertCurrent();
+        if(latestSource.find(e=>e.uid===config.uid)?.content!==entry.content)throw new Error('状态规则已变化，请重新更新');
+        assertCurrent();
+        // Persist the receipt before the message; an interrupted write leaves only an unused receipt and a recovery backup.
+        updateVariablesWith(v=>{const current=v[PROTO_KEY]??{},latest=current.snapshotStore??store;return {...v,[PROTO_KEY]:{...current,snapshotStore:{...latest,states:{...latest.states,...prepared.states},schemas:{...latest.schemas,...prepared.schemas},receipts:{...latest.receipts,[token]:prepared.receipts[token]}},variableUpdateBackup:{floor:last.message_id,swipe:last.swipe_id,original:last.message,updated}}};},{type:'chat'});
+        assertCurrent();
+        await setChatMessages([{message_id:last.message_id,message:updated}],{refresh:'affected'});
+        job.committed=true;
+        clearTimeout(timer);
+        if(!current())return;
+        renderKey='';await refresh();if(!current())return;
+        syncFloors(last.message_id);apiUi.report(`第 ${last.message_id} 楼状态已更新，正文保留。可撤销最近一次更新。`);
+      })()]);
+    }catch(e){if(matches(id)&&chatEpoch===epoch){apiUi.report(e.message);throw e;}}
+    finally{clearTimeout(timer);if(extraJob===job)extraJob=null;if(matches(id)&&chatEpoch===epoch)schedule();}
+  }
+  async function undoExtraUpdate(){
+    if(extraJob||hostGenerating())throw new Error('请等待生成结束或取消状态更新');
+    const saved=chatSettings(),backup=saved.variableUpdateBackup,last=messages().at(-1),id=identity(),epoch=chatEpoch;
+    if(saved.checkpoint&&backup?.floor<=saved.checkpoint.cutoff)throw new Error('不能改写回档前保留的正文');
+    if(!backup)throw new Error('没有可撤销的状态更新');
+    if(last?.message_id!==backup.floor||last.swipe_id!==backup.swipe||last.message!==backup.updated)throw new Error('目标回复或后续历史已变化，不能撤销覆盖');
+    await setChatMessages([{message_id:backup.floor,message:backup.original}],{refresh:'affected'});
+    if(!matches(id)||epoch!==chatEpoch)return;
+    updateVariablesWith(v=>{const next={...v[PROTO_KEY]};delete next.variableUpdateBackup;return {...v,[PROTO_KEY]:next};},{type:'chat'});
+    renderKey='';await refresh();syncFloors(backup.floor);apiUi.report('已撤销最近一次状态更新。');
+  }
+  function finishAutoUpdate(){
+    const planned=autoUpdate;if(!planned)return;autoUpdate=null;
+    const wait=attempt=>{
+      autoTimer=null;
+      if(!matches(planned.id)||chatEpoch!==planned.epoch||closed)return;
+      if(hostGenerating()){if(attempt<100)autoTimer=setTimeout(()=>wait(attempt+1),50);else apiUi.report('正文生成尚未结束，请稍后手动更新状态。');return;}
+      if(historyIdentity(messages())===planned.history)return;
+      const last=messages().at(-1);
+      if(!last||last.role!=='assistant'||(!['swipe','regenerate','continue'].includes(planned.type)&&last.message_id<=planned.lastFloor))return;
+      runExtraUpdate().catch(e=>{if(matches(planned.id)&&chatEpoch===planned.epoch){fault(e,'自动状态更新失败');schedule();}});
+    };
+    autoTimer=setTimeout(()=>wait(0),0);
+  }
   function schedule(){
     if(pending||closed||hostGenerating())return;pending=true;const id=identity();
     queue=queue.then(async()=>{pending=false;if(!matches(id)){if(!closed)schedule();return;}if(!hostGenerating()){await refresh();if(manager.open&&!draft)syncFloors();}}).catch(e=>fault(e,'状态刷新失败'));
   }
   async function beforeGenerate(type,_options,dryRun){
+    // Core generation emits GENERATION_STARTED first; silent Helper generation does not.
+    // Do not recursively prepare narration or stop the core controller for our own request.
+    if(extraJob&&!generating&&!hostGenerating())return;
     const config=settings(),id=identity(),prepare=!dryRun&&active(config)&&!['quiet','impersonate'].includes(type);
     try{
       const cleanup=uninject;uninject=null;cleanup?.();
       if(!prepare)return;
-      if(type==='continue')throw new Error('暂不支持同层续写，请发送下一轮或重抽，避免同一回复产生重复状态块');
+      if(extraJob||autoTimer)throw new Error('状态更新正在进行，请等待完成或取消后再生成正文');
+      autoUpdate=null;
+      if(chatSettings().continuationPending)throw new Error('上次续写尚未整理完成，请先重新读取当前聊天状态');
+      const continuing=type==='continue',target=messages().at(-1);
+      if(continuing){
+        if(!target||target.role!=='assistant'||target.message_id<(chatSettings().start??1))throw new Error('只能续写已参与状态更新的最新 AI 回复');
+        if(typeof setChatMessages!=='function')throw new Error('续写需要酒馆助手的消息写入接口');
+        variableStory(target.message);
+      }
+      if(['continue','swipe','regenerate'].includes(type)&&chatSettings().checkpoint&&target?.message_id<=chatSettings().checkpoint.cutoff)throw new Error('不能改写回档前保留的正文，请发送新一轮继续');
       freezePolicy();
       const source=await getWorldbook(config.book);if(!matches(id))return;
       const entry=source.find(e=>e.uid===config.uid);
       if(!entry)throw new Error('世界书关联失效，请在原型设置中重新选择');
-      let list=messages();if(['swipe','regenerate'].includes(type)&&list.at(-1)?.role==='assistant')list=list.slice(0,-1);
+      let list=messages();if(['swipe','regenerate','continue'].includes(type)&&list.at(-1)?.role==='assistant')list=list.slice(0,-1);
       const result=getResult(config,list);
       const userText=type==='swipe'||type==='regenerate'?list.findLast(m=>m.role==='user')?.message??'':doc.getElementById('send_textarea')?.value||list.findLast(m=>m.role==='user')?.message||'';
       const schema=schemaFor(config),history=historyIdentity(messages()),token=crypto.randomUUID();
-      const {content,readIds}=preparePrompt(entry.content,schema,result,userText,token);
+      const extra=updateBinding().mode==='extra';
+      if(extra){
+        selectedStateModel(updateBinding());checkRequestPreset(updateBinding());
+        if(typeof generateRaw!=='function'||typeof stopGenerationById!=='function')throw new Error('当前酒馆助手缺少独立生成或取消接口');
+        if(result.errors.length)throw new Error('此前状态更新未完成，请先重新更新或修复历史');
+      }
+      const {content:baseContent,readIds}=preparePrompt(entry.content,schema,result,userText+(continuing?'\n'+variableStory(target.message):''),extra?'':token,extra?'narration':'combined');
+      const content=baseContent+(continuing?'\n本次续写同一条 AI 回复。以上状态是该回复开始前的状态。继续原剧情；'+(extra?'不要输出状态块。':'末尾输出一个替代旧块的新状态块，覆盖原回复与本次新增剧情的全部变化；忽略旧块的读取凭据，使用本次指定凭据。'):'');
       const old=chatSettings(),store=old.snapshotStore??await packSnapshots(readSnapshots(old));
       const prepared=await addReadReceipt(store,token,result.state,schema,readIds);
       if(!matches(id))return;
@@ -391,13 +563,15 @@ export function startPrototype(defaultHtml) {
       uninject=injectPrompts([{id:PROTO_KEY,position:'in_chat',depth:0,role:'system',content,should_scan:false}]).uninject;
       updateVariablesWith(v=>{
         const current=v[PROTO_KEY]??{},latest=current.snapshotStore??store;
-        return {...v,[PROTO_KEY]:{...current,snapshotStore:{...latest,states:{...latest.states,...prepared.states},schemas:{...latest.schemas,...prepared.schemas},receipts:{...latest.receipts,[token]:prepared.receipts[token]}}}};
+        return {...v,[PROTO_KEY]:{...current,...(continuing?{continuationPending:{floor:target.message_id,swipe:target.swipe_id,original:target.message,prefix:historyIdentity(list),schema:JSON.stringify(schema),checkpoint:JSON.stringify(old.checkpoint??null),token,mode:extra?'extra':'inline'}}:{}),snapshotStore:{...latest,states:{...latest.states,...prepared.states},schemas:{...latest.schemas,...prepared.schemas},receipts:{...latest.receipts,[token]:prepared.receipts[token]}}}};
       },{type:'chat'});
+      autoUpdate=extra&&updateBinding().auto?{id,epoch:chatEpoch,history,type,lastFloor:messages().at(-1)?.message_id??-1}:null;
     }catch(e){
       // ST catches event-listener errors; throwing here alone cannot cancel a request.
       // A rejected read from a previous chat must not stop the current chat's generation.
       if(!matches(id))return;
       if(!prepare){fault(e,'状态提示清理失败');return;}
+      autoUpdate=null;
       try{const cleanup=uninject;uninject=null;cleanup?.();}catch(cleanupError){console.warn('[LoreState] 提示清理失败',String(cleanupError?.message??cleanupError));}
       let stopped=false;
       try{stopped=ctx().stopGeneration();}catch(stopError){console.warn('[LoreState] 无法停止生成',String(stopError?.message??stopError));}
@@ -406,10 +580,10 @@ export function startPrototype(defaultHtml) {
   }
   for(const event of ['MESSAGE_RECEIVED','CHARACTER_MESSAGE_RENDERED','MESSAGE_UPDATED','MESSAGE_EDITED','MESSAGE_DELETED','MESSAGE_SWIPED','GENERATION_ENDED','MORE_MESSAGES_LOADED'])if(tavern_events[event])eventOn(tavern_events[event],schedule);
   if(tavern_events.GENERATION_STARTED)eventOn(tavern_events.GENERATION_STARTED,()=>{generating=true;});
-  for(const event of ['GENERATION_ENDED','GENERATION_STOPPED'])if(tavern_events[event])eventOn(tavern_events[event],()=>{generating=false;schedule();});
-  eventOn(tavern_events.CHAT_CHANGED,()=>{uninject?.();uninject=null;stateWindow.close();view?.remove();renderKey='';noticeKey='';notice.hidden=true;runtimeLogs=[];draft=null;restoreDraft=null;capturedKey='';snapshotPreview.textContent='';report('设置随角色保存；修改后请预览并保存。');manager.close();generating=false;schedule();});
+  for(const event of ['GENERATION_ENDED','GENERATION_STOPPED'])if(tavern_events[event])eventOn(tavern_events[event],()=>{generating=false;if(event==='GENERATION_ENDED')finishAutoUpdate();else{autoUpdate=null;clearTimeout(autoTimer);autoTimer=null;}schedule();});
+  eventOn(tavern_events.CHAT_CHANGED,()=>{chatEpoch++;cancelExtraUpdate();apiUi.clear();uninject?.();uninject=null;stateWindow.close();view?.remove();renderKey='';noticeKey='';notice.hidden=true;runtimeLogs=[];draft=null;restoreDraft=null;capturedKey='';snapshotPreview.textContent='';report('设置随角色保存；修改后请预览并保存。');manager.close();generating=false;schedule();});
   eventOn(tavern_events.GENERATION_AFTER_COMMANDS,beforeGenerate);
   eventOn(getButtonEvent('LoreState 设置'),()=>open().catch(e=>fault(e,'设置打开失败')));
-  function dispose(){closed=true;menuObserver?.disconnect();stateWindow.dispose();menu.remove();panel.remove();manager.remove();notice.remove();view?.remove();uninject?.();}
+  function dispose(){closed=true;cancelExtraUpdate();apiUi.clear();menuObserver?.disconnect();stateWindow.dispose();menu.remove();panel.remove();manager.remove();notice.remove();view?.remove();uninject?.();}
   window.addEventListener('pagehide',dispose,{once:true});schedule();
 }

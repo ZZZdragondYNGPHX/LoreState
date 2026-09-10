@@ -28,6 +28,13 @@ test('作者文档的本地链接均指向实际文件',async()=>{
   }
 });
 
+test('发布材料集中在规范目录且内部附件链接有效',async()=>{
+  const root=new URL('../docs/发布材料/',import.meta.url);
+  for(const name of ['README.md','Discord帖子.md','作者改造教程.md','状态栏模板.html','状态栏条目.txt'])await access(new URL(name,root));
+  const source=await readFile(new URL('README.md',root),'utf8');
+  for(const match of source.matchAll(/`([^`]+)`/g)){const target=match[1];if(/\.(?:md|html|txt)$/.test(target))await access(new URL(target,root));}
+});
+
 test('0.8.0 可复制初始档案与字段规则通过真实校验',async()=>{
   const source=await read('0.8.0使用与统一验收.md'),schema={shared:['地点','时间'],entity:['状态']};
   const initial=source.match(/```xml\s*\n([\s\S]*?)```/)[1],constraints=JSON.parse(source.match(/```json\s*\n([\s\S]*?)```/)[1]);

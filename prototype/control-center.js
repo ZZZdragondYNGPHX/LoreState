@@ -1,5 +1,5 @@
 // Presentation only: no host data writes or persisted navigation state.
-export function createControlCenter({doc,manager,panel,summary,status,floorSelect,details,diagnostics,repairBox,snapshotPanel,actions,loadSettings,settingsGroups}) {
+export function createControlCenter({doc,manager,panel,summary,status,floorSelect,details,diagnostics,repairBox,snapshotPanel,apiPanel,loadApi,actions,loadSettings,settingsGroups}) {
   const make=(tag,text,parent)=>{const el=doc.createElement(tag);if(text)el.textContent=text;parent?.append(el);return el;};
   manager.replaceChildren();manager.removeAttribute('style');manager.setAttribute('aria-label','LoreState 控制中心');
   panel.removeAttribute('style');
@@ -24,6 +24,7 @@ export function createControlCenter({doc,manager,panel,summary,status,floorSelec
   #lorestate-state-manager select,#lorestate-state-manager input,#lorestate-state-manager textarea{font:inherit;width:100%;max-width:100%;min-height:44px;border:1px solid var(--ls-line);border-radius:8px;background:#171c16;color:inherit;padding:10px}
   #lorestate-state-manager select{width:auto}#lorestate-state-manager label{display:block;margin:12px 0 6px;color:var(--ls-muted)}
   #lorestate-state-manager label :is(select,textarea,input){display:block;width:100%;margin-top:6px}
+  #lorestate-state-manager label input[type=checkbox]{display:inline-block;width:20px;height:20px;min-height:20px;vertical-align:middle;margin:0 0 0 12px}
   #lorestate-state-manager textarea{display:block;min-height:140px;resize:vertical;font:13px/1.6 ui-monospace,monospace;margin:12px 0}
   #lorestate-state-manager details{margin:16px 0;padding:12px 0;border-top:1px solid var(--ls-line)}
   #lorestate-state-manager summary{cursor:pointer;font-weight:600;min-height:32px}
@@ -57,13 +58,14 @@ export function createControlCenter({doc,manager,panel,summary,status,floorSelec
     for(const el of controls){if(el.tagName==='BUTTON'){if(!row){row=make('div',null,section);row.className='ls-actions';}row.append(el);}else{row=null;section.append(el);}}
   }
   for(const title of ['保存 HTML 并启用本聊天','应用预览修复'])actions.get(title)?.classList.add('ls-primary');
-  const pages={state:statePage,diagnostics:repairPage,settings:panel},tabs={};let active='state';
-  function select(id,focus=false){active=id;for(const [key,page] of Object.entries(pages)){page.hidden=key!==id;tabs[key].setAttribute('aria-selected',String(key===id));tabs[key].tabIndex=key===id?0:-1;}toolbar.hidden=id==='settings';summary.hidden=id==='settings';if(focus)tabs[id].focus();}
-  for(const [id,title] of [['state','状态历史'],['diagnostics','诊断修复'],['settings','设置']]){
+  if(apiPanel)body.append(apiPanel);
+  const pages={state:statePage,diagnostics:repairPage,settings:panel,...(apiPanel?{api:apiPanel}:{})},tabs={};let active='state';
+  function select(id,focus=false){active=id;for(const [key,page] of Object.entries(pages)){page.hidden=key!==id;tabs[key].setAttribute('aria-selected',String(key===id));tabs[key].tabIndex=key===id?0:-1;}toolbar.hidden=['settings','api'].includes(id);summary.hidden=toolbar.hidden;if(focus)tabs[id].focus();}
+  for(const [id,title] of [['state','状态历史'],['diagnostics','诊断修复'],['settings','设置'],...(apiPanel?[['api','API 预设']]:[])]){
     const tab=make('button',title,nav);tab.type='button';tab.id='ls-tab-'+id;tab.setAttribute('role','tab');tab.setAttribute('aria-controls','ls-page-'+id);tabs[id]=tab;
     pages[id].id=id==='settings'?'lorestate-prototype-settings':'ls-page-'+id;tab.setAttribute('aria-controls',pages[id].id);pages[id].setAttribute('role','tabpanel');pages[id].setAttribute('aria-labelledby',tab.id);
-    tab.onclick=()=>{select(id);if(id==='settings')void loadSettings();};
-    tab.onkeydown=e=>{const keys=Object.keys(pages),i=keys.indexOf(active);let next;if(e.key==='ArrowRight')next=keys[(i+1)%3];if(e.key==='ArrowLeft')next=keys[(i+2)%3];if(e.key==='Home')next=keys[0];if(e.key==='End')next=keys[2];if(next){e.preventDefault();tabs[next].click();tabs[next].focus();}};
+    tab.onclick=()=>{select(id);if(id==='settings')void loadSettings();if(id==='api')loadApi?.();};
+    tab.onkeydown=e=>{const keys=Object.keys(pages),i=keys.indexOf(active);let next;if(e.key==='ArrowRight')next=keys[(i+1)%keys.length];if(e.key==='ArrowLeft')next=keys[(i+keys.length-1)%keys.length];if(e.key==='Home')next=keys[0];if(e.key==='End')next=keys.at(-1);if(next){e.preventDefault();tabs[next].click();tabs[next].focus();}};
   }
   let returnFocus;
   manager.addEventListener('close',()=>{if(returnFocus?.isConnected)returnFocus.focus();});

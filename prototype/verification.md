@@ -1,3 +1,69 @@
+# 内置预设 Base64 · 2026-09-10（本地候选）
+
+头尾在请求组装时从标准 Base64 解码为 UTF-8；默认空，格式损坏拒绝发送。新增中文、emoji、多行还原与非法数据拒绝测试。build、check、98 项 Node、11 项模板、57 项最终 bundle 模拟检查通过；diff 空白检查通过。bundle、main 远程入口和 receipt 已生成，当前哈希以 receipt 为准。未提交、推送、安装或请求真实 API，真实宿主验收待进行。以下为历史记录。
+
+---
+
+# 同层续写与回档后额外更新 · 2026-09-10（本地候选）
+
+最新 AI 回复的随正文/额外模型续写已接入：以本层前态重新计算，完成后只保留一个状态块。续写记录保存到聊天，部分输出、自动关闭、停止、重载、消息保存失败及完成标记保存失败均有恢复路径；分支或原文不匹配时拒绝覆盖。回档后新增回复的额外更新、重算、撤销及续写共用已有 checkpoint 基线，回档保留区仍禁止原地重算/重抽/续写。
+
+- 自动证据：build、check、97 项 Node、11 项模板浏览器、57 项最终 bundle 模拟宿主检查、组件格式与 diff 空白检查通过。新增检查覆盖连续两次续写、唯一状态块、无新增输出、非法新块、自动/手动/停止、重复结束事件、回档前缀不改写、重载及保存中断恢复。
+- 源码证据：本机 SillyTavern 1.18.0 的 `public/script.js`，流式 `continueMessage + text`、非流式 `appendFinal` 及结束事件；宿主身份沿用下方已核验 commit。Tavern Helper 4.9.5 的消息读写、独立请求接口，均由宿主提供。实现使用既有接口，无新增依赖。TavernWeave 路由 `sillytavern-api-reference`，snapshot 2026-08-18，加载 A0 与 D3；未采用设计候选。
+- 已重建 `artifact/bundle.js`、`prototype/dist/main/lorestate-script.json` 和 `prototype/dist/main/receipt.json`；哈希以当前 receipt 为准，ref 仍为 `main`。
+- 未测：真实酒馆流式/非流式和停止事件时序、模型输出遵循率、其他扩展改写原文、真实持久化与实际 API。模拟通过不代表真实同层兼容或人工接受；realHostVerified=false，未设置 driver-accepted。历史任意楼层批量重算仍未实现。
+- 未提交、推送、安装或发布；下一门是用合成聊天进行真实宿主验收。以下记录为历史。
+
+---
+
+# 内置预设头尾加载 · 2026-09-10（本地候选）
+
+`builtin-preset.js` 已将旧单一入口替换为 `BUILTIN_PRESET_HEAD` / `BUILTIN_PRESET_TAIL`，默认均为空。内置请求按头部、固定任务、剧情、尾部排列；酒馆预设路径保持原样。新增测试覆盖双端、单端、空白跳过及原始格式保留。
+
+build、check、96 项 Node、11 项模板、49 项最终 bundle 模拟检查和 diff 空白检查通过。产物为 `artifact/bundle.js`、`prototype/dist/main/lorestate-script.json`、`receipt.json`，哈希以当前 receipt 为准。未提交、推送、安装或调用实际 API；`@main` 未发布本地修改，真实宿主请求验收仍待进行。以下记录为历史。
+
+---
+
+# 内置预设命名与固定任务分离 · 2026-09-10（本地候选）
+
+选项改为“内置预设”，独立补充提示入口为 `prototype/builtin-preset.js` 的 `BUILTIN_PRESET_PROMPT`，默认留空。固定状态任务无论选哪种预设都发送；非空内置补充置于固定任务之前。正式 build 纳入新模块，组件 ID、配置键、远程 ref 与格式校验不变。
+
+`npm run build`、`npm run check`、95 项 Node、11 项模板和 49 项最终 bundle 模拟检查通过。生成文件仍为 bundle、main 远程入口和 receipt，当前哈希以 receipt 为准；下方哈希为前次历史版本。未安装、调用实际模型、提交或推送。realHostVerified=false，下一门仍为真实宿主与请求验收。
+
+---
+
+# 状态请求参数与提示词路径 · 2026-09-10（本地候选）
+
+用户最新范围为内置提示词与酒馆提示词，内置不含破限文本；界面称“状态”。本轮在同一 component 交付范围继续实施，无安装或发布授权扩展。
+
+**已实现：** 内置状态整理 / 当前酒馆预设 / 指定酒馆预设；自动开关、1～5 次串行尝试、15～600 秒总超时、流式接收；独立 API / 当前 Chat Completion 连接；模型列表及六项采样参数。旧绑定补默认值而不更名存储键。网络或输出校验失败可重试，取消、超时、消息/配置/请求预设变化不再尝试；成功只提交一次。术语检查覆盖当前界面和提示词，历史记录及宿主接口标识保留。
+
+**自动化：** `npm run build`、`npm run check`、`npm test`、`node scripts/test-browser.mjs` 均通过；95 项 Node、11 项模板、49 项最终 bundle 模拟宿主检查。新增覆盖请求参数实际构造、旧配置默认值、参数边界、省略语义、预设选择和重新加载、关闭自动后手动、重试次数与独立请求 ID、取消整批重试、请求期间预设修改、模型列表及地址变化后迟到结果。组件 validator 对 main 远程组件零错误。
+
+**源与产物：** runtime.js SHA-256 `af188802296828dfaae96c96e019f879791dc0a8e90c0ceba66c465968fa399f`；bundle SHA-256 `634d943c2009a523f793f719a34712f175631302b8cfca866b08c1cdab14ce11`。正式构建生成 bundle、main 远程组件 JSON 和 receipt；组件入口内容保持相同，未新增离线组件。脚本 ID、启用、导出、历史标签保持不变。
+
+**API 源码证据：** 沿用本机 SillyTavern 1.18.0 / `51ad27fb86d39a3daca3adaa970375c9670c12df` 与酒馆助手 4.9.5 / `af21bee2aadef5bf384f618e3456ff15ba9c431d`。新增核对 generate.d.ts 的 `generate.preset_name`、`getModelList({apiurl,key})`、采样字段与 should_stream，preset.d.ts 的 `getPresetNames/getPreset`，generate/index.ts 的指定预设采样覆盖规则，generateRaw.ts 的缺少 chat_history 时跳过注入分支。当前连接限定核心 context.mainApi=openai；用户选择 Text Completion 时明确要求独立 API，不暗中回退到另一个连接。MVU 比较仍固定到 `61010dab47bc3a08a1b626320bf7fc8c9573eca4`，未移植破限文本或运行库。
+
+**边界：** 无真实网络调用、宿主安装、Git 提交/推送或发布；远程 ref 仍为 main，尚不包含本地变更。realHostVerified=false，未设置 driver-accepted。真实酒馆预设最终请求、流式时序、模型参数支持、设置重载和其他扩展交互待验收；mock 只证明本脚本调用与守卫逻辑。工作区原有文档整理继续保留。
+
+---
+
+# 历史：额外模型更新与 API 预设 · 2026-09-10（本地候选）
+
+用户已确认目标、红线和验收后授权实施。deliveryMode=component；脚本 ID `0aa89d30-099d-4cf3-8cfb-d367490ec067`、启用状态、按钮、导出配置及 `@main` 远程交付方式保留。未重新打包角色卡，不生成离线备用组件。
+
+**源代码与产物：** 新增 API 预设、页面、独立更新校验三个维护模块，接入原 runtime 和正式构建。最终 `runtime.js` SHA-256 为 `1adf315f19d64e55a2eabeacefeb128790f7bfc1a94bb2c6203fb2b70363bc0c`；bundle SHA-256 为 `adfb1805f9925d1cd5a0c84038001196cca7634aaa1ec4cbd78937c8398a53e3`。产物为 `artifact/bundle.js`、`prototype/dist/main/lorestate-script.json`、`prototype/dist/main/receipt.json`，其中远程入口 JSON 与此前入口内容相同，重新生成但不强造差异。
+
+**自动证据：** `npm run build`、`npm run check`、`npm test`、`node scripts/test-browser.mjs` 通过：92 项 Node 测试、11 项模板检查、45 项最终 bundle 模拟宿主检查。新增测试覆盖预设局部保存、密钥不进入脚本/聊天、失效绑定拒绝、初次与再次生成、严格响应校验、前态与正文保留、撤销、超时、取消后迟到结果、写入失败、聊天/分支/绑定/世界书变化、正常生成与重抽自动触发、停止/暂停不触发及页面重载不自动重发。四页签在 336px 窄容器没有横向溢出。组件 validator 检查 main 远程脚本 JSON，零错误；静态检查证明格式与构建一致性，不证明网络执行。
+
+**版本化源码：** SillyTavern 1.18.0 / `51ad27fb86d39a3daca3adaa970375c9670c12df`；本机酒馆助手 4.9.5 / `af21bee2aadef5bf384f618e3456ff15ba9c431d`。核对 generateRaw 的 ordered_prompts、custom_api（source=openai）、should_silence、generation_id、stopGenerationById、全局变量持久化、消息读写和核心生成事件。特别复现 Helper 独立生成也发出 GENERATION_AFTER_COMMANDS、但不先发核心 GENERATION_STARTED 的重入行为；清理本脚本正文注入并阻止递归。完整来源见[使用说明](../docs/额外模型与API预设.md)。MVU 参考固定到 `61010dab47bc3a08a1b626320bf7fc8c9573eca4`，仅借鉴方案管理与额外请求/解析/写回的职责划分，未复制提示词或新增 MVU 依赖。
+
+**资料收据：** consult-tavernweave-library snapshot 2026-08-18；路由 sillytavern-api-reference、sillytavern-component-update；读取 ST-A0、ST-D3 相关内容，以及组件合同/导入格式与本机版本源码。未采用设计候选；仅有宿主提供的 SillyTavern/酒馆助手及既有 main 远程加载，无新运行库安装。
+
+**未测与下一门：** 本轮没有安装到真实酒馆、发送实际 API 请求、Git 提交/推送、发布或人工验收。realHostVerified=false，未设置 driver-accepted。实际流式结束、其他扩展插入提示、服务端路由及模型输出遵循率需真实酒馆验收；源码和 mock 不等同于这些行为。第一版仅支持 OpenAI 兼容 API、最新 AI 回复重算，不支持同层续写、历史批量重算或额外模式下的快照回档。远程 ref 仍为 main，刷新远程入口不会获得未推送的本地功能。工作区已有文档归档改动保留。
+
+---
+
 # 当前仓库清理与 main 远程分发 · 2026-09-10
 
 - 已删除 `main` 的 `examples/` 目录及其 WishNote/地点示例，相关专用构建脚本和测试同步移除。

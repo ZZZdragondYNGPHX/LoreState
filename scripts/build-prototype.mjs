@@ -1,7 +1,7 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 const root=new URL('../',import.meta.url),read=path=>readFile(new URL(path,root),'utf8').then(text=>text.replaceAll('\r\n','\n'));
-const pieces=await Promise.all(['modules','core','template','presets','control-center','state-frame','snapshots','snapshot-store','runtime'].map(name=>read(`prototype/${name}.js`)));
+const pieces=await Promise.all(['modules','core','template','presets','builtin-preset','api-profiles','api-panel','extra-update','control-center','state-frame','snapshots','snapshot-store','runtime'].map(name=>read(`prototype/${name}.js`)));
 const content=`(()=>{\n'use strict';\n${pieces.map(s=>s.replace(/^import[^\n]*\n/gm,'').replace(/^export /gm,'')).join('\n')}\nstartPrototype(${JSON.stringify(await read('prototype/example.html'))});\n})();`;
 const ref='main',out='prototype/dist/main/';
 const remoteUrl=`https://testingcf.jsdelivr.net/gh/ZZZdragondYNGPHX/LoreState@${ref}/artifact/bundle.js`;
