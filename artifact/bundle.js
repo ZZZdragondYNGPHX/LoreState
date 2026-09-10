@@ -130,7 +130,6 @@ function entityAttributes(source){
     attrs[m[1]]=decode(m[2]??m[3]);rest=rest.slice(m[0].length);
   }
   if(!/^[A-Za-z][A-Za-z0-9_-]{0,39}$/.test(attrs.id??'')||['constructor','prototype','__proto__'].includes(attrs.id))throw new Error('实体编号无效');
-  if(!['full','delta'].includes(attrs.mode))throw new Error('实体需要 full 或 delta');
   if(attrs.presence!==undefined&&!['active','cold'].includes(attrs.presence))throw new Error('实体出入场值无效');
   if(attrs.type!==undefined&&(!attrs.type.trim()||attrs.type.length>40))throw new Error('实体类别须为 1–40 字符');
   if(attrs.pending!==undefined&&!['true','false'].includes(attrs.pending))throw new Error('活动事件标记须为 true 或 false');
@@ -162,6 +161,14 @@ function applyStateInternal(previous,source,schema,floor,receipt){
     const m=rest.match(/^<Entity\s+([^<>]*?)(?:\/>|>([\s\S]*?)<\/Entity>)/);
     if(!m)throw new Error('实体更新格式无效');
     const attrs=entityAttributes(m[1]),body=m[2]??'',old=draft.entities[attrs.id];
+    const expectedMode=old?'delta':'full';
+    if(attrs.mode!==expectedMode){
+      const status=old?'已有实体':'新实体',actualMode=attrs.mode?.slice(0,40)??null;
+      const error=new Error(`${status} ${attrs.id} ${attrs.mode===undefined?'缺少 mode 属性':`mode="${actualMode}" 无效`}；需要 mode="${expectedMode}"${old?'；已有编号不能重新 full 覆盖':''}`);
+      Object.assign(error,{code:'ENTITY_MODE',entityId:attrs.id,entityExists:!!old,actualMode,expectedMode,
+        hint:`在该 Entity 起始标签中${attrs.mode===undefined?'补充':'改为'} mode="${expectedMode}"。${old?'已有实体只写变化栏目。':'新实体须填写名称、稳定识别信息及所属类别全部栏目。'}外层 LoreState 的 mode 不会被实体继承；full、delta 必须小写。`});
+      throw error;
+    }
     if(seen.has(attrs.id))throw new Error('同轮实体编号重复');seen.add(attrs.id);
     const fields=entityFields(schema,old?.type??attrs.type??'通用');
     const constraints=Object.fromEntries(Object.entries(schema.constraints?.entity??{}).filter(([name])=>fields.includes(name)));
@@ -170,7 +177,6 @@ function applyStateInternal(previous,source,schema,floor,receipt){
       if(!attrs.name||!attrs.identity)throw new Error('新实体需要名称与稳定识别信息');
       draft.entities[attrs.id]={id:attrs.id,name:attrs.name,identity:attrs.identity,type:attrs.type??'通用',links:attrs.links??[],pending:attrs.pending==='true',confirmed:attrs.confirmed??null,presence:attrs.presence??'active',fields:applyFields(null,patch,fields,constraints)};
     }else{
-      if(attrs.mode!=='delta')throw new Error('已有编号不能重新 full 覆盖');
       if(attrs.name!==undefined&&attrs.name!==old.name||attrs.identity!==undefined&&attrs.identity!==old.identity)throw new Error('已有编号的名称与识别信息不能被重新指派');
       if(attrs.type!==undefined&&attrs.type!==old.type)throw new Error('已有编号的类别不能重新指派');
       // A waking character's old memory must survive the turn that requests retrieval.
@@ -217,7 +223,7 @@ function replayState(messages,schema,start=1,seed=null){
   // Prompt visibility does not remove a message from the local state ledger.
   for(const m of messages){if(m.message_id<start||m.role!=='assistant')continue;
     try{state=applyState(state,m.message,schema,m.message_id,m.readReceipt);lastAppliedFloor=m.message_id;if(!errors.length)lastGoodFloor=m.message_id;}
-    catch(e){errors.push({floor:m.message_id,message:e.message,scope:e.scope??'LoreState',line:e.line??null,column:e.column??null,hint:repairHint(e.message)});}}
+    catch(e){errors.push({floor:m.message_id,message:e.message,scope:e.scope??'LoreState',line:e.line??null,column:e.column??null,hint:e.hint??repairHint(e.message),...(e.code==='ENTITY_MODE'?{code:e.code,entityId:e.entityId,entityExists:e.entityExists,actualMode:e.actualMode,expectedMode:e.expectedMode}:{})});}}
   return {state,errors,lastGoodFloor,lastAppliedFloor,tainted:errors.length>0};
 }
 function stateChanges(before,after){
@@ -271,7 +277,8 @@ function preparePrompt(rules,schema,result,text='',readToken=''){
   else if(schema.modules&&rules)throw new Error('模块配置需要模块格式的状态栏条目');
   const compose=()=>`LoreState 统一文字状态 v3。作者规则：\n${parsed?modulePrompt(parsed,projection,text,!result.state):rules}
 
-下面的协议负责状态存储，替代规则内旧的全量复述要求。正文末尾仅输出一个 <LoreState version="3" mode="${result.state?'delta':'full'}"${readToken?` read="${readToken}"`:''}>…</LoreState>。尚无状态时 full，已有状态（含作者初始档案）时 delta；没有变化输出空的 delta 外层。${readToken?'本轮 read 凭据必须原样复制，不沿用历史凭据。':''}
+下面的协议负责状态存储，替代规则内旧的全量复述要求。正文末尾仅输出一个 <LoreState version="3" mode="${result.state?'delta':'full'}"${readToken?` read="${readToken}"`:''}>…</LoreState>。外层 mode 只决定整轮状态：尚无状态时 full，已有状态（含作者初始档案）时 delta；已有状态且没有变化才输出空 delta。${readToken?'本轮 read 凭据必须原样复制，不沿用历史凭据。':''}
+每个 Entity 必须独立填写 mode，不能继承外层：编号尚未建档用 mode="full"，已建档（包括冷档）用 mode="delta"。因此外层 delta 内可以同时包含新实体 full 和已有实体 delta。所有 mode 值严格小写，不能写 Delta 或 Full。是否新实体由本地档案编号决定，不由本轮是否出场决定；未加载不等于新实体。
 ${schema.shared.length?`公共栏目：${schema.shared.join('、')}。写在 <Shared>栏目标签</Shared> 内。首次包含所有公共栏目，之后仅写变化栏目；没变化可省略整个 Shared。`:'本卡没有公共栏目，不输出 Shared。'}
 ${schema.entity.length?`${schema.modules?'实体栏目按模块目录分别定义':'实体栏目：'+schema.entity.join('、')}。新实体用 <Entity id="P01" name="名称" type="人物" identity="稳定识别信息" mode="full" presence="active">所属类别全部栏目标签</Entity>。已有编号用 <Entity id="P01" mode="delta">变化栏目</Entity>。编号稳定唯一，名称与识别信息不能重新指派；无实体时可省略 Entity。
 实体离场用 <Entity id="P01" mode="delta" presence="cold"/>，回归用 <Entity id="P01" mode="delta" presence="active"/>。${readToken?'下方完整取回且列入当轮可更新清单的冷档允许本轮更新；未加载冷档先空 delta 唤醒，下一轮再改。':'冷档唤醒这一轮不修改栏目，下一轮读取完整资料后再改。'}出入场默认由剧情决定；不另建编号替代旧人。`:'本卡没有实体栏目，不输出 Entity。'}
@@ -283,12 +290,13 @@ ${schema.modules&&!Object.hasOwn(schema.modules,'事件')?'本卡未声明事件
 ${schema.constraints?`字段约束：${JSON.stringify(schema.constraints)}。required 为必填，noRemove 禁止删除，enum 限定完整栏目文字取值；未知值也须在允许列表内。`:''}
 当前有效公共状态：
 ${result.state?stateXml(result.state.shared,schema.shared)||'无公共栏目':'尚未建立'}
-在场及本轮取回的完整实体资料：
-${projection.full.map(p=>`<Entity id="${p.id}" name="${xmlText(p.name)}" identity="${xmlText(p.identity)}" type="${xmlText(p.type)}" presence="${p.presence}" pending="${!!p.pending}" links="${(p.links??[]).join(' ')}" confirmed="${xmlText(p.confirmed??'未知')}">\n最后事实更新楼层：${p.confirmedFloor??'未知'}（只读来源信息，不输出为标签属性）。\n${stateXml(p.fields,entityFields(schema,p.type))}\n</Entity>`).join('\n')||'无'}
+在场及本轮取回的完整实体资料（EntityRecord 为只读资料，不是输出模板；不要复制为更新块）：
+${projection.full.map(p=>`<EntityRecord id="${p.id}" name="${xmlText(p.name)}" identity="${xmlText(p.identity)}" type="${xmlText(p.type)}" presence="${p.presence}" pending="${!!p.pending}" links="${(p.links??[]).join(' ')}"${p.confirmed?` confirmed="${xmlText(p.confirmed)}"`:''}>\n最后事实更新楼层：${p.confirmedFloor??'未知'}（只读来源信息，不输出为标签属性）。\n${stateXml(p.fields,entityFields(schema,p.type))}\n</EntityRecord>`).join('\n')||'无'}
 冷档实体索引：${JSON.stringify(projection.index)}\n索引未展示数量：${projection.omitted}；受关联数量或提示预算限制未加载：${projection.deferred.join('、')||'无'}。未加载不等于不存在。
 本轮按输入或关联取回：${projection.retrieved.join('、')||'无'}（不自动改变在场状态）。索引不是完整记忆，不可据此编造旧事实。临时召回未提供资料的实体时，本轮只登记唤醒，依赖旧事实的情节留到下一轮，不得声称已读冷档。
 ${readToken?`当轮可更新的冷档编号：${projection.retrieved.join('、')||'无'}；该权限只对应本次完整资料和 read 凭据。`:''}
-${result.errors.length?'之前存在未应用更新，以这份有效状态为准。':''}`;
+${result.errors.length?'之前存在未应用更新，以这份有效状态为准。':''}
+输出前检查：唯一 LoreState 外层使用本轮指定 mode；每个 Entity 都有自己的小写 mode；新编号 full 且栏目齐全，旧编号 delta；不输出 EntityRecord 或只读来源信息。`;
   let prompt=compose();
   // Shed optional context as complete records; never truncate facts or hide required events.
   while(prompt.length>24000&&projection.index.length){projection.index.pop();projection.omitted++;prompt=compose();}
