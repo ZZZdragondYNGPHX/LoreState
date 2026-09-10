@@ -1,0 +1,40 @@
+name: release-0.10.2
+
+on:
+  push:
+    branches:
+      - release-0.10.2
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    if: ${{ !contains(github.event.head_commit.message, '[release-build]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm run build
+      - run: npm run check
+      - run: npm test
+      - name: Commit generated artifact and remove one-shot workflow
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/release-0.10.2.yml
+          git add artifact/bundle.js prototype/dist/main/lorestate-script.json prototype/dist/main/receipt.json
+          git commit -m "Release 0.10.2: native mobile checkboxes [release-build]"
+          git push origin HEAD:release-0.10.2
+      - name: Create 0.10.2 tag
+        run: |
+          if git rev-parse -q --verify refs/tags/0.10.2 >/dev/null; then
+            echo "tag 0.10.2 already exists"
+            exit 1
+          fi
+          git tag -a 0.10.2 -m "LoreState 0.10.2"
+          git push origin 0.10.2
