@@ -3,8 +3,8 @@
   "enabled": true,
   "name": "LoreState · 文字状态原型",
   "id": "0aa89d30-099d-4cf3-8cfb-d367490ec067",
-  "content": "import 'https://testingcf.jsdelivr.net/gh/ZZZdragondYNGPHX/LoreState@main/artifact/bundle.js';",
-  "info": "LoreState main 远程开发版；模块条目、分类栏目与按需规则注入；正文后统一更新。保留 v3 世界实体冷热档、有限关联召回与活动事件；包含隐藏楼层兼容修复；本版待真实酒馆验收，目标酒馆助手 4.9.5 / SillyTavern 1.18.0。首次 full，后续 delta。不迁移旧状态；模块结构请用新配置与新聊天，不提供旧数据迁移。 远程入口跟随 main；刷新脚本后获取 main 最新 bundle。",
+  "content": "import 'https://testingcf.jsdelivr.net/gh/ZZZdragondYNGPHX/LoreState@main/artifact/diagnostic-hook.js';\nimport 'https://testingcf.jsdelivr.net/gh/ZZZdragondYNGPHX/LoreState@main/artifact/bundle.js';",
+  "info": "LoreState main 远程开发版；模块条目、分类栏目与按需规则注入；正文后统一更新。保留 v3 世界实体冷热档、有限关联召回与活动事件；包含隐藏楼层兼容修复；本版待真实酒馆验收，目标酒馆助手 4.9.5 / SillyTavern 1.18.0。首次 full，后续 delta。不迁移旧状态；模块结构请用新配置与新聊天，不提供旧数据迁移。 当前额外加载状态模型诊断钩子，用于显示额外模型每次隐藏输出和校验线索。远程入口跟随 main；刷新脚本后获取 main 最新文件。",
   "button": {
     "enabled": true,
     "buttons": [
