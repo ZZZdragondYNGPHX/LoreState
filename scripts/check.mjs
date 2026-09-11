@@ -22,7 +22,8 @@ if(tag&&!SEMVER.test(tag))throw new Error(`当前发布 tag 不符合语义版�
 const ref=tag||'main',remoteDir=`prototype/dist/${ref}`,remoteEntry=`${remoteDir}/lorestate-script.json`,receipt=`${remoteDir}/receipt.json`;
 for(const path of [remoteEntry,receipt])if(!await exists(path))throw new Error(`缺少 ${ref} 远程产物：${path}`);
 const remote=JSON.parse(await readFile(remoteEntry,'utf8')),record=JSON.parse(await readFile(receipt,'utf8'));
-const expectedUrl=`https://testingcf.jsdelivr.net/gh/ZZZdragondYNGPHX/LoreState@${ref}/artifact/bundle.js`;
+const cdnHost=ref==='main'?'cdn.jsdelivr.net':'testingcf.jsdelivr.net';
+const expectedUrl=`https://${cdnHost}/gh/ZZZdragondYNGPHX/LoreState@${ref}/artifact/bundle.js`;
 if(String(remote.content).trim()!==`import '${expectedUrl}';`)throw new Error(`${ref} 远程入口必须且只能加载对应 ref 的 artifact/bundle.js`);
 if(record.version!==ref||record.mode!=='remote-only'||record.remoteEntry!=='lorestate-script.json')throw new Error(`${ref} 远程收据字段不一致`);
 if(!Array.isArray(record.remoteLoaders)||record.remoteLoaders.length!==1||record.remoteLoaders[0]?.url!==expectedUrl||record.remoteLoaders[0]?.ref!==ref)throw new Error(`${ref} 远程收据必须且只能声明一个对应 ref 的 bundle loader`);

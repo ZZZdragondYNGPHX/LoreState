@@ -91,6 +91,6 @@ npm run check
 构建输出 `artifact/bundle.js`、`dist/main/lorestate-script.json` 和 `dist/main/receipt.json`，只生成远程入口，不生成离线备用版。远程地址跟随 `main`；推送后刷新脚本即可取得新内容。
 
 ```js
-import 'https://testingcf.jsdelivr.net/gh/ZZZdragondYNGPHX/LoreState@main/artifact/bundle.js';
+import 'https://cdn.jsdelivr.net/gh/ZZZdragondYNGPHX/LoreState@main/artifact/bundle.js';
 ```
 发布状态与实装边界见 [verification.md](verification.md)。

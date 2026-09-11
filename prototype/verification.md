@@ -1,3 +1,9 @@
+# main 活动 CDN 入口迁移 · 2026-09-11（已授权）
+
+用户授权为立即实际使用，把活动 `main` loader 从仍返回旧缓存的 `testingcf.jsdelivr.net` 迁到已返回当前 bundle 的 `cdn.jsdelivr.net`。构建器与版本守卫仅对 `main` 选择新域名；固定版本和历史产物继续保留原 URL，不改写既有 tag。`npm run build`、`npm run check`、99 项 Node 测试与 `git diff --check` 通过；待提交推送后核验 Git ref、远程 loader 和 CDN bundle 哈希。
+
+---
+
 # 控制中心 UI 重构收尾 · 2026-09-11（本地候选）
 
 在 `main` / `01e92ccb88d45bf4bebdc191dde13fb12c82ed1b` 上收尾既有 UI 重构。目标是减少控制中心长页面的认知负担并保持全部状态、设置和 API 行为；红线是不改数据协议、宿主接口、持久化键、远程入口或发布 ref；验收为源码构建、静态检查、Node 回归、最终 bundle 模拟宿主、窄宽与人工视觉检查。Gate 决策为既有 staged refactor 的最小收尾，不扩展业务功能。

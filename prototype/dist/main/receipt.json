@@ -13,7 +13,7 @@
   ],
   "remoteLoaders": [
     {
-      "url": "https://testingcf.jsdelivr.net/gh/ZZZdragondYNGPHX/LoreState@main/artifact/bundle.js",
+      "url": "https://cdn.jsdelivr.net/gh/ZZZdragondYNGPHX/LoreState@main/artifact/bundle.js",
       "ref": "main"
     }
   ],

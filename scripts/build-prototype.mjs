@@ -12,8 +12,9 @@ if(process.env.GITHUB_REF_TYPE==='branch'&&SEMVER.test(process.env.GITHUB_REF_NA
 const pieces=await Promise.all(['modules','core','template','presets','builtin-preset','ui-kit','api-profiles','api-panel','extra-update','control-center','state-frame','snapshots','snapshot-store','runtime'].map(name=>read(`prototype/${name}.js`)));
 const content=`(()=>{\n'use strict';\n${pieces.map(s=>s.replace(/^import[^\n]*\n/gm,'').replace(/^export /gm,'')).join('\n')}\nstartPrototype(${JSON.stringify(await read('prototype/example.html'))});\n})();`;
 const out=`prototype/dist/${ref}/`;
-const remoteUrl=`https://testingcf.jsdelivr.net/gh/ZZZdragondYNGPHX/LoreState@${ref}/artifact/bundle.js`;
 const stable=ref!=='main';
+const cdnHost=stable?'testingcf.jsdelivr.net':'cdn.jsdelivr.net';
+const remoteUrl=`https://${cdnHost}/gh/ZZZdragondYNGPHX/LoreState@${ref}/artifact/bundle.js`;
 const script={type:'script',enabled:true,name:'LoreState · 文字状态原型',id:'0aa89d30-099d-4cf3-8cfb-d367490ec067',content,info:stable?`LoreState ${ref} 固定版本；模块条目、分类栏目与按需规则注入；正文后统一更新。保留 v3 世界实体冷热档、有限关联召回与活动事件；目标酒馆助手 4.9.5 / SillyTavern 1.18.0。首次 full，后续 delta。此入口固定到 ${ref} tag，不随 main 变化。`:'LoreState main 远程开发版；模块条目、分类栏目与按需规则注入；正文后统一更新。保留 v3 世界实体冷热档、有限关联召回与活动事件；本版待真实酒馆验收，目标酒馆助手 4.9.5 / SillyTavern 1.18.0。首次 full，后续 delta。不迁移旧状态；模块结构请用新配置与新聊天，不提供旧数据迁移。',button:{enabled:true,buttons:[{name:'LoreState 设置',visible:false}]},data:{},export_with:{data:true,button:true}};
 await mkdir(new URL(out,root),{recursive:true});
 await mkdir(new URL('artifact/',root),{recursive:true});

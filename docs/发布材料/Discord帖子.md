@@ -31,7 +31,7 @@ import 'https://testingcf.jsdelivr.net/gh/ZZZdragondYNGPHX/LoreState@prototype-v
 **main 分支（最新开发版）**
 
 ```js
-import 'https://testingcf.jsdelivr.net/gh/ZZZdragondYNGPHX/LoreState@main/artifact/bundle.js';
+import 'https://cdn.jsdelivr.net/gh/ZZZdragondYNGPHX/LoreState@main/artifact/bundle.js';
 ```
 
 启用后从 **魔法棒 → LoreState · 原型设置** 打开。手动新建脚本的作者需要开启脚本数据随卡导出；导入版已配置。
