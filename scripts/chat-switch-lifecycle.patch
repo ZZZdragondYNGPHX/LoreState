@@ -1,0 +1,52 @@
+diff --git a/prototype/runtime.js b/prototype/runtime.js
+--- a/prototype/runtime.js
++++ b/prototype/runtime.js
+@@ -9,11 +9,19 @@ import { API_PROFILE_KEY, boundApiProfile, extraModelRequest, normalizeUpdateSet
+ import { createApiPanel } from './api-panel.js';
+ import { variableStory, validateExtraUpdate, settleContinuedMessage } from './extra-update.js';
+ 
++export function shouldReloadForChatChange(loadedChatId,nextChatId){
++  return nextChatId!==undefined&&nextChatId!==loadedChatId;
++}
++
+ // Runs inside the owning Tavern Helper character script, including remote imports.
+ export function startPrototype(defaultHtml) {
+   const doc=window.parent.document,ctx=()=>window.parent.SillyTavern.getContext();
+-  if(doc.getElementById('lorestate-prototype-settings'))throw new Error('已有 LoreState 原型脚本运行，请勿重复启用');
++  const runtimeSlot='__lorestatePrototypeRuntime';
++  const previousRuntime=window.parent[runtimeSlot];
++  if(typeof previousRuntime?.dispose==='function')previousRuntime.dispose();
++  else if(doc.getElementById('lorestate-prototype-settings'))throw new Error('已有 LoreState 原型脚本运行，请勿重复启用');
++  const loadedChatId=ctx().getCurrentChatId();
++  let runtimeRegistration=null;
+   const settings=()=>getVariables({type:'script'})[PROTO_KEY]??{};
+   const chatSettings=()=>getVariables({type:'chat'})[PROTO_KEY]??{};
+   const apiSettings=()=>getVariables({type:'global'})?.[API_PROFILE_KEY]??{profiles:[]};
+@@ -540,6 +548,7 @@ export function startPrototype(defaultHtml) {
+   }
+   async function beforeGenerate(type,_options,dryRun){
++    if(closed)return;
+     // Core generation emits GENERATION_STARTED first; silent Helper generation does not.
+     // Do not recursively prepare narration or stop the core controller for our own request.
+     if(extraJob&&!generating&&!hostGenerating())return;
+@@ -591,10 +600,21 @@ export function startPrototype(defaultHtml) {
+   for(const event of ['MESSAGE_RECEIVED','CHARACTER_MESSAGE_RENDERED','MESSAGE_UPDATED','MESSAGE_EDITED','MESSAGE_DELETED','MESSAGE_SWIPED','GENERATION_ENDED','MORE_MESSAGES_LOADED'])if(tavern_events[event])eventOn(tavern_events[event],schedule);
+   if(tavern_events.GENERATION_STARTED)eventOn(tavern_events.GENERATION_STARTED,()=>{generating=true;});
+   for(const event of ['GENERATION_ENDED','GENERATION_STOPPED'])if(tavern_events[event])eventOn(tavern_events[event],()=>{generating=false;if(event==='GENERATION_ENDED')finishAutoUpdate();else{autoUpdate=null;clearTimeout(autoTimer);autoTimer=null;}schedule();});
+-  eventOn(tavern_events.CHAT_CHANGED,()=>{chatEpoch++;cancelExtraUpdate();extraDiagnostics=[];apiUi.clear();uninject?.();uninject=null;stateWindow.close();view?.remove();renderKey='';noticeKey='';notice.hidden=true;runtimeLogs=[];draft=null;restoreDraft=null;capturedKey='';snapshotPreview.textContent='';report('设置随角色保存；修改后请预览并保存。');manager.close();generating=false;schedule();});
++  runtimeRegistration={dispose};window.parent[runtimeSlot]=runtimeRegistration;
++  eventOn(tavern_events.CHAT_CHANGED,newChatId=>{
++    if(shouldReloadForChatChange(loadedChatId,newChatId)){dispose();window.location.reload();return;}
++    chatEpoch++;cancelExtraUpdate();extraDiagnostics=[];apiUi.clear();uninject?.();uninject=null;stateWindow.close();view?.remove();renderKey='';noticeKey='';notice.hidden=true;runtimeLogs=[];draft=null;restoreDraft=null;capturedKey='';snapshotPreview.textContent='';report('设置随角色保存；修改后请预览并保存。');manager.close();generating=false;schedule();
++  });
+   eventOn(tavern_events.GENERATION_AFTER_COMMANDS,beforeGenerate);
+   eventOn(getButtonEvent('LoreState 设置'),()=>open().catch(e=>fault(e,'设置打开失败')));
+-  function dispose(){closed=true;cancelExtraUpdate();apiUi.clear();menuObserver?.disconnect();stateWindow.dispose();menu.remove();panel.remove();manager.remove();notice.remove();view?.remove();uninject?.();}
++  function dispose(){
++    if(closed)return;
++    closed=true;cancelExtraUpdate();apiUi.clear();menuObserver?.disconnect();stateWindow.dispose();menu.remove();panel.remove();manager.remove();notice.remove();view?.remove();
++    const cleanup=uninject;uninject=null;cleanup?.();
++    if(runtimeRegistration&&window.parent[runtimeSlot]===runtimeRegistration)delete window.parent[runtimeSlot];
++  }
+   window.addEventListener('pagehide',dispose,{once:true});schedule();
+ }
