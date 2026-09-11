@@ -13,10 +13,6 @@
   ],
   "remoteLoaders": [
     {
-      "url": "https://testingcf.jsdelivr.net/gh/ZZZdragondYNGPHX/LoreState@main/artifact/diagnostic-hook.js",
-      "ref": "main"
-    },
-    {
       "url": "https://testingcf.jsdelivr.net/gh/ZZZdragondYNGPHX/LoreState@main/artifact/bundle.js",
       "ref": "main"
     }
