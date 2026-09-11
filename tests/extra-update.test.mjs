@@ -74,10 +74,11 @@ test('校验失败把具体原因带入同一读取凭据的下一次请求，�
   const content=`规则\n<LoreState version="3" mode="full" read="${token}">`;
   assert.throws(()=>validateExtraUpdate('解释'+output,'正文',null,schema,1,receipt),/必须只返回一个完整 LoreState 更新块/);
   const retry=extraModelRequest(normalizeApiProfile(profile),content,'剧情','retry-job');
-  assert.match(retry.ordered_prompts[0].content,/纠错重试/);assert.match(retry.ordered_prompts[0].content,/必须只返回一个完整 LoreState 更新块/);assert.match(retry.ordered_prompts[0].content,/不要解释/);
+  const retryTask=retry.ordered_prompts.find(item=>typeof item==='object'&&/纠错重试/.test(item.content));
+  assert.ok(retryTask);assert.match(retryTask.content,/必须只返回一个完整 LoreState 更新块/);assert.match(retryTask.content,/不要解释/);
   validateExtraUpdate(output,'正文',null,schema,1,receipt);
   const clean=extraModelRequest(normalizeApiProfile(profile),content,'剧情','clean-job');
-  assert.doesNotMatch(clean.ordered_prompts[0].content,/纠错重试/);
+  assert.equal(clean.ordered_prompts.some(item=>typeof item==='object'&&/纠错重试/.test(item.content)),false);
 });
 test('正文模式只提供只读状态，原随正文模式继续输出协议',()=>{
   const result=replayState([{message_id:1,role:'assistant',message:block('车站')}],schema);
