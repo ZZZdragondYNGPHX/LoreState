@@ -12,7 +12,7 @@ test('内置预设头尾包围固定任务与剧情，空白部分跳过且保�
   assert.deepEqual(builtinOrderedPrompts(fixed.content,encode(head),encode(tail)),[{role:'system',content:head},fixed,'user_input',{role:'system',content:tail}]);
   assert.deepEqual(builtinOrderedPrompts(fixed.content,' \n',encode(tail)),[fixed,'user_input',{role:'system',content:tail}]);
   assert.deepEqual(builtinOrderedPrompts(fixed.content,encode(head),'\t'),[{role:'system',content:head},fixed,'user_input']);
-  assert.deepEqual(builtinOrderedPrompts(fixed.content),[fixed,'user_input']);
+  assert.deepEqual(builtinOrderedPrompts(fixed.content,'',''),[fixed,'user_input']);
 });
 
 test('头尾 Base64 支持 UTF-8 与换行，损坏数据拒绝且错误不包含原文',()=>{
@@ -50,7 +50,9 @@ test('独立请求显式绑定 API 和提示，未请求原生聊天历史或正
   const request=extraModelRequest(normalizeApiProfile(profile),'规则','剧情','job');
   assert.equal(request.custom_api.key,'synthetic-key');assert.equal(request.custom_api.source,'openai');assert.equal(request.max_chat_history,0);
   assert.equal(request.should_silence,true);assert.equal(request.generation_id,'job');assert.deepEqual(request.tools,[]);
-  assert.equal(request.ordered_prompts.length,2);assert.equal(request.ordered_prompts[1],'user_input');assert.equal(request.user_input,'剧情');
+  assert.equal(request.ordered_prompts.includes('user_input'),true);assert.equal(request.user_input,'剧情');
+  const task=request.ordered_prompts.find(item=>typeof item==='object'&&item.content.includes('规则')&&item.content.includes('只整理已发生剧情'));
+  assert.ok(task);
 });
 test('额外更新和重试从本轮前态计算，替换旧块并保留正文',async()=>{
   const previous=applyState(null,block('车站'),schema,1),store=await addReadReceipt(emptySnapshotStore(),token,previous,schema,[]);
@@ -68,6 +70,17 @@ test('错误字段、重复块、附带叙述、错误凭据和未闭合原标�
   for(const bad of [output+output,'解释'+output,output.replace(token,'00000000-0000-4000-8000-000000000002'),output.replaceAll('地点','不存在'),output.replace('full','delta')])assert.throws(()=>validateExtraUpdate(bad,'正文',null,schema,1,receipt));
   assert.throws(()=>variableStory('正文<LoreState version="3">坏标签'),/未闭合/);
   assert.match(validateExtraUpdate('```xml\n'+output+'\n```','正文',null,schema,1,receipt),/^正文/);
+});
+test('校验失败把具体原因带入同一读取凭据的下一次请求，成功后清除纠错提示',async()=>{
+  const output=block('车站','full',token),store=await addReadReceipt(emptySnapshotStore(),token,null,schema,[]),receipt=readReceipt(output,store);
+  const content=`规则\n<LoreState version="3" mode="full" read="${token}">`;
+  assert.throws(()=>validateExtraUpdate('解释'+output,'正文',null,schema,1,receipt),/必须只返回一个完整 LoreState 更新块/);
+  const retry=extraModelRequest(normalizeApiProfile(profile),content,'剧情','retry-job');
+  const retryTask=retry.ordered_prompts.find(item=>typeof item==='object'&&/纠错重试/.test(item.content));
+  assert.ok(retryTask);assert.match(retryTask.content,/必须只返回一个完整 LoreState 更新块/);assert.match(retryTask.content,/不要解释/);
+  validateExtraUpdate(output,'正文',null,schema,1,receipt);
+  const clean=extraModelRequest(normalizeApiProfile(profile),content,'剧情','clean-job');
+  assert.equal(clean.ordered_prompts.some(item=>typeof item==='object'&&/纠错重试/.test(item.content)),false);
 });
 test('正文模式只提供只读状态，原随正文模式继续输出协议',()=>{
   const result=replayState([{message_id:1,role:'assistant',message:block('车站')}],schema);
@@ -91,5 +104,7 @@ test('内置、当前及指定酒馆预设使用不同请求路径，跟随当�
     assert.equal(request.custom_api,undefined);assert.equal(request.ordered_prompts,undefined);assert.equal(request.preset_name,presetMode==='current'?'in_use':'整理测试');assert.match(request.user_input,/已发生的剧情/);assert.match(request.user_input,/状态协议/);assert.deepEqual(request.overrides.chat_history.prompts,[]);
   }
   const builtin=extraModelRequest(normalizeApiProfile(profile),'状态协议','已发生的剧情','id');
-  assert.equal(builtin.preset_name,undefined);assert.match(builtin.ordered_prompts[0].content,/只整理已发生剧情/);assert.doesNotMatch(builtin.ordered_prompts[0].content,/SYSTEM RESET|忽略安全|UpdateVariable/);
+  assert.equal(builtin.preset_name,undefined);
+  const task=builtin.ordered_prompts.find(item=>typeof item==='object'&&item.content.includes('状态协议')&&item.content.includes('只整理已发生剧情'));
+  assert.ok(task);assert.doesNotMatch(task.content,/SYSTEM RESET|忽略安全|UpdateVariable/);
 });
