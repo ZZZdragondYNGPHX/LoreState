@@ -1,7 +1,7 @@
 name: test
 on: [push, pull_request]
 permissions:
-  contents: write
+  contents: read
 concurrency:
   group: lorestate-test-${{ github.ref }}
   cancel-in-progress: true
@@ -13,26 +13,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Apply temporary lifecycle transform on fix branch
-        if: github.ref_name == 'fix/chat-switch-lifecycle'
-        run: node scripts/apply-chat-switch-lifecycle.mjs
       - run: npm run build
-      - run: npm run check
-      - run: npm test
-      - name: Browser regression
-        run: |
-          BROWSER="$(command -v google-chrome || command -v chromium || command -v chromium-browser || true)"
-          test -n "$BROWSER"
-          LORESTATE_BROWSER="$BROWSER" node scripts/test-browser.mjs
-      - name: Commit generated fix on temporary branch
-        if: github.ref_name == 'fix/chat-switch-lifecycle' && github.event_name == 'push'
-        run: |
-          if ! git diff --quiet; then
-            git config user.name 'github-actions[bot]'
-            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-            git add prototype/runtime.js artifact/bundle.js prototype/dist/main/lorestate-script.json prototype/dist/main/receipt.json
-            git commit -m 'fix: reload LoreState on chat switch'
-            git push origin HEAD:fix/chat-switch-lifecycle
-          fi
       - run: git diff --exit-code
       - run: test -z "$(git status --porcelain)"
+      - run: npm run check
+      - run: npm test
