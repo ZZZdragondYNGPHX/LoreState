@@ -9,7 +9,7 @@ const ref=requested||(SEMVER.test(ciTag)?ciTag:'main');
 if(ref!=='main'&&!SEMVER.test(ref))throw new Error(`构建 ref 只允许 main 或语义版本标签，收到：${ref}`);
 if(process.env.GITHUB_REF_TYPE==='branch'&&SEMVER.test(process.env.GITHUB_REF_NAME??''))throw new Error('禁止在语义版本命名的 branch 上构建；正式版本必须使用不可移动 tag');
 
-const pieces=await Promise.all(['modules','core','template','presets','builtin-preset','api-profiles','api-panel','extra-update','control-center','state-frame','snapshots','snapshot-store','runtime'].map(name=>read(`prototype/${name}.js`)));
+const pieces=await Promise.all(['modules','core','template','presets','builtin-preset','ui-kit','api-profiles','api-panel','extra-update','control-center','state-frame','snapshots','snapshot-store','runtime'].map(name=>read(`prototype/${name}.js`)));
 const content=`(()=>{\n'use strict';\n${pieces.map(s=>s.replace(/^import[^\n]*\n/gm,'').replace(/^export /gm,'')).join('\n')}\nstartPrototype(${JSON.stringify(await read('prototype/example.html'))});\n})();`;
 const out=`prototype/dist/${ref}/`;
 const remoteUrl=`https://testingcf.jsdelivr.net/gh/ZZZdragondYNGPHX/LoreState@${ref}/artifact/bundle.js`;

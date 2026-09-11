@@ -214,7 +214,7 @@ export function startPrototype(defaultHtml) {
     restoreDraft=null;snapshotPreview.textContent='已撤销上次回档。';renderKey='';await refresh();syncSnapshots();
   });
   manager.append(repairBox,details);
-  const bookLabel=node('label','1. 角色／聊天绑定的世界书',panel),books=node('select',undefined,bookLabel);books.setAttribute('aria-label','世界书');
+  const bookLabel=node('label','角色／聊天绑定的世界书',panel),books=node('select',undefined,bookLabel);books.setAttribute('aria-label','世界书');
   const entryLabel=node('label','状态栏条目',panel),entries=node('select',undefined,entryLabel);entries.setAttribute('aria-label','状态栏条目');
   const rules=node('textarea',undefined,panel);rules.readOnly=true;rules.setAttribute('aria-label','条目内容');
   let loadedEntries=[];
@@ -242,7 +242,7 @@ export function startPrototype(defaultHtml) {
     try{await navigator.clipboard.writeText(maker.value);report('制作提示词已复制。交给网页 AI 后，将 HTML 粘贴到下方。');}
     catch{report('制作提示词已生成，请从文本框手动复制。');}
   });
-  const htmlLabel=node('label','2. 粘贴网页 AI 生成的 HTML',panel),html=node('textarea',undefined,htmlLabel);html.setAttribute('aria-label','HTML 模板');html.rows=9;html.value=settings().html||defaultHtml;
+  const htmlLabel=node('label','粘贴网页 AI 生成的 HTML',panel),html=node('textarea',undefined,htmlLabel);html.setAttribute('aria-label','HTML 模板');html.rows=9;html.value=settings().html||defaultHtml;
   const presetLabel=node('label','HTML 预设（随卡保存）',panel),presetSelect=node('select',undefined,presetLabel);presetSelect.setAttribute('aria-label','HTML 预设');
   const nameLabel=node('label','预设名称',panel),presetName=node('input',undefined,nameLabel);presetName.maxLength=40;presetName.setAttribute('aria-label','预设名称');
   function syncPresets(id=settings().activePresetId??'default'){
@@ -305,7 +305,7 @@ export function startPrototype(defaultHtml) {
     updateVariablesWith(v=>({...v,[PROTO_KEY]:{...chatSettings(),enabled:false}}),{type:'chat'});uninject?.();uninject=null;stateWindow.close();view?.remove();report('已暂停；数据和 HTML 保留，标签过滤正则保留。');
   });
   button('重新读取当前聊天状态',panel,async()=>{renderKey='';await refresh();const result=getResult();report(result.errors.length?`重新校验后仍有 ${result.errors.length} 轮失败，请打开状态管理器。`:'全部参与回放的楼层已通过校验。');});
-  const authorHelp=node('p','可选：作者初始档案让首轮直接从确定事实增量更新；字段规则只做文字约束。保存的默认值用于新聊天，已有聊天保留自己的配置。');
+  const authorHelp=node('p','可选：作者初始档案让首轮直接从确定事实增量更新；字段规则只做文字约束。保存的默认值用于新聊天，已有聊天保留自己的配置。');authorHelp.className='ls-note';
   const initialLabel=node('label','初始档案（完整 LoreState v3 标签；留空则首轮生成）'),initialEditor=node('textarea',undefined,initialLabel);initialEditor.rows=6;initialEditor.setAttribute('aria-label','作者初始档案');initialEditor.value=settings().authorPolicy?.initial??'';
   const constraintLabel=node('label','字段规则（JSON；可留空）'),constraintEditor=node('textarea',undefined,constraintLabel);constraintEditor.rows=5;constraintEditor.setAttribute('aria-label','字段约束');constraintEditor.value=JSON.stringify(settings().authorPolicy?.constraints??{},null,2);constraintEditor.placeholder='{"shared":{"地点":{"required":true}},"entity":{}}';
   const policyPreview=node('pre','尚未预览');policyPreview.style.cssText='white-space:pre-wrap;overflow-wrap:anywhere;max-height:280px;overflow:auto';let policyDraft=null;
@@ -348,11 +348,11 @@ export function startPrototype(defaultHtml) {
   const ruleDisclosure=node('details');node('summary','查看条目原文',ruleDisclosure);ruleDisclosure.append(rules);
   const makerDisclosure=node('details');node('summary','制作提示词与下一轮提示预览',makerDisclosure);makerDisclosure.append(a('生成并复制 HTML 制作提示词'),a('查看下一轮状态提示'),maker);
   const center=createControlCenter({doc,manager,panel,summary,status,floorSelect,details,diagnostics,repairBox,snapshotPanel,apiPanel:apiUi.panel,loadApi:apiUi.sync,actions,loadSettings,settingsGroups:[
-    ['1 · 世界书与规则',[bookLabel,entryLabel,a('刷新世界书列表'),ruleDisclosure]],
-    ['2 · 外观模板',[makerDisclosure,htmlLabel,a('预览 HTML（不保存）'),preview,a('保存 HTML 并启用本聊天')]],
-    ['3 · 外观预设',[presetLabel,a('应用所选预设'),nameLabel,a('另存为新预设'),a('覆盖所选预设'),a('删除所选预设')]],
-    ['4 · 初始档案与字段约束',[authorHelp,initialLabel,a('生成初始档案模板'),constraintLabel,a('预览作者配置'),policyPreview,a('保存为新聊天默认配置'),a('应用到尚未开始的本聊天')]],
-    ['5 · 聊天维护',[a('重新读取当前聊天状态'),a('暂停本聊天')]],
+    {title:'世界书与规则',hint:'选择随卡世界书里的状态栏条目；它决定 LoreState 记录哪些栏目。',items:[bookLabel,entryLabel,[a('刷新世界书列表')],ruleDisclosure]},
+    {title:'外观模板',hint:'粘贴网页 AI 生成的 HTML，预览确认后保存并启用本聊天。',items:[htmlLabel,[a('预览 HTML（不保存）'),a('保存 HTML 并启用本聊天')],preview,makerDisclosure]},
+    {title:'外观预设',hint:'同一套栏目可以保存多份外观，随角色卡保存，随时切换。',items:[presetLabel,nameLabel,[a('应用所选预设'),a('另存为新预设'),a('覆盖所选预设'),a('删除所选预设')]]},
+    {title:'初始档案与字段约束',hint:'可选：给新聊天一份确定的初始状态，并用文字规则约束字段。',items:[authorHelp,initialLabel,[a('生成初始档案模板')],constraintLabel,[a('预览作者配置')],policyPreview,[a('保存为新聊天默认配置'),a('应用到尚未开始的本聊天')]]},
+    {title:'聊天维护',hint:'重新计算本聊天状态，或暂停本聊天的状态更新。',items:[[a('重新读取当前聊天状态'),a('暂停本聊天')]]},
   ]});
   const menu=node('div');menu.className='extension_container';
   const opener=button('LoreState',menu,open);opener.className='list-group-item';opener.style.cssText='background:transparent;color:inherit;border:0;text-align:left;width:100%;font:inherit';

@@ -1,3 +1,16 @@
+# 控制中心 UI 重构收尾 · 2026-09-11（本地候选）
+
+在 `main` / `01e92ccb88d45bf4bebdc191dde13fb12c82ed1b` 上收尾既有 UI 重构。目标是减少控制中心长页面的认知负担并保持全部状态、设置和 API 行为；红线是不改数据协议、宿主接口、持久化键、远程入口或发布 ref；验收为源码构建、静态检查、Node 回归、最终 bundle 模拟宿主、窄宽与人工视觉检查。Gate 决策为既有 staged refactor 的最小收尾，不扩展业务功能。
+
+- 实现：新增无状态 `prototype/ui-kit.js`，统一折叠卡片、说明、字段网格和操作区；设置页改为五步卡片，API 页按绑定、手动更新、预设管理、更新块和诊断分区；控制中心页头/页签吸顶，危险操作与主操作有明确层级。所有原控件节点和事件处理器原样迁移，不复制数据状态或保存草稿。
+- 无障碍与响应式：原生语义 `details/summary`、tab 键盘导航和焦点回返保留；页签与按钮热区至少 44px；宿主主题覆盖下仍恢复可见、可整行点击的原生复选框；减少动态效果偏好下关闭箭头动画；336px 容器四页签无横向溢出。
+- 自动证据：`npm run build`、`npm run check`、99 项 Node 测试、11 项模板浏览器检查、58 项最终 bundle 模拟宿主检查及 `git diff --check` 通过。Edge 本地测试页人工查看设置、诊断和 API 页面，桌面布局、折叠层级、吸顶页签与表单对齐正常。
+- 生成物：项目流水线适配为 `npm run build`，从维护源重建 `artifact/bundle.js`、`prototype/dist/main/lorestate-script.json`、`prototype/dist/main/receipt.json`。bundle SHA-256 为 `8770421b5bec4c40e61004546bbf5bab2b02f51c5e436bcc8676aa569d68e623`，receipt 的 ref 仍为 `main`，`realHostVerified=false`。
+- 资料收据：consult-tavernweave-library snapshot `2026-08-18`；主路由 `sillytavern-embedded-ui`、`code-quality-workflow`、`sillytavern-card-pipeline`；采用 ST-A0 的目标/红线/验收门与 ST-C2 的控制中心、生命周期、窄屏和可访问性原则，未采用第三方设计/动效候选，未新增依赖。
+- 未测：真实 SillyTavern 1.18.0 / Tavern Helper 4.9.5 内的主题组合、系统字体缩放、320px 设备、屏幕阅读器与触控；真实宿主和人工游玩验收仍是下一门。未提交、推送、安装或发布，远程 `@main` 尚不包含本地候选。
+
+---
+
 # 内置预设 Base64 · 2026-09-10（本地候选）
 
 头尾在请求组装时从标准 Base64 解码为 UTF-8；默认空，格式损坏拒绝发送。新增中文、emoji、多行还原与非法数据拒绝测试。build、check、98 项 Node、11 项模板、57 项最终 bundle 模拟检查通过；diff 空白检查通过。bundle、main 远程入口和 receipt 已生成，当前哈希以 receipt 为准。未提交、推送、安装或请求真实 API，真实宿主验收待进行。以下为历史记录。

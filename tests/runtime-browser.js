@@ -43,7 +43,10 @@ await check('魔法棒管理器查看旧楼层，不显示未来状态',async()=
 await check('单入口、四页签、设置草稿和键盘导航',async()=>{
   assert(document.querySelectorAll('#extensionsMenu button').length===1);
   const tabs=[...manager.querySelectorAll('[role="tab"]')];assert(tabs.length===4);
+  assert(tabs.every(tab=>tab.getBoundingClientRect().height>=44),'页签触控热区不足 44px');
   tabs[2].click();await tick();assert(!document.getElementById('lorestate-prototype-settings').hidden);assert(document.getElementById('ls-page-state').hidden);
+  const settingCards=[...document.querySelectorAll('#lorestate-prototype-settings>.ls-card')];
+  assert(settingCards.length===5,'设置页必须保持五步卡片结构');assert(settingCards.filter(card=>card.open).length===1,'设置页默认只展开第一步');
   const editor=manager.querySelector('[aria-label="HTML 模板"]');const original=editor.value;editor.value='未保存草稿';
   tabs[0].click();tabs[2].click();await tick();assert(editor.value==='未保存草稿');editor.value=original;
   tabs[2].dispatchEvent(new KeyboardEvent('keydown',{key:'Home',bubbles:true}));assert(tabs[0].getAttribute('aria-selected')==='true');
@@ -53,6 +56,22 @@ await check('336px 窄容器四个页面均无横向溢出',async()=>{
   manager.style.width='336px';
   for(const tab of manager.querySelectorAll('[role="tab"]')){tab.click();await tick();assert(manager.scrollWidth<=manager.clientWidth+1,'页面横向溢出：'+tab.textContent);}
   manager.style.width='';manager.querySelector('#ls-tab-diagnostics').click();
+});
+await check('宿主主题覆盖下复选框仍是可见可点的原生控件',async()=>{
+  // 模拟 SillyTavern 主题：抹掉原生对勾、压掉热区，再用伪元素画自己的勾。
+  const theme=document.createElement('style');
+  theme.textContent='input[type=checkbox]:not(#nonexistent){-webkit-appearance:none;appearance:none;width:auto;height:auto;min-height:0;padding:6px;border:1px solid #444;border-radius:4px;background:#111;box-shadow:none}input[type=checkbox]:not(#nonexistent)::before{content:"\\2713";display:inline-block}';
+  document.head.append(theme);
+  try{
+    manager.querySelector('#ls-tab-api').click();await tick();
+    const auto=manager.querySelector('[aria-label="自动更新"]'),style=getComputedStyle(auto),box=auto.getBoundingClientRect();
+    assert(style.appearance!=='none'&&style.webkitAppearance!=='none','原生复选框被宿主主题抹掉');
+    assert(getComputedStyle(auto,'::before').content==='none','宿主主题的伪元素盖住了对勾');
+    assert(box.width>=20&&box.height>=20,'复选框热区过小：'+box.width+'x'+box.height);
+    const row=auto.closest('label');assert(row?.className==='ls-check','复选框必须在整行热区里');
+    const before=auto.checked;row.click();assert(auto.checked!==before,'点击整行无法切换复选框');row.click();assert(auto.checked===before);
+    assert(button('保存状态更新绑定',auto.closest('details')),'保存按钮必须和它保存的字段同卡片');
+  }finally{theme.remove();manager.querySelector('#ls-tab-diagnostics').click();await tick();}
 });
 await check('错误轮、修复预览、写回、备份、撤销和告警恢复',async()=>{
   await click('返回最新',manager);assert(manager.textContent.includes('本层更新失败'));
@@ -491,4 +510,8 @@ await check('续写时切换分支不覆盖，恢复原分支后可以完成整�
   list[1].swipe_id=1;list[1].message='其他分支';await emit('GENERATION_ENDED');assert(list[1].message==='其他分支');assert(variables.chat[PROTO_KEY].continuationPending);
   list[1].swipe_id=0;list[1].message=original+'原分支续写';await emit('MESSAGE_UPDATED');assert(!variables.chat[PROTO_KEY].continuationPending);assert(list[1].message==='抵达车站。原分支续写');
 });
-output.textContent=results.join('\n');if(new URLSearchParams(location.search).has('preview'))await click('LoreState');window.testResults=results;
+output.textContent=results.join('\n');
+// ?preview[=state|diagnostics|settings|api] leaves the control center open for a visual check.
+const preview=new URLSearchParams(location.search).get('preview');
+if(preview!==null){await click('LoreState');document.querySelector('#ls-tab-'+(preview||'state'))?.click();}
+window.testResults=results;
