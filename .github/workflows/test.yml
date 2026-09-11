@@ -1,5 +1,10 @@
 name: test
 on: [push, pull_request]
+permissions:
+  contents: read
+concurrency:
+  group: lorestate-test-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   test:
     runs-on: ubuntu-latest
