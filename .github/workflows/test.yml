@@ -13,12 +13,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Apply temporary lifecycle patch on fix branch
+      - name: Apply temporary lifecycle transform on fix branch
         if: github.ref_name == 'fix/chat-switch-lifecycle'
-        run: |
-          if ! grep -q 'shouldReloadForChatChange' prototype/runtime.js; then
-            git apply scripts/chat-switch-lifecycle.patch
-          fi
+        run: node scripts/apply-chat-switch-lifecycle.mjs
       - run: npm run build
       - run: npm run check
       - run: npm test
