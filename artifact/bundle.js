@@ -504,7 +504,7 @@ function extraModelRequest(profile,content,story,generationId,options={}){
 }
 
 
-function createApiPanel({doc,read,write,binding,setBinding,run,cancel,undo,onError,listRequestPresets=()=>[],fetchModels}){
+function createApiPanel({doc,read,write,binding,setBinding,run,cancel,undo,onError,listRequestPresets=()=>[],fetchModels,readDiagnostics=()=>[],clearDiagnostics=()=>{}}){
   const make=(tag,text,parent)=>{const el=doc.createElement(tag);if(text)el.textContent=text;parent?.append(el);return el;};
   const panel=make('section');
   make('h3','API 预设与状态更新',panel);
@@ -568,6 +568,24 @@ function createApiPanel({doc,read,write,binding,setBinding,run,cancel,undo,onErr
     try{await navigator.clipboard.writeText(updateBox.value);status.textContent='LoreState 更新块已复制。';}
     catch{updateBox.focus();updateBox.select();status.textContent='浏览器不允许自动复制，请从文本框手动复制。';}
   },updateGroup);
+  const diagnosticGroup=group('最近一次 LoreState 更新诊断',false),diagnosticMeta=make('p','',diagnosticGroup),diagnosticBox=make('textarea',null,diagnosticGroup);
+  diagnosticBox.readOnly=true;diagnosticBox.spellcheck=false;diagnosticBox.setAttribute('aria-label','最近一次 LoreState 更新诊断');diagnosticBox.style.cssText='width:100%;min-height:320px;box-sizing:border-box;white-space:pre;overflow:auto';
+  make('p','这里记录当前标签页、当前聊天最近 10 次额外模型请求的原始返回和本地校验结果；单次输出最多保留 32000 字符。诊断不保存到聊天或角色卡，不记录请求提示或 API 密钥，切换聊天时清空。',diagnosticGroup);
+  function syncDiagnostics(){
+    const entries=readDiagnostics(),lines=[];
+    for(const [index,item] of entries.entries()){
+      lines.push(`========== 第 ${index+1} 次状态模型请求 ==========`,`时间：${item.time}`,`尝试：${item.attempt}/${item.total}`,`接口：${item.method}`,`结果：${item.status}`);
+      if(item.requestError)lines.push(`请求错误：${item.requestError}`);
+      if(item.localError)lines.push(`本地校验错误：${item.localError}`);
+      lines.push('模型原始输出：',item.output||'（没有捕获到文字输出）');
+      if(item.truncated)lines.push('【输出过长：仅保留开头和结尾】');
+      lines.push('');
+    }
+    diagnosticBox.value=lines.join('\n').trim();diagnosticMeta.textContent=entries.length?`已捕获 ${entries.length} 次状态模型请求。`:'暂无额外模型诊断。';
+  }
+  action('刷新诊断',syncDiagnostics,diagnosticGroup);
+  action('复制诊断',async()=>{if(!diagnosticBox.value)throw new Error('当前没有可复制的诊断');try{await navigator.clipboard.writeText(diagnosticBox.value);status.textContent='LoreState 诊断已复制。';}catch{diagnosticBox.focus();diagnosticBox.select();status.textContent='浏览器不允许自动复制，请从文本框手动复制。';}},diagnosticGroup);
+  action('清除诊断',()=>{clearDiagnostics();syncDiagnostics();},diagnosticGroup);
   function load(){
     resetModels();const p=(read().profiles??[]).find(p=>p.id===select.value);editedId=p?.id??'';
     for(const [el,value] of [[name,p?.name??''],[url,p?.url??''],[key,p?.key??''],[model,p?.model??''],[maxTokens,p?.maxTokens??4096],[temperature,p?.temperature??0.2],[topP,p?.topP??''],[topK,p?.topK??''],[frequency,p?.frequencyPenalty??''],[presence,p?.presencePenalty??'']])el.value=value==='unset'?'':value;
@@ -581,7 +599,7 @@ function createApiPanel({doc,read,write,binding,setBinding,run,cancel,undo,onErr
     auto.checked=config.auto;stream.checked=config.stream;attempts.value=config.attempts;timeout.value=config.timeoutSeconds;
     const current=profiles.find(p=>p.id===config.profileId);
     status.textContent=`当前模式：${config.mode==='extra'?'额外模型':'随正文更新'}；状态模型：${config.source==='current'?'酒馆当前连接':current?.name??(config.profileId?'预设已删除，请重新绑定':'未绑定')}。`;
-    load();visibility();syncUpdatePreview();
+    load();visibility();syncUpdatePreview();syncDiagnostics();
   }
   select.onchange=load;
   const values=()=>({id:editedId||crypto.randomUUID(),name:name.value,url:url.value,key:key.value,model:model.value,maxTokens:maxTokens.value,temperature:temperature.value,topP:topP.value,topK:topK.value,frequencyPenalty:frequency.value,presencePenalty:presence.value});
@@ -596,7 +614,7 @@ function createApiPanel({doc,read,write,binding,setBinding,run,cancel,undo,onErr
   });
   make('p','以上请求设置和绑定需保存后生效。关闭自动更新后，可手动整理最新回复。重试与撤销保留剧情正文。',panel);
   action('重新更新最新回复状态',async()=>{await run();syncUpdatePreview();});action('取消状态更新',cancel);action('撤销最近一次状态更新',async()=>{await undo();syncUpdatePreview();});
-  return {panel,sync,report:text=>{status.textContent=text;},refreshUpdate:syncUpdatePreview,clear:()=>{modelEpoch++;key.value='';updateBox.value='';updateMeta.textContent='';}};
+  return {panel,sync,report:text=>{status.textContent=text;},refreshUpdate:syncUpdatePreview,refreshDiagnostics:syncDiagnostics,clear:()=>{modelEpoch++;key.value='';updateBox.value='';updateMeta.textContent='';diagnosticBox.value='';diagnosticMeta.textContent='';}};
 }
 
 
@@ -892,7 +910,20 @@ function startPrototype(defaultHtml) {
   notice.style.cssText='position:fixed;right:12px;top:12px;z-index:100000;max-width:min(440px,92vw);padding:16px;background:#382621;color:#fff;border:2px solid #efb06a;border-radius:8px;white-space:pre-wrap';
   const noticeText=node('p','',notice);
   button('查看诊断',notice,()=>openManager(chatSettings().current?.errors?.[0]?.floor));button('关闭提醒',notice,()=>{notice.hidden=true;});
-  let noticeKey='',runtimeLogs=[],draft=null;
+  let noticeKey='',runtimeLogs=[],extraDiagnostics=[],draft=null;
+  function diagnosticText(value,limit=32000){
+    const text=typeof value==='string'?value:value==null?'':String(value);if(text.length<=limit)return {text,truncated:false};
+    const half=Math.floor((limit-32)/2);return {text:text.slice(0,half)+'\n…[中间内容因诊断长度限制省略]…\n'+text.slice(-half),truncated:true};
+  }
+  function safeDiagnosticError(error,secrets=[]){
+    let text=String(error?.message??error).replace(/[\r\n]+/g,' ').slice(0,2000);
+    for(const secret of secrets)if(typeof secret==='string'&&secret.length>=4)text=text.split(secret).join('[REDACTED]');
+    return text.replace(/Bearer\s+[A-Za-z0-9._~+\/-]+/gi,'Bearer [REDACTED]');
+  }
+  function beginExtraDiagnostic(attempt,total,method){
+    const entry={time:new Date().toISOString(),attempt,total,method,status:'requesting',requestError:'',localError:'',output:'',truncated:false};
+    extraDiagnostics.push(entry);extraDiagnostics=extraDiagnostics.slice(-10);return entry;
+  }
   function fault(error,stage){
     const message=String(error?.message??error).slice(0,500);
     const entry={time:new Date().toISOString(),stage,message};
@@ -1166,7 +1197,8 @@ function startPrototype(defaultHtml) {
     listRequestPresets:requestPresets,fetchModels:params=>{if(typeof getModelList!=='function')throw new Error('当前酒馆助手缺少模型列表接口');return getModelList(params);},
     write:config=>{cancelExtraUpdate();updateVariablesWith(v=>({...v,[API_PROFILE_KEY]:config}),{type:'global'});},
     binding:updateBinding,setBinding:value=>{if(!active(settings()))throw new Error('请先配置并启用本聊天');cancelExtraUpdate();updateVariablesWith(v=>({...v,[PROTO_KEY]:{...v[PROTO_KEY],variableUpdate:value}}),{type:'chat'});},
-    run:()=>runExtraUpdate(),cancel:()=>{const committed=extraJob?.committed;cancelExtraUpdate();apiUi.report(committed?'状态已经写入，如需恢复请撤销最近一次更新。':'状态更新已取消，原消息保留。');},undo:undoExtraUpdate,onError:e=>fault(e,'状态更新操作失败')});
+    run:()=>runExtraUpdate(),cancel:()=>{const committed=extraJob?.committed;cancelExtraUpdate();apiUi.report(committed?'状态已经写入，如需恢复请撤销最近一次更新。':'状态更新已取消，原消息保留。');},undo:undoExtraUpdate,onError:e=>fault(e,'状态更新操作失败'),
+    readDiagnostics:()=>extraDiagnostics,clearDiagnostics:()=>{extraDiagnostics=[];}});
   const ruleDisclosure=node('details');node('summary','查看条目原文',ruleDisclosure);ruleDisclosure.append(rules);
   const makerDisclosure=node('details');node('summary','制作提示词与下一轮提示预览',makerDisclosure);makerDisclosure.append(a('生成并复制 HTML 制作提示词'),a('查看下一轮状态提示'),maker);
   const center=createControlCenter({doc,manager,panel,summary,status,floorSelect,details,diagnostics,repairBox,snapshotPanel,apiPanel:apiUi.panel,loadApi:apiUi.sync,actions,loadSettings,settingsGroups:[
@@ -1302,13 +1334,16 @@ function startPrototype(defaultHtml) {
         for(let attempt=1;attempt<=binding.attempts;attempt++){
           assertCurrent();generationId=crypto.randomUUID();
           apiUi.report(`第 ${last.message_id} 楼状态更新：第 ${attempt}/${binding.attempts} 次请求…`);
+          const diagnostic=beginExtraDiagnostic(attempt,binding.attempts,binding.presetMode==='builtin'?'generateRaw':'generate');apiUi.refreshDiagnostics();
           let output,failure;
           try{
             const request=extraModelRequest(profile,content,narrative,generationId,binding);
             output=await (binding.presetMode==='builtin'?generateRaw(request):generate(request));
-          }catch{failure='状态 API 请求失败，请检查连接配置和网络';}
+            const savedOutput=diagnosticText(output);Object.assign(diagnostic,{status:'returned-awaiting-validation',output:savedOutput.text,truncated:savedOutput.truncated});
+          }catch(error){failure='状态 API 请求失败，请检查连接配置和网络';Object.assign(diagnostic,{status:'request-error',requestError:safeDiagnosticError(error,[profile?.key])});}
           assertCurrent();
-          if(!failure){try{updated=validateExtraUpdate(output,last.message,previous.state,schema,last.message_id,receipt);}catch{failure='状态模型输出未通过协议、栏目或读取凭据校验';}}
+          if(!failure){try{updated=validateExtraUpdate(output,last.message,previous.state,schema,last.message_id,receipt);diagnostic.status='validated-success';}catch(error){failure='状态模型输出未通过协议、栏目或读取凭据校验';Object.assign(diagnostic,{status:'validation-failed',localError:safeDiagnosticError(error)});}}
+          apiUi.refreshDiagnostics();
           if(!failure)break;
           if(attempt===binding.attempts)throw new Error(`${failure}；已尝试 ${attempt} 次，原消息保留`);
         }
@@ -1417,7 +1452,7 @@ function startPrototype(defaultHtml) {
   for(const event of ['MESSAGE_RECEIVED','CHARACTER_MESSAGE_RENDERED','MESSAGE_UPDATED','MESSAGE_EDITED','MESSAGE_DELETED','MESSAGE_SWIPED','GENERATION_ENDED','MORE_MESSAGES_LOADED'])if(tavern_events[event])eventOn(tavern_events[event],schedule);
   if(tavern_events.GENERATION_STARTED)eventOn(tavern_events.GENERATION_STARTED,()=>{generating=true;});
   for(const event of ['GENERATION_ENDED','GENERATION_STOPPED'])if(tavern_events[event])eventOn(tavern_events[event],()=>{generating=false;if(event==='GENERATION_ENDED')finishAutoUpdate();else{autoUpdate=null;clearTimeout(autoTimer);autoTimer=null;}schedule();});
-  eventOn(tavern_events.CHAT_CHANGED,()=>{chatEpoch++;cancelExtraUpdate();apiUi.clear();uninject?.();uninject=null;stateWindow.close();view?.remove();renderKey='';noticeKey='';notice.hidden=true;runtimeLogs=[];draft=null;restoreDraft=null;capturedKey='';snapshotPreview.textContent='';report('设置随角色保存；修改后请预览并保存。');manager.close();generating=false;schedule();});
+  eventOn(tavern_events.CHAT_CHANGED,()=>{chatEpoch++;cancelExtraUpdate();extraDiagnostics=[];apiUi.clear();uninject?.();uninject=null;stateWindow.close();view?.remove();renderKey='';noticeKey='';notice.hidden=true;runtimeLogs=[];draft=null;restoreDraft=null;capturedKey='';snapshotPreview.textContent='';report('设置随角色保存；修改后请预览并保存。');manager.close();generating=false;schedule();});
   eventOn(tavern_events.GENERATION_AFTER_COMMANDS,beforeGenerate);
   eventOn(getButtonEvent('LoreState 设置'),()=>open().catch(e=>fault(e,'设置打开失败')));
   function dispose(){closed=true;cancelExtraUpdate();apiUi.clear();menuObserver?.disconnect();stateWindow.dispose();menu.remove();panel.remove();manager.remove();notice.remove();view?.remove();uninject?.();}

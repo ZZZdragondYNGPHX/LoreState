@@ -284,7 +284,7 @@ await check('模块归属变化在请求前中止，状态与快照不被重解�
 });
 const apiKey='lorestate_api_profiles_v1';
 let extraCalls=[],extraStops=[],extraPlace='书店',pendingReply;
-const extraReply=request=>{const token=request.ordered_prompts[0].content.match(/read="([a-f\d-]+)"/)[1];const mode=request.ordered_prompts[0].content.match(/<LoreState version="3" mode="(full|delta)"/)[1];return `<LoreState version="3" mode="${mode}" read="${token}"><Shared><地点>${extraPlace}</地点></Shared></LoreState>`;};
+const extraReply=request=>{const source=request.ordered_prompts.find(item=>item?.content?.includes('<LoreState version="3"'))?.content??request.user_input;const token=source.match(/read="([a-f\d-]+)"/)[1],mode=source.match(/<LoreState version="3" mode="(full|delta)"/)[1];return `<LoreState version="3" mode="${mode}" read="${token}"><Shared><地点>${extraPlace}</地点></Shared></LoreState>`;};
 const normalExtra=async request=>{extraCalls.push(request);const count=stops;await generate();assert(stops===count,'独立请求重入宿主钩子不应停止正文控制器');return extraReply(request);};
 const input=(label,value)=>{const el=manager.querySelector(`[aria-label="${label}"]`);el.value=value;return el;};
 await check('API 预设只存全局，当前聊天独立绑定；保存和删除不影响正文设置',async()=>{
@@ -303,16 +303,18 @@ await check('API 预设只存全局，当前聊天独立绑定；保存和删除
   await click('删除 API 预设');assert(variables.global[apiKey].profiles.length===1);
 });
 await check('额外模型初次更新、重试与撤销保留正文；重试始终读取本轮前态',async()=>{
-  await click('重新更新最新回复状态');assert(variables.chat[PROTO_KEY].current.state.shared.地点==='书店');assert(list[1].message.startsWith('我们抵达书店。'));
+  await click('重新更新最新回复状态');const firstDiagnostic=manager.querySelector('textarea[aria-label="最近一次 LoreState 更新诊断"]')?.value??'';assert(variables.chat[PROTO_KEY].current?.state?.shared?.地点==='书店',notice.textContent+'\n'+firstDiagnostic);assert(firstDiagnostic.includes('validated-success'));assert(list[1].message.startsWith('我们抵达书店。'));
   assert(extraCalls.at(-1).custom_api.model==='model-A');assert(extraCalls.at(-1).max_chat_history===0);
   const first=list[1].message;extraPlace='公园';await click('重新更新最新回复状态');assert(variables.chat[PROTO_KEY].current.state.shared.地点==='公园');
-  assert(extraCalls.at(-1).ordered_prompts[0].content.includes('尚未建立'));assert((list[1].message.match(/<LoreState /g)||[]).length===1);
+  assert(extraCalls.at(-1).ordered_prompts.some(item=>item?.content?.includes('尚未建立')));assert((list[1].message.match(/<LoreState /g)||[]).length===1);
   await click('撤销最近一次状态更新');assert(list[1].message===first);assert(variables.chat[PROTO_KEY].current.state.shared.地点==='书店');
 });
 await check('状态请求失败或输出不合法不覆盖消息，日志不泄露请求密钥',async()=>{
   const before=list[1].message;
   window.generateRaw=async()=>{throw new Error('synthetic-private-key raw provider error');};await click('重新更新最新回复状态');assert(list[1].message===before);assert(!notice.textContent.includes('synthetic-private-key'));
+  let diagnostic=manager.querySelector('textarea[aria-label="最近一次 LoreState 更新诊断"]');assert(diagnostic.value.includes('request-error'));assert(diagnostic.value.includes('[REDACTED]'));assert(!diagnostic.value.includes('synthetic-private-key'));
   window.generateRaw=async()=>'<LoreState version="3" mode="full"></LoreState>';await click('重新更新最新回复状态');assert(list[1].message===before);assert(notice.textContent.includes('校验'));
+  diagnostic=manager.querySelector('textarea[aria-label="最近一次 LoreState 更新诊断"]');assert(diagnostic.value.includes('validation-failed'));assert(diagnostic.value.includes('mode 或读取凭据不匹配'));assert(diagnostic.value.includes('<LoreState version="3" mode="full"></LoreState>'));
   window.generateRaw=normalExtra;
 });
 await check('请求中编辑消息、切换分支或修改绑定拒绝迟到结果',async()=>{
@@ -357,7 +359,7 @@ await check('正文中止不自动调用状态模型，暂停后不接收自动�
 await check('重抽自动更新从上一轮状态计算，不保留被替换分支的状态',async()=>{
   controller=new AbortController();await generate('swipe');assert(!controller.signal.aborted);const calls=extraCalls.length;
   list.at(-1).message='这次走到了海边。';extraPlace='海边';await emit('GENERATION_ENDED');await tick();await tick();
-  assert(extraCalls.length===calls+1);assert(extraCalls.at(-1).ordered_prompts[0].content.includes('书店'));assert(variables.chat[PROTO_KEY].current.state.shared.地点==='海边');
+  assert(extraCalls.length===calls+1);assert(extraCalls.at(-1).ordered_prompts.some(item=>item?.content?.includes('书店')));assert(variables.chat[PROTO_KEY].current.state.shared.地点==='海边');
 });
 await check('请求期间更改世界书规则拒绝写回；已有后续消息不能撤销旧更新',async()=>{
   const original=list.at(-1).message,worldbook=window.getWorldbook;
@@ -460,7 +462,7 @@ await check('快照回档后额外模式新回复、重算、撤销与同层续�
   for(const type of ['continue','swipe','regenerate']){controller=new AbortController();await generate(type);assert(controller.signal.aborted);}
   controller=new AbortController();await emit('GENERATION_STARTED');await generate();assert(!controller.signal.aborted);extraPlace='新分支';
   list.push({message_id:3,role:'user',message:'继续旅行'},{message_id:4,role:'assistant',swipe_id:0,message:'新旅程'});await emit('GENERATION_ENDED');await tick();
-  assert(extraCalls.at(-1).ordered_prompts[0].content.includes('<地点>车站</地点>'));
+  assert(extraCalls.at(-1).ordered_prompts.some(item=>item?.content?.includes('<地点>车站</地点>')));
   assert(variables.chat[PROTO_KEY].current.state.shared.地点==='新分支');assert(JSON.stringify(list.slice(0,3))===prefix);
   await click('撤销最近一次状态更新');assert(list.at(-1).message==='新旅程');await click('重新更新最新回复状态');
   await emit('GENERATION_STARTED');await generate('continue');list.at(-1).message+='续写新旅程';extraPlace='新终点';await emit('GENERATION_ENDED');await tick();

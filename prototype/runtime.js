@@ -56,7 +56,20 @@ export function startPrototype(defaultHtml) {
   notice.style.cssText='position:fixed;right:12px;top:12px;z-index:100000;max-width:min(440px,92vw);padding:16px;background:#382621;color:#fff;border:2px solid #efb06a;border-radius:8px;white-space:pre-wrap';
   const noticeText=node('p','',notice);
   button('查看诊断',notice,()=>openManager(chatSettings().current?.errors?.[0]?.floor));button('关闭提醒',notice,()=>{notice.hidden=true;});
-  let noticeKey='',runtimeLogs=[],draft=null;
+  let noticeKey='',runtimeLogs=[],extraDiagnostics=[],draft=null;
+  function diagnosticText(value,limit=32000){
+    const text=typeof value==='string'?value:value==null?'':String(value);if(text.length<=limit)return {text,truncated:false};
+    const half=Math.floor((limit-32)/2);return {text:text.slice(0,half)+'\n…[中间内容因诊断长度限制省略]…\n'+text.slice(-half),truncated:true};
+  }
+  function safeDiagnosticError(error,secrets=[]){
+    let text=String(error?.message??error).replace(/[\r\n]+/g,' ').slice(0,2000);
+    for(const secret of secrets)if(typeof secret==='string'&&secret.length>=4)text=text.split(secret).join('[REDACTED]');
+    return text.replace(/Bearer\s+[A-Za-z0-9._~+\/-]+/gi,'Bearer [REDACTED]');
+  }
+  function beginExtraDiagnostic(attempt,total,method){
+    const entry={time:new Date().toISOString(),attempt,total,method,status:'requesting',requestError:'',localError:'',output:'',truncated:false};
+    extraDiagnostics.push(entry);extraDiagnostics=extraDiagnostics.slice(-10);return entry;
+  }
   function fault(error,stage){
     const message=String(error?.message??error).slice(0,500);
     const entry={time:new Date().toISOString(),stage,message};
@@ -330,7 +343,8 @@ export function startPrototype(defaultHtml) {
     listRequestPresets:requestPresets,fetchModels:params=>{if(typeof getModelList!=='function')throw new Error('当前酒馆助手缺少模型列表接口');return getModelList(params);},
     write:config=>{cancelExtraUpdate();updateVariablesWith(v=>({...v,[API_PROFILE_KEY]:config}),{type:'global'});},
     binding:updateBinding,setBinding:value=>{if(!active(settings()))throw new Error('请先配置并启用本聊天');cancelExtraUpdate();updateVariablesWith(v=>({...v,[PROTO_KEY]:{...v[PROTO_KEY],variableUpdate:value}}),{type:'chat'});},
-    run:()=>runExtraUpdate(),cancel:()=>{const committed=extraJob?.committed;cancelExtraUpdate();apiUi.report(committed?'状态已经写入，如需恢复请撤销最近一次更新。':'状态更新已取消，原消息保留。');},undo:undoExtraUpdate,onError:e=>fault(e,'状态更新操作失败')});
+    run:()=>runExtraUpdate(),cancel:()=>{const committed=extraJob?.committed;cancelExtraUpdate();apiUi.report(committed?'状态已经写入，如需恢复请撤销最近一次更新。':'状态更新已取消，原消息保留。');},undo:undoExtraUpdate,onError:e=>fault(e,'状态更新操作失败'),
+    readDiagnostics:()=>extraDiagnostics,clearDiagnostics:()=>{extraDiagnostics=[];}});
   const ruleDisclosure=node('details');node('summary','查看条目原文',ruleDisclosure);ruleDisclosure.append(rules);
   const makerDisclosure=node('details');node('summary','制作提示词与下一轮提示预览',makerDisclosure);makerDisclosure.append(a('生成并复制 HTML 制作提示词'),a('查看下一轮状态提示'),maker);
   const center=createControlCenter({doc,manager,panel,summary,status,floorSelect,details,diagnostics,repairBox,snapshotPanel,apiPanel:apiUi.panel,loadApi:apiUi.sync,actions,loadSettings,settingsGroups:[
@@ -466,13 +480,16 @@ export function startPrototype(defaultHtml) {
         for(let attempt=1;attempt<=binding.attempts;attempt++){
           assertCurrent();generationId=crypto.randomUUID();
           apiUi.report(`第 ${last.message_id} 楼状态更新：第 ${attempt}/${binding.attempts} 次请求…`);
+          const diagnostic=beginExtraDiagnostic(attempt,binding.attempts,binding.presetMode==='builtin'?'generateRaw':'generate');apiUi.refreshDiagnostics();
           let output,failure;
           try{
             const request=extraModelRequest(profile,content,narrative,generationId,binding);
             output=await (binding.presetMode==='builtin'?generateRaw(request):generate(request));
-          }catch{failure='状态 API 请求失败，请检查连接配置和网络';}
+            const savedOutput=diagnosticText(output);Object.assign(diagnostic,{status:'returned-awaiting-validation',output:savedOutput.text,truncated:savedOutput.truncated});
+          }catch(error){failure='状态 API 请求失败，请检查连接配置和网络';Object.assign(diagnostic,{status:'request-error',requestError:safeDiagnosticError(error,[profile?.key])});}
           assertCurrent();
-          if(!failure){try{updated=validateExtraUpdate(output,last.message,previous.state,schema,last.message_id,receipt);}catch{failure='状态模型输出未通过协议、栏目或读取凭据校验';}}
+          if(!failure){try{updated=validateExtraUpdate(output,last.message,previous.state,schema,last.message_id,receipt);diagnostic.status='validated-success';}catch(error){failure='状态模型输出未通过协议、栏目或读取凭据校验';Object.assign(diagnostic,{status:'validation-failed',localError:safeDiagnosticError(error)});}}
+          apiUi.refreshDiagnostics();
           if(!failure)break;
           if(attempt===binding.attempts)throw new Error(`${failure}；已尝试 ${attempt} 次，原消息保留`);
         }
@@ -581,7 +598,7 @@ export function startPrototype(defaultHtml) {
   for(const event of ['MESSAGE_RECEIVED','CHARACTER_MESSAGE_RENDERED','MESSAGE_UPDATED','MESSAGE_EDITED','MESSAGE_DELETED','MESSAGE_SWIPED','GENERATION_ENDED','MORE_MESSAGES_LOADED'])if(tavern_events[event])eventOn(tavern_events[event],schedule);
   if(tavern_events.GENERATION_STARTED)eventOn(tavern_events.GENERATION_STARTED,()=>{generating=true;});
   for(const event of ['GENERATION_ENDED','GENERATION_STOPPED'])if(tavern_events[event])eventOn(tavern_events[event],()=>{generating=false;if(event==='GENERATION_ENDED')finishAutoUpdate();else{autoUpdate=null;clearTimeout(autoTimer);autoTimer=null;}schedule();});
-  eventOn(tavern_events.CHAT_CHANGED,()=>{chatEpoch++;cancelExtraUpdate();apiUi.clear();uninject?.();uninject=null;stateWindow.close();view?.remove();renderKey='';noticeKey='';notice.hidden=true;runtimeLogs=[];draft=null;restoreDraft=null;capturedKey='';snapshotPreview.textContent='';report('设置随角色保存；修改后请预览并保存。');manager.close();generating=false;schedule();});
+  eventOn(tavern_events.CHAT_CHANGED,()=>{chatEpoch++;cancelExtraUpdate();extraDiagnostics=[];apiUi.clear();uninject?.();uninject=null;stateWindow.close();view?.remove();renderKey='';noticeKey='';notice.hidden=true;runtimeLogs=[];draft=null;restoreDraft=null;capturedKey='';snapshotPreview.textContent='';report('设置随角色保存；修改后请预览并保存。');manager.close();generating=false;schedule();});
   eventOn(tavern_events.GENERATION_AFTER_COMMANDS,beforeGenerate);
   eventOn(getButtonEvent('LoreState 设置'),()=>open().catch(e=>fault(e,'设置打开失败')));
   function dispose(){closed=true;cancelExtraUpdate();apiUi.clear();menuObserver?.disconnect();stateWindow.dispose();menu.remove();panel.remove();manager.remove();notice.remove();view?.remove();uninject?.();}

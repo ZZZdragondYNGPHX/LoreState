@@ -1,7 +1,7 @@
 import { boundApiProfile, saveApiProfile, deleteApiProfile, normalizeApiAddress, normalizeUpdateSettings } from './api-profiles.js';
 import { TAG_PATTERN } from './core.js';
 
-export function createApiPanel({doc,read,write,binding,setBinding,run,cancel,undo,onError,listRequestPresets=()=>[],fetchModels}){
+export function createApiPanel({doc,read,write,binding,setBinding,run,cancel,undo,onError,listRequestPresets=()=>[],fetchModels,readDiagnostics=()=>[],clearDiagnostics=()=>{}}){
   const make=(tag,text,parent)=>{const el=doc.createElement(tag);if(text)el.textContent=text;parent?.append(el);return el;};
   const panel=make('section');
   make('h3','API 预设与状态更新',panel);
@@ -65,6 +65,24 @@ export function createApiPanel({doc,read,write,binding,setBinding,run,cancel,und
     try{await navigator.clipboard.writeText(updateBox.value);status.textContent='LoreState 更新块已复制。';}
     catch{updateBox.focus();updateBox.select();status.textContent='浏览器不允许自动复制，请从文本框手动复制。';}
   },updateGroup);
+  const diagnosticGroup=group('最近一次 LoreState 更新诊断',false),diagnosticMeta=make('p','',diagnosticGroup),diagnosticBox=make('textarea',null,diagnosticGroup);
+  diagnosticBox.readOnly=true;diagnosticBox.spellcheck=false;diagnosticBox.setAttribute('aria-label','最近一次 LoreState 更新诊断');diagnosticBox.style.cssText='width:100%;min-height:320px;box-sizing:border-box;white-space:pre;overflow:auto';
+  make('p','这里记录当前标签页、当前聊天最近 10 次额外模型请求的原始返回和本地校验结果；单次输出最多保留 32000 字符。诊断不保存到聊天或角色卡，不记录请求提示或 API 密钥，切换聊天时清空。',diagnosticGroup);
+  function syncDiagnostics(){
+    const entries=readDiagnostics(),lines=[];
+    for(const [index,item] of entries.entries()){
+      lines.push(`========== 第 ${index+1} 次状态模型请求 ==========`,`时间：${item.time}`,`尝试：${item.attempt}/${item.total}`,`接口：${item.method}`,`结果：${item.status}`);
+      if(item.requestError)lines.push(`请求错误：${item.requestError}`);
+      if(item.localError)lines.push(`本地校验错误：${item.localError}`);
+      lines.push('模型原始输出：',item.output||'（没有捕获到文字输出）');
+      if(item.truncated)lines.push('【输出过长：仅保留开头和结尾】');
+      lines.push('');
+    }
+    diagnosticBox.value=lines.join('\n').trim();diagnosticMeta.textContent=entries.length?`已捕获 ${entries.length} 次状态模型请求。`:'暂无额外模型诊断。';
+  }
+  action('刷新诊断',syncDiagnostics,diagnosticGroup);
+  action('复制诊断',async()=>{if(!diagnosticBox.value)throw new Error('当前没有可复制的诊断');try{await navigator.clipboard.writeText(diagnosticBox.value);status.textContent='LoreState 诊断已复制。';}catch{diagnosticBox.focus();diagnosticBox.select();status.textContent='浏览器不允许自动复制，请从文本框手动复制。';}},diagnosticGroup);
+  action('清除诊断',()=>{clearDiagnostics();syncDiagnostics();},diagnosticGroup);
   function load(){
     resetModels();const p=(read().profiles??[]).find(p=>p.id===select.value);editedId=p?.id??'';
     for(const [el,value] of [[name,p?.name??''],[url,p?.url??''],[key,p?.key??''],[model,p?.model??''],[maxTokens,p?.maxTokens??4096],[temperature,p?.temperature??0.2],[topP,p?.topP??''],[topK,p?.topK??''],[frequency,p?.frequencyPenalty??''],[presence,p?.presencePenalty??'']])el.value=value==='unset'?'':value;
@@ -78,7 +96,7 @@ export function createApiPanel({doc,read,write,binding,setBinding,run,cancel,und
     auto.checked=config.auto;stream.checked=config.stream;attempts.value=config.attempts;timeout.value=config.timeoutSeconds;
     const current=profiles.find(p=>p.id===config.profileId);
     status.textContent=`当前模式：${config.mode==='extra'?'额外模型':'随正文更新'}；状态模型：${config.source==='current'?'酒馆当前连接':current?.name??(config.profileId?'预设已删除，请重新绑定':'未绑定')}。`;
-    load();visibility();syncUpdatePreview();
+    load();visibility();syncUpdatePreview();syncDiagnostics();
   }
   select.onchange=load;
   const values=()=>({id:editedId||crypto.randomUUID(),name:name.value,url:url.value,key:key.value,model:model.value,maxTokens:maxTokens.value,temperature:temperature.value,topP:topP.value,topK:topK.value,frequencyPenalty:frequency.value,presencePenalty:presence.value});
@@ -93,5 +111,5 @@ export function createApiPanel({doc,read,write,binding,setBinding,run,cancel,und
   });
   make('p','以上请求设置和绑定需保存后生效。关闭自动更新后，可手动整理最新回复。重试与撤销保留剧情正文。',panel);
   action('重新更新最新回复状态',async()=>{await run();syncUpdatePreview();});action('取消状态更新',cancel);action('撤销最近一次状态更新',async()=>{await undo();syncUpdatePreview();});
-  return {panel,sync,report:text=>{status.textContent=text;},refreshUpdate:syncUpdatePreview,clear:()=>{modelEpoch++;key.value='';updateBox.value='';updateMeta.textContent='';}};
+  return {panel,sync,report:text=>{status.textContent=text;},refreshUpdate:syncUpdatePreview,refreshDiagnostics:syncDiagnostics,clear:()=>{modelEpoch++;key.value='';updateBox.value='';updateMeta.textContent='';diagnosticBox.value='';diagnosticMeta.textContent='';}};
 }
