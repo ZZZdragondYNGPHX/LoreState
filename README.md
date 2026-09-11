@@ -2,42 +2,62 @@
 
 LoreState 为 SillyTavern 文字角色卡保存持续状态。AI 在正文后输出状态更新，脚本负责校验、合并、历史回放与状态栏展示。人物、国家、组织、地点、物品和事件可以使用各自的栏目；冷档按需读取。
 
-当前维护的是 **0.10.0 文字状态脚本**，依赖酒馆助手，沿用 0.9.0 模块配置。支持独立模型状态更新、API 预设、同层续写与回档后更新。隐藏楼层中的状态仍参与本地回放，隐藏助手可以继续使用。
+当前维护线是 **Tavern Helper 文字状态脚本的 `main` 开发分支**。最近一个不可移动正式 tag 是 **0.10.2**。仓库历史上误建了名为 **`0.10.3` 的 branch**；它只保留为冻结的 RC/兼容引用，不是正式 tag，也不再继续提交。清洗后的下一次正式发布从 **0.10.4** 开始。
 
 ## 从这里开始
 
 - **[作者文档目录](docs/README.md)**：入门顺序、模块条目、HTML 与试卡清单。
+- **[版本管理](docs/版本管理.md)**：`main`、正式 tag、构建产物与调试分支的唯一规则。
 - [0.9.0 模块条目与试卡](docs/0.9.0模块条目与试卡.md)：新卡配置和可复制示例。
-- [额外模型与 API 预设](docs/额外模型与API预设.md)：独立更新、重试、取消与撤销；真实酒馆及实际模型仍待验收。
+- [额外模型与 API 预设](docs/额外模型与API预设.md)：独立更新、重试、取消与撤销；真实酒馆及实际模型仍需单独验收。
 - **[隐藏助手兼容与更新](docs/隐藏助手兼容与更新.md)**：已有聊天恢复、脚本更新和验收。
-- [当前脚本代码](artifact/bundle.js)：用于替换现有脚本代码，保留脚本 ID 和配置。
+- [当前脚本代码](artifact/bundle.js)：`main` 的生成运行代码。
 - [常见问题与试卡清单](docs/常见问题与试卡清单.md)。
 - [发布材料](docs/发布材料/README.md)：对外帖子、附件和作者改造教程。
 
 ## 下载与版本边界
 
-| 入口 | 内容 |
-| --- | --- |
-| [main 远程组件](prototype/dist/main/lorestate-script.json) | 远程入口跟随 `@main`；刷新脚本即可拉取最新代码 |
-| [main 脚本代码](artifact/bundle.js) | 包含隐藏兼容修复；分支会继续变化 |
-| [0.9.2 远程入口](prototype/dist/v0.9.2/lorestate-script.json) | 固定 `prototype-v0.9.2` 的历史稳定版本 |
-| [main 分支脚本代码](https://github.com/ZZZdragondYNGPHX/LoreState/blob/main/artifact/bundle.js) | 最新开发版，可能随主分支变化 |
+| 入口 | 性质 | 说明 |
+| --- | --- | --- |
+| [main 远程组件](prototype/dist/main/lorestate-script.json) | 开发版 | 固定引用 `@main/artifact/bundle.js`；会随 `main` 更新 |
+| [main 脚本代码](artifact/bundle.js) | 开发版生成物 | 由 `prototype/` 源码构建，不手工维护 |
+| `0.10.2` Git tag | 最近正式版 | 不可移动；历史固定版本 |
+| `0.10.3` branch | 历史 RC | 错误命名的版本分支，冻结，不再继续开发 |
+| `prototype-v0.x` tags / `prototype/dist/v0.x` | 历史 | 仅用于旧版本复现 |
 
-已有 **0.9.0** 配置和聊天可以保留，只更新脚本代码后重新读取状态。跨旧版本升级到模块结构仍须按 0.9.0 指南使用新配置、新聊天；这次修复没有增加旧协议迁移。
+稳定安装应优先使用明确的正式 tag；需要跟随开发时才使用 `@main`。固定版本入口不得引用 `@main`。
 
-目标环境沿用 SillyTavern 1.18.0 / 酒馆助手 4.9.5。修复通过 92 项 Node 测试、11 项模板浏览器检查和 33 项模拟宿主检查；实际酒馆安装、真实模型及游玩验收仍待完成。详见[验证记录](prototype/verification.md)。
+已有 **0.9.0** 配置和聊天可以保留，只更新脚本代码后重新读取状态。跨更旧版本升级到模块结构仍须按 0.9.0 指南使用新配置、新聊天；当前没有增加旧协议自动迁移。
+
+目标环境沿用 SillyTavern 1.18.0 / 酒馆助手 4.9.5。自动化验证范围见[验证记录](prototype/verification.md)；自动测试不等于真实 SillyTavern、真实模型与人工游玩验收。
 
 ## 开发
 
-Node.js 22+。从 [AGENTS.md](AGENTS.md)、[开发说明](docs/开发说明.md) 和[当前交接](交接文档.md)进入。源码在 `prototype/`，分发代码在 `artifact/bundle.js`；运行 `npm run build` 会生成 `main` 远程组件。普通修复不更新 `main` 版本号，用户刷新即可取得新代码；发布固定版本时须新建标签，不能覆盖旧标签。
+Node.js 22+。开发前依次阅读 [AGENTS.md](AGENTS.md)、[版本管理](docs/版本管理.md)、[开发说明](docs/开发说明.md) 和[当前交接](交接文档.md)。
+
+源码在 `prototype/`，运行代码在 `artifact/bundle.js`：
+
+```sh
+npm run build
+npm run check
+npm test
+```
+
+`npm run build` 生成 `main` 开发入口。准备固定版本时，在创建 tag **之前**使用：
+
+```sh
+npm run build -- 0.10.4
+```
+
+它会生成 `prototype/dist/0.10.4/`，其中 loader 固定引用 `@0.10.4/artifact/bundle.js`。正式版本只能用不可移动 tag 表示；禁止再创建裸版本号 branch 或 `release-*` 长期分支。
 
 ## 历史：旧原生扩展
 
-以下说明属于仓库根目录 `src/`、`index.js` 和 `manifest.json` 的旧原生扩展，不是上面的酒馆助手脚本安装流程。旧协议与当前 v3 不混用。
+以下说明属于仓库根目录 `src/`、`index.js` 和 `manifest.json` 的旧原生扩展，不是上面的 Tavern Helper 脚本安装流程。根目录 `package.json` / `manifest.json` 中的 **0.2.1** 也是这条旧实现的版本，**不代表当前 Tavern Helper 脚本版本**。旧协议与当前 v3 不混用。
 
 LoreState 是用于 SillyTavern 的通用纯文字状态接口与扩展。吸收 MVU 的增量更新、消息楼层存储和历史事件联动思路，用自然语言保存事实，由程序负责路径校验、原子提交和回放。
 
-main 分支的仓库根目录是通用接口与扩展。旧 `examples/` 示例目录和 `examples/wishnote` 分支已退休，不再作为项目实现或安装入口；历史记录只保留在 Git 历史中。核心没有人物编号、愿望类型或世界观规则，不依赖 MVU、酒馆助手或运行时 CDN。
+旧 `examples/` 示例目录和 `examples/wishnote` 分支已退休，不再作为项目实现或安装入口；历史记录只保留在 Git 历史中。核心没有人物编号、愿望类型或世界观规则，不依赖 MVU、酒馆助手或运行时 CDN。
 
 ## 旧原生扩展使用
 
