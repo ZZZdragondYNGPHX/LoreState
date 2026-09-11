@@ -21,7 +21,7 @@ LoreState 为 SillyTavern 文字角色卡保存持续状态。AI 在正文后输
 | --- | --- | --- |
 | [main 远程组件](prototype/dist/main/lorestate-script.json) | 开发版 | 固定引用 `@main/artifact/bundle.js`；会随 `main` 更新 |
 | [main 脚本代码](artifact/bundle.js) | 开发版生成物 | 由 `prototype/` 源码构建，不手工维护 |
-| `0.10.2` Git tag | 最近正式版 | 不可移动；历史固定版本 |
+| `0.10.2` Git tag | 最近正式版 | 不可移动；固定源码与 bundle，尚无新制式版本目录 |
 | `0.10.3` branch | 历史 RC | 错误命名的版本分支，冻结，不再继续开发 |
 | `prototype-v0.x` tags / `prototype/dist/v0.x` | 历史 | 仅用于旧版本复现 |
 
@@ -50,6 +50,8 @@ npm run build -- 0.10.4
 ```
 
 它会生成 `prototype/dist/0.10.4/`，其中 loader 固定引用 `@0.10.4/artifact/bundle.js`。正式版本只能用不可移动 tag 表示；禁止再创建裸版本号 branch 或 `release-*` 长期分支。
+
+`0.10.0`～`0.10.2` 发布于这套目录规范落地之前，只保留固定 tag 下的源码与 `artifact/bundle.js`，没有 `prototype/dist/<version>/` 导入组件。不要移动旧 tag 或补写其历史；`0.10.4` 将是第一个按新规范同时提交固定入口、收据和 bundle 的版本。
 
 ## 历史：旧原生扩展
 
