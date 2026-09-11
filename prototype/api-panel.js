@@ -1,4 +1,5 @@
 import { boundApiProfile, saveApiProfile, deleteApiProfile, normalizeApiAddress, normalizeUpdateSettings } from './api-profiles.js';
+import { TAG_PATTERN } from './core.js';
 
 export function createApiPanel({doc,read,write,binding,setBinding,run,cancel,undo,onError,listRequestPresets=()=>[],fetchModels}){
   const make=(tag,text,parent)=>{const el=doc.createElement(tag);if(text)el.textContent=text;parent?.append(el);return el;};
@@ -18,7 +19,7 @@ export function createApiPanel({doc,read,write,binding,setBinding,run,cancel,und
   const strategyGroup=group('请求策略',true);
   const auto=field('自动更新','checkbox',strategyGroup),stream=field('兼容流式响应','checkbox',strategyGroup),attempts=field('请求总次数','number',strategyGroup),timeout=field('总超时（秒）','number',strategyGroup);
   attempts.min='1';attempts.max='5';attempts.step='1';timeout.min='15';timeout.max='600';timeout.step='1';
-  make('p','依次请求，失败后重试；次数包含首次请求。总超时覆盖全部尝试，取消或聊天变化不会重试。流式只用于接收响应，完整校验前不写入状态。',strategyGroup);
+  make('p','依次请求，失败后重试；次数包含首次请求。格式、协议、栏目或读取凭据校验失败时，下一次请求会带上本地校验原因进行纠错；总超时覆盖全部尝试，取消或聊天变化不会重试。流式只用于接收响应，完整校验前不写入状态。',strategyGroup);
   const sourceGroup=group('模型来源',true);
   const source=field('状态模型来源','select',sourceGroup);choices(source,[['custom','绑定 API 预设'],['current','跟随酒馆当前连接']]);
   const bound=field('状态更新 API 预设','select',sourceGroup);
@@ -45,6 +46,25 @@ export function createApiPanel({doc,read,write,binding,setBinding,run,cancel,und
   make('p','留空表示不发送该采样参数，使用服务默认值。最大回复长度为 0 时不发送；Top K 为 0 时不发送。不同服务支持的参数不同。',advanced);
   const maxTokens=field('最大回复 tokens','number',advanced),temperature=field('更新温度','number',advanced),topP=field('Top P','number',advanced),topK=field('Top K','number',advanced),frequency=field('频率惩罚','number',advanced),presence=field('存在惩罚','number',advanced);
   for(const [el,min,max,step] of [[maxTokens,0,65536,1],[temperature,0,2,0.1],[topP,0,1,0.05],[topK,0,1000,1],[frequency,-2,2,0.1],[presence,-2,2,0.1]]){el.min=min;el.max=max;el.step=step;}
+  const updateGroup=group('最近一次 LoreState 更新块',false),updateMeta=make('p','',updateGroup),updateBox=make('textarea',null,updateGroup);
+  updateBox.readOnly=true;updateBox.spellcheck=false;updateBox.setAttribute('aria-label','最近一次 LoreState 更新块');updateBox.style.cssText='width:100%;min-height:180px;box-sizing:border-box;white-space:pre;overflow:auto';
+  make('p','这里显示当前最新 AI 回复中实际存在的完整 LoreState 块。额外模型更新成功后会自动刷新；若自动更新发生在面板关闭期间，重新打开面板或点击刷新即可。',updateGroup);
+  function latestUpdateBlock(){
+    if(typeof getChatMessages!=='function')return null;
+    const latest=getChatMessages('0-{{lastMessageId}}',{include_swipes:true}).findLast(m=>m.role==='assistant');if(!latest)return null;
+    const message=latest.swipes?.[latest.swipe_id??0]??latest.message??'',blocks=[...message.matchAll(new RegExp(TAG_PATTERN,'g'))];
+    return {floor:latest.message_id,block:blocks.at(-1)?.[0]??''};
+  }
+  function syncUpdatePreview(){
+    const latest=latestUpdateBlock();updateBox.value=latest?.block??'';
+    updateMeta.textContent=!latest?'当前聊天还没有 AI 回复。':latest.block?`第 ${latest.floor} 楼 · 找到完整更新块`:`第 ${latest.floor} 楼 · 没有完整 LoreState 更新块`;
+  }
+  action('刷新更新块',()=>syncUpdatePreview(),updateGroup);
+  action('复制更新块',async()=>{
+    if(!updateBox.value)throw new Error('当前没有可复制的完整更新块');
+    try{await navigator.clipboard.writeText(updateBox.value);status.textContent='LoreState 更新块已复制。';}
+    catch{updateBox.focus();updateBox.select();status.textContent='浏览器不允许自动复制，请从文本框手动复制。';}
+  },updateGroup);
   function load(){
     resetModels();const p=(read().profiles??[]).find(p=>p.id===select.value);editedId=p?.id??'';
     for(const [el,value] of [[name,p?.name??''],[url,p?.url??''],[key,p?.key??''],[model,p?.model??''],[maxTokens,p?.maxTokens??4096],[temperature,p?.temperature??0.2],[topP,p?.topP??''],[topK,p?.topK??''],[frequency,p?.frequencyPenalty??''],[presence,p?.presencePenalty??'']])el.value=value==='unset'?'':value;
@@ -58,7 +78,7 @@ export function createApiPanel({doc,read,write,binding,setBinding,run,cancel,und
     auto.checked=config.auto;stream.checked=config.stream;attempts.value=config.attempts;timeout.value=config.timeoutSeconds;
     const current=profiles.find(p=>p.id===config.profileId);
     status.textContent=`当前模式：${config.mode==='extra'?'额外模型':'随正文更新'}；状态模型：${config.source==='current'?'酒馆当前连接':current?.name??(config.profileId?'预设已删除，请重新绑定':'未绑定')}。`;
-    load();visibility();
+    load();visibility();syncUpdatePreview();
   }
   select.onchange=load;
   const values=()=>({id:editedId||crypto.randomUUID(),name:name.value,url:url.value,key:key.value,model:model.value,maxTokens:maxTokens.value,temperature:temperature.value,topP:topP.value,topK:topK.value,frequencyPenalty:frequency.value,presencePenalty:presence.value});
@@ -72,6 +92,6 @@ export function createApiPanel({doc,read,write,binding,setBinding,run,cancel,und
     setBinding(config);sync();
   });
   make('p','以上请求设置和绑定需保存后生效。关闭自动更新后，可手动整理最新回复。重试与撤销保留剧情正文。',panel);
-  action('重新更新最新回复状态',run);action('取消状态更新',cancel);action('撤销最近一次状态更新',undo);
-  return {panel,sync,report:text=>{status.textContent=text;},clear:()=>{modelEpoch++;key.value='';}};
+  action('重新更新最新回复状态',async()=>{await run();syncUpdatePreview();});action('取消状态更新',cancel);action('撤销最近一次状态更新',async()=>{await undo();syncUpdatePreview();});
+  return {panel,sync,report:text=>{status.textContent=text;},refreshUpdate:syncUpdatePreview,clear:()=>{modelEpoch++;key.value='';updateBox.value='';updateMeta.textContent='';}};
 }
