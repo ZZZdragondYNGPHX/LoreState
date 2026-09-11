@@ -1,7 +1,7 @@
 name: refresh entity-delete artifacts
 on:
   push:
-    branches: [feature/entity-delete]
+    branches: [feat/entity-delete]
 permissions:
   contents: write
 jobs:
@@ -11,7 +11,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: feature/entity-delete
+          ref: feat/entity-delete
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -27,5 +27,5 @@ jobs:
             echo "No generated changes"
           else
             git commit -m "build: refresh entity-delete artifacts"
-            git push origin HEAD:feature/entity-delete
+            git push origin HEAD:feat/entity-delete
           fi
