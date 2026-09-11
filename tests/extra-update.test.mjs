@@ -69,6 +69,16 @@ test('错误字段、重复块、附带叙述、错误凭据和未闭合原标�
   assert.throws(()=>variableStory('正文<LoreState version="3">坏标签'),/未闭合/);
   assert.match(validateExtraUpdate('```xml\n'+output+'\n```','正文',null,schema,1,receipt),/^正文/);
 });
+test('校验失败把具体原因带入同一读取凭据的下一次请求，成功后清除纠错提示',async()=>{
+  const output=block('车站','full',token),store=await addReadReceipt(emptySnapshotStore(),token,null,schema,[]),receipt=readReceipt(output,store);
+  const content=`规则\n<LoreState version="3" mode="full" read="${token}">`;
+  assert.throws(()=>validateExtraUpdate('解释'+output,'正文',null,schema,1,receipt),/必须只返回一个完整 LoreState 更新块/);
+  const retry=extraModelRequest(normalizeApiProfile(profile),content,'剧情','retry-job');
+  assert.match(retry.ordered_prompts[0].content,/纠错重试/);assert.match(retry.ordered_prompts[0].content,/必须只返回一个完整 LoreState 更新块/);assert.match(retry.ordered_prompts[0].content,/不要解释/);
+  validateExtraUpdate(output,'正文',null,schema,1,receipt);
+  const clean=extraModelRequest(normalizeApiProfile(profile),content,'剧情','clean-job');
+  assert.doesNotMatch(clean.ordered_prompts[0].content,/纠错重试/);
+});
 test('正文模式只提供只读状态，原随正文模式继续输出协议',()=>{
   const result=replayState([{message_id:1,role:'assistant',message:block('车站')}],schema);
   const narration=preparePrompt('记录地点',schema,result,'','', 'narration').content;
