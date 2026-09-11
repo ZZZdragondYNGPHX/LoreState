@@ -1,6 +1,6 @@
 # LoreState 文档
 
-当前活动入口是 `main` 远程组件；刷新脚本即可取得最新修复。固定版本只用于历史稳定复现，旧离线产物不再生成，也不作为当前入口。
+当前活动入口是 `main` 远程组件；刷新脚本即可取得最新开发修复。最近一个不可移动正式 tag 是 `0.10.2`；历史 `0.10.3` branch 仅作冻结 RC/兼容引用，下一正式版本从 `0.10.4` 开始。版本规则统一见[版本管理](版本管理.md)。
 
 ## 按任务阅读
 
@@ -9,10 +9,11 @@
 | 创建新卡 | [0.9.0 模块条目与试卡](0.9.0模块条目与试卡.md) |
 | 从零配置状态栏 | [作者入门](作者入门.md) → [条目创作指南](状态栏条目创作指南.md) |
 | 修改 HTML 外观 | [HTML 模板适配指南](HTML模板适配指南.md) |
-| 使用其他 API 整理状态、切换请求提示词 | [额外模型与 API 预设](额外模型与API预设.md)（本地候选，未推送） |
+| 使用其他 API 整理状态、切换请求提示词 | [额外模型与 API 预设](额外模型与API预设.md) |
 | 已有聊天出现隐藏楼层或 full/delta 报错 | [隐藏助手兼容与更新](隐藏助手兼容与更新.md) |
 | 排查显示、协议、预算和回档 | [常见问题与试卡清单](常见问题与试卡清单.md) |
 | 修改脚本源码 | [开发说明](开发说明.md) |
+| 处理分支、tag、构建与固定版本 | [版本管理](版本管理.md) |
 | 准备对外发布 | [发布材料](发布材料/README.md) |
 
 ## 可复制示例
@@ -21,6 +22,6 @@
 
 ## 当前交付
 
-[main 远程组件](../prototype/dist/main/lorestate-script.json) · [main 脚本代码](../artifact/bundle.js) · [0.9.2 固定远程入口](../prototype/dist/v0.9.2/lorestate-script.json) · [协议参考](../prototype/world-memory.md) · [当前验证记录](../prototype/verification.md)
+[main 远程组件](../prototype/dist/main/lorestate-script.json) · [main 脚本代码](../artifact/bundle.js) · [版本管理](版本管理.md) · [0.9.2 固定远程入口](../prototype/dist/v0.9.2/lorestate-script.json) · [协议参考](../prototype/world-memory.md) · [当前验证记录](../prototype/verification.md)
 
 历史迁移、旧扩展和旧验证说明集中在[历史归档](archive/README.md)，不再混入活动文档入口。
