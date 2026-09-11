@@ -14,6 +14,8 @@ if(await exists('artifact/diagnostic-hook.js'))throw new Error('临时诊断钩�
 
 const branch=process.env.GITHUB_REF_TYPE==='branch'?(process.env.GITHUB_REF_NAME??''):'';
 if(branch&&SEMVER.test(branch))throw new Error(`禁止使用语义版本作为 branch 名：${branch}；正式版本只能使用不可移动 tag`);
+if(branch&&branch!=='main'&&!/^(fix|feat|chore|debug)\/[A-Za-z0-9._/-]+$/.test(branch))throw new Error(`分支名不符合规范：${branch}；只允许 main 或 fix/*、feat/*、chore/*、debug/*`);
+if(branch&&(/(^|\/)source-port(?:\/|$|-)/.test(branch)||/^release[-/]/.test(branch)||/^hotfix[-/]/.test(branch)))throw new Error(`退休的分支命名不可继续使用：${branch}`);
 
 const tag=process.env.GITHUB_REF_TYPE==='tag'?(process.env.GITHUB_REF_NAME??''):'';
 if(tag&&!SEMVER.test(tag))throw new Error(`当前发布 tag 不符合语义版本：${tag}`);
