@@ -12,7 +12,7 @@ for(const path of ['docs/README.md','docs/版本管理.md','docs/发布材料/RE
 for(const path of ['prototype/dist/lorestate-script.json','prototype/dist/lorestate-script-offline.json','prototype/dist/receipt.json'])if(await exists(path))throw new Error(`旧的无版本 dist 入口已退休，请删除：${path}`);
 if(await exists('artifact/diagnostic-hook.js'))throw new Error('临时诊断钩子不得提交到 main；诊断只能存在于临时 debug 分支');
 
-const branch=process.env.GITHUB_REF_TYPE==='branch'?(process.env.GITHUB_REF_NAME??''):'';
+const branch=process.env.GITHUB_REF_TYPE==='branch'?((process.env.GITHUB_EVENT_NAME==='pull_request'?process.env.GITHUB_HEAD_REF:process.env.GITHUB_REF_NAME)??''):'';
 if(branch&&SEMVER.test(branch))throw new Error(`禁止使用语义版本作为 branch 名：${branch}；正式版本只能使用不可移动 tag`);
 if(branch&&branch!=='main'&&!/^(fix|feat|chore|debug)\/[A-Za-z0-9._/-]+$/.test(branch))throw new Error(`分支名不符合规范：${branch}；只允许 main 或 fix/*、feat/*、chore/*、debug/*`);
 if(branch&&(/(^|\/)source-port(?:\/|$|-)/.test(branch)||/^release[-/]/.test(branch)||/^hotfix[-/]/.test(branch)))throw new Error(`退休的分支命名不可继续使用：${branch}`);
