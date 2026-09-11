@@ -1,7 +1,5 @@
 name: test
 on: [push, pull_request]
-permissions:
-  contents: write
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -11,16 +9,6 @@ jobs:
         with:
           node-version: '22'
       - run: npm run build
-      - name: Commit generated files on push
-        if: github.event_name == 'push' && github.actor != 'github-actions[bot]'
-        run: |
-          if ! git diff --quiet -- artifact/bundle.js prototype/dist/main/lorestate-script.json prototype/dist/main/receipt.json; then
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add artifact/bundle.js prototype/dist/main/lorestate-script.json prototype/dist/main/receipt.json
-            git commit -m "build: refresh generated LoreState bundle"
-            git push
-          fi
       - run: git diff --exit-code
       - run: test -z "$(git status --porcelain)"
       - run: npm run check
