@@ -1,3 +1,11 @@
+# 0.10.4 固定版本发布 · 2026-09-12
+
+`main` 从远端 `b1f801c` 构建固定版本目录后，以提交 `83b4fe98900fadc408e825daa0816ee51499de68` 同时固定 `main` 与不可移动标签 `0.10.4`。生成物为 `artifact/bundle.js`、`prototype/dist/0.10.4/lorestate-script.json` 和 `prototype/dist/0.10.4/receipt.json`；bundle SHA-256 为 `ecbc8894c29f7f888d2c56eb82c2299b6c634ebcf1ac654055d41c381f1b1b51`。`npm run check`、tag 环境版本守卫、105 项 Node 测试、11 项模板检查、59 项最终 bundle 模拟宿主检查及 `git diff --check` 通过；`cdn.jsdelivr.net/...@0.10.4/artifact/bundle.js` 实取哈希与发布产物一致。
+
+真实 SillyTavern 1.18.0、Tavern Helper 4.9.5、实际模型和随卡往返仍未验收；`realHostVerified=false`，自动化未设置 `driver-accepted`。后续修复必须发布新 patch 标签，不得移动 `0.10.4`。
+
+---
+
 # main 活动 CDN 入口迁移 · 2026-09-11（已授权）
 
 用户授权为立即实际使用，把活动 `main` loader 从仍返回旧缓存的 `testingcf.jsdelivr.net` 迁到已返回当前 bundle 的 `cdn.jsdelivr.net`。构建器与版本守卫仅对 `main` 选择新域名；固定版本和历史产物继续保留原 URL，不改写既有 tag。`npm run build`、`npm run check`、99 项 Node 测试与 `git diff --check` 通过；待提交推送后核验 Git ref、远程 loader 和 CDN bundle 哈希。

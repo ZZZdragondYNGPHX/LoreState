@@ -1,6 +1,6 @@
 # LoreState 文档
 
-当前活动入口是 `main` 远程组件；刷新脚本即可取得最新开发修复。最近一个不可移动正式 tag 是 `0.10.2`；历史 `0.10.3` branch 仅作冻结 RC/兼容引用，下一正式版本从 `0.10.4` 开始。版本规则统一见[版本管理](版本管理.md)。
+当前稳定版是不可移动标签 `0.10.4`，固定入口不随 `main` 变化；`main` 远程组件用于持续开发。历史 `0.10.3` 只作冻结 RC/兼容引用。版本规则统一见[版本管理](版本管理.md)。
 
 ## 按任务阅读
 
@@ -22,6 +22,6 @@
 
 ## 当前交付
 
-[main 远程组件](../prototype/dist/main/lorestate-script.json) · [main 脚本代码](../artifact/bundle.js) · [版本管理](版本管理.md) · [0.9.2 固定远程入口](../prototype/dist/v0.9.2/lorestate-script.json) · [协议参考](../prototype/world-memory.md) · [当前验证记录](../prototype/verification.md)
+[0.10.4 固定远程组件](../prototype/dist/0.10.4/lorestate-script.json) · [main 远程组件](../prototype/dist/main/lorestate-script.json) · [main 脚本代码](../artifact/bundle.js) · [版本管理](版本管理.md) · [协议参考](../prototype/world-memory.md) · [当前验证记录](../prototype/verification.md)
 
 历史迁移、旧扩展和旧验证说明集中在[历史归档](archive/README.md)，不再混入活动文档入口。

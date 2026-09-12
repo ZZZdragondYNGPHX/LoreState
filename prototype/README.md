@@ -1,6 +1,6 @@
-# 当前入口：0.9.2 模块条目与隐藏兼容修复
+# 当前入口：0.10.4 固定版与 main 开发版
 
-请从[作者目录](../docs/README.md)、[模块试卡](../docs/0.9.0模块条目与试卡.md)和[隐藏助手兼容与更新](../docs/隐藏助手兼容与更新.md)进入。当前活动交付是 [main 远程组件](dist/main/lorestate-script.json) 和 [main 脚本代码](../artifact/bundle.js)；刷新脚本即可拉取最新代码。旧固定标签保持不变。
+请从[作者目录](../docs/README.md)、[模块试卡](../docs/0.9.0模块条目与试卡.md)和[隐藏助手兼容与更新](../docs/隐藏助手兼容与更新.md)进入。稳定安装使用 [0.10.4 固定远程组件](dist/0.10.4/lorestate-script.json)；持续开发使用 [main 远程组件](dist/main/lorestate-script.json) 和 [main 脚本代码](../artifact/bundle.js)。旧固定标签保持不变。
 
 以下保留各阶段说明，版本内的“当前”指当时阶段，不代表最新主线；其中旧离线链接仅是历史记录，不是当前交付入口。
 
@@ -34,7 +34,7 @@
 
 ## 作者与读者流程
 
-1. 导入 `dist/main/lorestate-script.json` 远程角色脚本，开启脚本数据随卡导出；更新后刷新脚本即可取得 main 最新代码。
+1. 稳定使用时导入 `dist/0.10.4/lorestate-script.json`；需要跟随开发时才导入 `dist/main/lorestate-script.json`。开启脚本数据随卡导出，只启用一个版本。
 2. 从魔法棒打开 LoreState 设置，选择当前角色绑定的世界书状态栏条目。
 3. 复制 HTML 制作提示词与条目给网页 AI，粘贴生成的 HTML，预览并保存。
 4. 保存会自动添加两条本卡正则：仅显示隐藏、仅提示词过滤；两者都保留正文与消息原文。启用本卡局部正则。
