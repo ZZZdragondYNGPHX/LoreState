@@ -103,6 +103,46 @@ await check('正文全宽、大窗口展开与关闭恢复焦点',async()=>{
   assert(window.open);assert(large.getBoundingClientRect().height>300);assert(large.getBoundingClientRect().width>=window.clientWidth-34);assert(large.getAttribute('sandbox')==='');
   assert(large.srcdoc===frame.srcdoc);button('关闭状态窗口',window).click();await tick();assert(!window.open);assert(document.activeElement===expand);
 });
+await check('宿主重建聊天楼层后状态栏自动恢复',async()=>{
+  const oldView=document.querySelector('.lorestate-prototype-view');
+  const chat=document.getElementById('chat');chat.replaceChildren();
+  for(const m of list){const el=document.createElement('div');el.className='mes';el.setAttribute('mesid',m.message_id);chat.append(el);}
+  await new Promise(resolve=>setTimeout(resolve,120));
+  const repaired=document.querySelector('.lorestate-prototype-view');
+  assert(!oldView.isConnected,'旧状态栏应随宿主楼层重建而脱离');
+  assert(repaired&&repaired!==oldView,'应在新楼层挂载新的状态栏');
+  assert(repaired.parentElement?.getAttribute('mesid')===String(list.findLast(m=>m.role==='assistant').message_id),'状态栏应挂到最新 AI 楼层');
+  assert(repaired.querySelector('iframe.lorestate-state-frame')?.srcdoc,'恢复后的状态栏 iframe 不应为空');
+});
+await check('未配置或暂停聊天时 DOM 变化不读取历史、不抛异常',async()=>{
+  const saved=variables.script,enabled=variables.chat[PROTO_KEY].enabled,read=window.getChatMessages,errors=[];
+  let reads=0;const onError=e=>{errors.push(e.message);e.preventDefault();};
+  window.addEventListener('error',onError);
+  window.getChatMessages=(...args)=>{reads++;return read(...args);};
+  const marker=document.createElement('span');
+  try{
+    variables.script={};document.getElementById('chat').append(marker);
+    await new Promise(resolve=>setTimeout(resolve,120));
+    assert(!errors.length,errors.join('; '));assert(reads===0,'未配置不应读取历史');
+    variables.script=saved;variables.chat[PROTO_KEY].enabled=false;marker.append(document.createElement('span'));
+    await new Promise(resolve=>setTimeout(resolve,120));
+    assert(!errors.length,errors.join('; '));assert(reads===0,'暂停时不应读取历史');
+  }finally{variables.script=saved;variables.chat[PROTO_KEY].enabled=enabled;window.getChatMessages=read;window.removeEventListener('error',onError);marker.remove();}
+});
+await check('状态栏恢复读取失败进入诊断，后续 DOM 重建仍能恢复',async()=>{
+  const read=window.getChatMessages,errors=[],oldView=document.querySelector('.lorestate-prototype-view');
+  const onError=e=>{errors.push(e.message);e.preventDefault();};
+  window.addEventListener('error',onError);
+  try{
+    window.getChatMessages=()=>{throw new Error('合成历史读取失败');};oldView.remove();
+    await new Promise(resolve=>setTimeout(resolve,120));
+    assert(!errors.length,errors.join('; '));
+    assert(!notice.hidden&&notice.textContent.includes('状态栏恢复失败')&&notice.textContent.includes('合成历史读取失败'));
+  }finally{window.getChatMessages=read;window.removeEventListener('error',onError);}
+  const marker=document.createElement('span');document.getElementById('chat').append(marker);
+  await new Promise(resolve=>setTimeout(resolve,120));marker.remove();
+  assert(document.querySelector('.lorestate-prototype-view iframe.lorestate-state-frame')?.srcdoc,'读取恢复后应重建状态栏');
+});
 await check('完整快照回档、原子写入、保留正文与撤销',async()=>{
   variables.chat.unrelated={keep:true};
   list.push({message_id:3,role:'assistant',message:wrap('未来地点'),swipe_id:0});await emit('MESSAGE_UPDATED');

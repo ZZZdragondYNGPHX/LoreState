@@ -1092,7 +1092,7 @@ function startPrototype(defaultHtml) {
   }
   const identity=()=>[ctx().chat,ctx().getCurrentChatId()];
   const matches=([chat,id])=>!closed&&ctx().chat===chat&&ctx().getCurrentChatId()===id;
-  let closed=false,queue=Promise.resolve(),pending=false,uninject=null,view=null,renderKey='',menuObserver;
+  let closed=false,queue=Promise.resolve(),pending=false,uninject=null,view=null,renderKey='',menuObserver,chatObserver,chatRepairTimer=null;
   let extraJob=null,autoUpdate=null,autoTimer=null,chatEpoch=0,continuationWork=null;
   const node=(tag,text,parent)=>{const el=doc.createElement(tag);if(text!==undefined)el.textContent=text;parent?.append(el);return el;};
   const stateWindow=createStateWindow(doc);
@@ -1408,11 +1408,38 @@ function startPrototype(defaultHtml) {
   const mount=()=>{const target=doc.getElementById('extensionsMenu');if(target){target.append(menu);menuObserver?.disconnect();}};
   menuObserver=new MutationObserver(mount);menuObserver.observe(doc.body,{childList:true,subtree:true});mount();
   const active=config=>config.ready&&!!ctx().getCurrentChatId()&&chatSettings().enabled!==false;
+  function expectedViewParent(last){
+    const message=last&&doc.querySelector(`#chat .mes[mesid="${last.message_id}"]`);
+    return message&&(message.querySelector('.mes_block')||message);
+  }
+  function viewIsIntact(last,result){
+    if(!view?.isConnected||view.parentElement!==expectedViewParent(last))return false;
+    if(!result.state)return true;
+    const frame=view.querySelector('iframe.lorestate-state-frame');
+    return !!frame?.isConnected;
+  }
+  function startChatObserver(){
+    const chat=doc.getElementById('chat');if(!chat||chatObserver)return;
+    chatObserver=new MutationObserver(()=>{
+      if(closed||chatRepairTimer)return;
+      chatRepairTimer=setTimeout(()=>{
+        chatRepairTimer=null;if(closed)return;
+        try{
+          if(hostGenerating())return;
+          const config=settings();if(!active(config))return;
+          const list=messages(),last=list.findLast(m=>m.role==='assistant');if(!last)return;
+          const result=getResult(config,list);
+          if(!viewIsIntact(last,result)){view?.remove();view=null;renderKey='';schedule();}
+        }catch(e){fault(e,'状态栏恢复失败');}
+      },50);
+    });
+    chatObserver.observe(chat,{childList:true,subtree:true});
+  }
   function paint(result,list){
     const last=list.findLast(m=>m.role==='assistant');if(!last)return;
     const message=doc.querySelector(`#chat .mes[mesid="${last.message_id}"]`);if(!message)return;
     const config=settings(),key=JSON.stringify([last.message_id,result.state,result.errors,config.html,chatSettings().checkpoint?.id]);
-    if(view?.isConnected&&renderKey===key)return;
+    if(viewIsIntact(last,result)&&renderKey===key)return;
     view?.remove();view=node('section',undefined,message.querySelector('.mes_block')||message);view.className='lorestate-prototype-view';view.style.cssText='display:block;position:relative;width:100%;max-width:100%;min-width:0;box-sizing:border-box;flex:1 0 100%;grid-column:1 / -1;clear:both;margin:12px 0;padding:12px 0;border-top:1px solid #778063';
     node('small',result.errors.length?`状态存在缺口：${result.errors.length} 轮失败，最早第 ${result.errors[0].floor} 楼；最后连续正常楼层 ${result.lastGoodFloor??'尚无'}。后续有效更新已应用，需核对剧情。`:result.state?'LoreState · 当前状态':'LoreState · 等待首次完整状态',view);
     if(chatSettings().checkpoint)node('p',`状态已回档至第 ${chatSettings().checkpoint.floor} 楼快照；旧正文保留。`,view);
@@ -1648,7 +1675,7 @@ function startPrototype(defaultHtml) {
   for(const event of ['MESSAGE_RECEIVED','CHARACTER_MESSAGE_RENDERED','MESSAGE_UPDATED','MESSAGE_EDITED','MESSAGE_DELETED','MESSAGE_SWIPED','GENERATION_ENDED','MORE_MESSAGES_LOADED'])if(tavern_events[event])eventOn(tavern_events[event],schedule);
   if(tavern_events.GENERATION_STARTED)eventOn(tavern_events.GENERATION_STARTED,()=>{generating=true;});
   for(const event of ['GENERATION_ENDED','GENERATION_STOPPED'])if(tavern_events[event])eventOn(tavern_events[event],()=>{generating=false;if(event==='GENERATION_ENDED')finishAutoUpdate();else{autoUpdate=null;clearTimeout(autoTimer);autoTimer=null;}schedule();});
-  runtimeRegistration={dispose};window.parent[runtimeSlot]=runtimeRegistration;
+  runtimeRegistration={dispose};window.parent[runtimeSlot]=runtimeRegistration;startChatObserver();
   eventOn(tavern_events.CHAT_CHANGED,newChatId=>{
     if(shouldReloadForChatChange(loadedChatId,newChatId)){dispose();window.location.reload();return;}
     chatEpoch++;cancelExtraUpdate();extraDiagnostics=[];apiUi.clear();uninject?.();uninject=null;stateWindow.close();view?.remove();renderKey='';noticeKey='';notice.hidden=true;runtimeLogs=[];draft=null;restoreDraft=null;capturedKey='';snapshotPreview.textContent='';report('设置随角色保存；修改后请预览并保存。');manager.close();generating=false;schedule();
@@ -1657,7 +1684,7 @@ function startPrototype(defaultHtml) {
   eventOn(getButtonEvent('LoreState 设置'),()=>open().catch(e=>fault(e,'设置打开失败')));
   function dispose(){
     if(closed)return;
-    closed=true;cancelExtraUpdate();apiUi.clear();menuObserver?.disconnect();stateWindow.dispose();menu.remove();panel.remove();manager.remove();notice.remove();view?.remove();
+    closed=true;cancelExtraUpdate();apiUi.clear();menuObserver?.disconnect();chatObserver?.disconnect();chatObserver=null;if(chatRepairTimer){clearTimeout(chatRepairTimer);chatRepairTimer=null;}stateWindow.dispose();menu.remove();panel.remove();manager.remove();notice.remove();view?.remove();
     const cleanup=uninject;uninject=null;cleanup?.();
     if(runtimeRegistration&&window.parent[runtimeSlot]===runtimeRegistration)delete window.parent[runtimeSlot];
   }
