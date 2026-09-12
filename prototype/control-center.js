@@ -1,7 +1,7 @@
 import { uiCard, uiActions } from './ui-kit.js';
 
 // Presentation only: no host data writes or persisted navigation state.
-export function createControlCenter({doc,manager,panel,summary,status,floorSelect,details,diagnostics,repairBox,snapshotPanel,apiPanel,loadApi,actions,loadSettings,settingsGroups}) {
+export function createControlCenter({doc,manager,panel,summary,status,floorSelect,details,diagnostics,repairBox,tailPreview,snapshotPanel,apiPanel,loadApi,actions,loadSettings,settingsGroups}) {
   const make=(tag,text,parent)=>{const el=doc.createElement(tag);if(text)el.textContent=text;parent?.append(el);return el;};
   manager.replaceChildren();manager.removeAttribute('style');manager.setAttribute('aria-label','LoreState 控制中心');
   panel.removeAttribute('style');
@@ -81,7 +81,7 @@ export function createControlCenter({doc,manager,panel,summary,status,floorSelec
   // Diagnostics page: the report for the selected floor first, then repair tools.
   uiActions(doc,card(repairPage,{title:'检查与报告',hint:'重新回放全部楼层，或复制一份不含正文的诊断报告。',open:true}),act(['重新校验全部楼层','复制诊断报告']));
   const repair=card(repairPage,{title:'状态重算',hint:'随正文更新失败时，可用 API 预设中的状态模型重新计算本层状态。仅支持最新回复，保留剧情正文；此前历史须无缺口，标签边界须可识别。',open:true});
-  uiActions(doc,repair,act(['重新计算本层状态']));repair.append(repairBox);
+  uiActions(doc,repair,act(['重新计算本层状态','预览尾部截断修复']));repair.append(repairBox);if(tailPreview)repair.append(tailPreview);
   uiActions(doc,card(repairPage,{title:'旧格式修复备份',hint:'仅用于恢复旧版本留下的原文备份；不再提供基础格式修复。'}),act(['查看格式修复备份','撤销最近一次格式修复']));
   if(snapshotPanel)card(repairPage,{title:'历史快照与回档',hint:'回到某一楼的完整状态；正文保留，旧剧情仍在上下文中。',open:true}).append(snapshotPanel);
   // Move the original controls; handlers and unconfirmed drafts stay intact.
@@ -90,7 +90,7 @@ export function createControlCenter({doc,manager,panel,summary,status,floorSelec
     const box=card(panel,{title:group.title,hint:group.hint,step:index+1,open:index===0});
     for(const item of group.items)if(Array.isArray(item))uiActions(doc,box,item);else box.append(item);
   });
-  for(const title of ['保存 HTML 并启用本聊天','重新计算本层状态'])actions.get(title)?.classList.add('ls-primary');
+  for(const title of ['保存 HTML 并启用本聊天','重新计算本层状态','确认边界并重算'])actions.get(title)?.classList.add('ls-primary');
   for(const title of ['删除所选预设','暂停本聊天'])actions.get(title)?.classList.add('ls-danger');
   if(apiPanel)body.append(apiPanel);
   const pages={state:statePage,diagnostics:repairPage,settings:panel,...(apiPanel?{api:apiPanel}:{})},tabs={};let active='state';

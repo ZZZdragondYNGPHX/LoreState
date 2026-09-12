@@ -787,8 +787,21 @@ function variableStory(source){
   const blocks=[...source.matchAll(new RegExp(TAG_PATTERN,'g'))];
   if(blocks.some(block=>(block[0].match(/<\/?LoreState\b/gi)??[]).length!==2))throw new Error('原消息状态标签存在嵌套，无法确定正文边界，请先手动修复');
   const story=source.replace(new RegExp(TAG_PATTERN,'g'),'');
-  if(/<\/?LoreState\b/i.test(story))throw new Error('原消息存在未闭合的状态标签，请先手动修复标签边界后重试');
+  if(/<\/?LoreState\b/i.test(story)||/<\/?(?:Lore|LoreS|LoreSt|LoreSta|LoreStat)\s*$/i.test(story))throw new Error('原消息存在未闭合的状态标签，请先手动修复标签边界后重试');
   return story;
+}
+// A proposal only: the user must confirm the entire suffix before it is replaced.
+function splitTruncatedUpdate(source){
+  if(typeof source!=='string')return null;
+  const starts=[...source.matchAll(/<Lore/gi)];
+  if(starts.length!==1)return null;
+  const index=starts[0].index,tail=source.slice(index),story=source.slice(0,index);
+  if(!story.trim()||!/^<LoreState(?=\s|>|$)/.test(tail))return null;
+  if(/<\/LoreState\s*>/i.test(source)||/^<LoreState[^>]*\/>/.test(tail))return null;
+  // A closing tag cut off at EOF is also a truncated suffix, not a second block.
+  const closes=[...source.matchAll(/<\/Lore/gi)];
+  if(closes.length>1||closes.some(close=>close.index<index||!'</LoreState>'.startsWith(source.slice(close.index).trimEnd())))return null;
+  return {story,tail};
 }
 function validateExtraUpdate(output,original,previous,schema,floor,receipt){
   // Only protocol-bearing output can provide useful correction feedback.
@@ -828,7 +841,7 @@ function settleContinuedMessage(original,current,mode,previous,schema,floor,rece
 
 
 // Presentation only: no host data writes or persisted navigation state.
-function createControlCenter({doc,manager,panel,summary,status,floorSelect,details,diagnostics,repairBox,snapshotPanel,apiPanel,loadApi,actions,loadSettings,settingsGroups}) {
+function createControlCenter({doc,manager,panel,summary,status,floorSelect,details,diagnostics,repairBox,tailPreview,snapshotPanel,apiPanel,loadApi,actions,loadSettings,settingsGroups}) {
   const make=(tag,text,parent)=>{const el=doc.createElement(tag);if(text)el.textContent=text;parent?.append(el);return el;};
   manager.replaceChildren();manager.removeAttribute('style');manager.setAttribute('aria-label','LoreState 控制中心');
   panel.removeAttribute('style');
@@ -908,7 +921,7 @@ function createControlCenter({doc,manager,panel,summary,status,floorSelect,detai
   // Diagnostics page: the report for the selected floor first, then repair tools.
   uiActions(doc,card(repairPage,{title:'检查与报告',hint:'重新回放全部楼层，或复制一份不含正文的诊断报告。',open:true}),act(['重新校验全部楼层','复制诊断报告']));
   const repair=card(repairPage,{title:'状态重算',hint:'随正文更新失败时，可用 API 预设中的状态模型重新计算本层状态。仅支持最新回复，保留剧情正文；此前历史须无缺口，标签边界须可识别。',open:true});
-  uiActions(doc,repair,act(['重新计算本层状态']));repair.append(repairBox);
+  uiActions(doc,repair,act(['重新计算本层状态','预览尾部截断修复']));repair.append(repairBox);if(tailPreview)repair.append(tailPreview);
   uiActions(doc,card(repairPage,{title:'旧格式修复备份',hint:'仅用于恢复旧版本留下的原文备份；不再提供基础格式修复。'}),act(['查看格式修复备份','撤销最近一次格式修复']));
   if(snapshotPanel)card(repairPage,{title:'历史快照与回档',hint:'回到某一楼的完整状态；正文保留，旧剧情仍在上下文中。',open:true}).append(snapshotPanel);
   // Move the original controls; handlers and unconfirmed drafts stay intact.
@@ -917,7 +930,7 @@ function createControlCenter({doc,manager,panel,summary,status,floorSelect,detai
     const box=card(panel,{title:group.title,hint:group.hint,step:index+1,open:index===0});
     for(const item of group.items)if(Array.isArray(item))uiActions(doc,box,item);else box.append(item);
   });
-  for(const title of ['保存 HTML 并启用本聊天','重新计算本层状态'])actions.get(title)?.classList.add('ls-primary');
+  for(const title of ['保存 HTML 并启用本聊天','重新计算本层状态','确认边界并重算'])actions.get(title)?.classList.add('ls-primary');
   for(const title of ['删除所选预设','暂停本聊天'])actions.get(title)?.classList.add('ls-danger');
   if(apiPanel)body.append(apiPanel);
   const pages={state:statePage,diagnostics:repairPage,settings:panel,...(apiPanel?{api:apiPanel}:{})},tabs={};let active='state';
@@ -1147,11 +1160,15 @@ function startPrototype(defaultHtml) {
   }
   function showFloor(){
     syncSnapshots();
-    repairBox.hidden=true;recalculate.hidden=true;details.replaceChildren();diagnostics.replaceChildren();
+    repairBox.hidden=true;recalculate.hidden=true;previewTail.hidden=true;
+    if(tailDraft&&(!tailCurrent(tailDraft)||tailDraft.floor!==Number(floorSelect.value)))clearTailPreview();
+    details.replaceChildren();diagnostics.replaceChildren();
     if(!floorSelect.value){summary.textContent='当前聊天没有可查看的 AI 楼层。';return;}
     const config=settings();if(!schemaFor(config)){summary.textContent='请先配置并启用 LoreState。';return;}
     const item=inspectFloor(messages(),schemaFor(config),chatSettings().start??1,Number(floorSelect.value));
     recalculate.hidden=updateBinding().mode!=='inline'||!item.error||item.excluded||item.floor!==messages().at(-1)?.message_id;
+    previewTail.hidden=recalculate.hidden||!splitTruncatedUpdate(item.source);
+    if(!previewTail.hidden)recalculate.hidden=true;
     summary.textContent=item.excluded?'本层在初始化起点之前，未参与状态更新。':item.error?'本层更新失败，整轮未应用。':item.tainted?'本层已应用，但前面存在失败更新，状态有缺口。':'本层更新成功。';
     node('p',`最后连续正常楼层：${item.lastGoodFloor??'尚无'}；最后应用楼层：${item.lastAppliedFloor??'尚无'}`,details);
     summary.dataset.error=String(item.tainted);
@@ -1196,6 +1213,45 @@ function startPrototype(defaultHtml) {
     try{await runExtraUpdate({repair:true,floor});apiUi.refreshUpdate();}
     catch(error){apiUi.report(error.message);throw error;}
   });recalculate.hidden=true;
+  let tailDraft=null;
+  const tailPreview=node('section');tailPreview.hidden=true;
+  node('p','确认下方分界：保留正文应完整，待替换尾部不应包含需要保留的剧情。若正文也截断，请先补完正文。确认后才请求状态模型；失败或取消不会删除原文。',tailPreview);
+  function tailText(label){
+    const field=node('label',label,tailPreview),box=node('textarea',undefined,field);
+    box.readOnly=true;box.setAttribute('aria-label',label);box.style.cssText='width:100%;height:180px;box-sizing:border-box';return box;
+  }
+  const keptStory=tailText('将保留的正文'),removedTail=tailText('将替换的截断尾部');
+  const tailContext=()=>JSON.stringify([historyIdentity(messages()),settings(),schemaFor(),updateBinding(),apiSettings(),chatSettings().checkpoint??null,chatSettings().start??1]);
+  const tailCurrent=plan=>!!plan&&matches(plan.id)&&chatEpoch===plan.epoch&&tailContext()===plan.context;
+  function clearTailPreview(){tailDraft=null;tailPreview.hidden=true;keptStory.value='';removedTail.value='';}
+  function previewTruncatedTail(floor=Number(floorSelect.value)){
+    clearTailPreview();
+    if(extraJob||hostGenerating())throw new Error('请等待生成结束或取消状态更新');
+    const config=settings(),saved=chatSettings(),list=messages(),last=list.at(-1);
+    if(!active(config)||updateBinding().mode!=='inline')throw new Error('尾部截断重算仅用于已启用的随正文模式');
+    if(!last||last.role!=='assistant'||floor!==last.message_id||floor<(saved.start??1))throw new Error('仅支持最新 AI 回复的截断预览');
+    if(saved.checkpoint&&floor<=saved.checkpoint.cutoff)throw new Error('不能改写回档前保留的正文');
+    const result=getResult(config,list),previous=getResult(config,list.slice(0,-1));
+    if(previous.errors.length)throw new Error(`此前第 ${previous.errors[0].floor} 楼存在状态缺口，请先手动修复历史`);
+    if(!result.errors.some(error=>error.floor===floor))throw new Error('本层状态已通过校验，无需修复');
+    const split=splitTruncatedUpdate(last.message);
+    if(!split)throw new Error('尾部边界不明确，请手动修复；不支持模糊前缀、多起点或嵌套标签');
+    syncFloors(floor);
+    tailDraft={...split,floor,id:identity(),epoch:chatEpoch,context:tailContext()};
+    keptStory.value=split.story;removedTail.value=split.tail;tailPreview.hidden=false;
+    center.open('diagnostics');tailPreview.closest('details').open=true;
+    summary.textContent='尾部截断预览未修改消息，也未调用模型；请核对分界后确认。';
+  }
+  const previewTail=button('预览尾部截断修复',manager,previewTruncatedTail);previewTail.hidden=true;
+  button('确认边界并重算',tailPreview,async()=>{
+    const plan=tailDraft;
+    if(!tailCurrent(plan)){clearTailPreview();throw new Error('聊天、回复或配置已变化，请重新预览截断尾部');}
+    clearTailPreview();center.open('api');apiUi.sync();
+    try{await runExtraUpdate({repair:true,floor:plan.floor,tailPlan:plan});apiUi.refreshUpdate();}
+    catch(error){apiUi.report(error.message);throw error;}
+  });
+  button('取消截断预览',tailPreview,clearTailPreview);
+  manager.addEventListener('close',clearTailPreview);
   button('撤销最近一次格式修复',manager,async()=>{
     if(extraJob||hostGenerating())throw new Error('请等待生成结束或取消状态更新');
     if(chatSettings().checkpoint)throw new Error('恢复旧格式修复备份前请先撤销回档');
@@ -1375,11 +1431,11 @@ function startPrototype(defaultHtml) {
     listRequestPresets:requestPresets,fetchModels:params=>{if(typeof getModelList!=='function')throw new Error('当前酒馆助手缺少模型列表接口');return getModelList(params);},
     write:config=>{cancelExtraUpdate();updateVariablesWith(v=>({...v,[API_PROFILE_KEY]:config}),{type:'global'});},
     binding:updateBinding,setBinding:value=>{if(!active(settings()))throw new Error('请先配置并启用本聊天');cancelExtraUpdate();updateVariablesWith(v=>({...v,[PROTO_KEY]:{...v[PROTO_KEY],variableUpdate:value}}),{type:'chat'});},
-    run:()=>runExtraUpdate(),cancel:()=>{const committed=extraJob?.committed;cancelExtraUpdate();apiUi.report(committed?'状态已经写入，如需恢复请撤销最近一次更新。':'状态更新已取消，原消息保留。');},undo:undoExtraUpdate,onError:e=>fault(e,'状态更新操作失败'),
+    run:()=>{if(updateBinding().mode==='inline'&&splitTruncatedUpdate(messages().at(-1)?.message)){return previewTruncatedTail(messages().at(-1)?.message_id);}return runExtraUpdate();},cancel:()=>{const committed=extraJob?.committed;cancelExtraUpdate();apiUi.report(committed?'状态已经写入，如需恢复请撤销最近一次更新。':'状态更新已取消，原消息保留。');},undo:undoExtraUpdate,onError:e=>fault(e,'状态更新操作失败'),
     readDiagnostics:()=>extraDiagnostics,clearDiagnostics:()=>{extraDiagnostics=[];}});
   const ruleDisclosure=node('details');node('summary','查看条目原文',ruleDisclosure);ruleDisclosure.append(rules);
   const makerDisclosure=node('details');node('summary','制作提示词与下一轮提示预览',makerDisclosure);makerDisclosure.append(a('生成并复制 HTML 制作提示词'),a('查看下一轮状态提示'),maker);
-  const center=createControlCenter({doc,manager,panel,summary,status,floorSelect,details,diagnostics,repairBox,snapshotPanel,apiPanel:apiUi.panel,loadApi:apiUi.sync,actions,loadSettings,settingsGroups:[
+  const center=createControlCenter({doc,manager,panel,summary,status,floorSelect,details,diagnostics,repairBox,tailPreview,snapshotPanel,apiPanel:apiUi.panel,loadApi:apiUi.sync,actions,loadSettings,settingsGroups:[
     {title:'世界书与规则',hint:'选择随卡世界书里的状态栏条目；它决定 LoreState 记录哪些栏目。',items:[bookLabel,entryLabel,[a('刷新世界书列表')],ruleDisclosure]},
     {title:'外观模板',hint:'粘贴网页 AI 生成的 HTML，预览确认后保存并启用本聊天。',items:[htmlLabel,[a('预览 HTML（不保存）'),a('保存 HTML 并启用本聊天')],preview,makerDisclosure]},
     {title:'外观预设',hint:'同一套栏目可以保存多份外观，随角色卡保存，随时切换。',items:[presetLabel,nameLabel,[a('应用所选预设'),a('另存为新预设'),a('覆盖所选预设'),a('删除所选预设')]]},
@@ -1491,7 +1547,8 @@ function startPrototype(defaultHtml) {
     })();
     try{await continuationWork;}finally{continuationWork=null;}
   }
-  async function runExtraUpdate({repair=updateBinding().mode==='inline',floor}={}){
+  async function runExtraUpdate({repair=updateBinding().mode==='inline',floor,tailPlan}={}){
+    if(tailPlan&&(!repair||!tailCurrent(tailPlan)))throw new Error('截断预览已失效，请重新预览');
     if(extraJob)throw new Error('状态更新正在进行，请等待或取消');
     if(hostGenerating())throw new Error('请等待正文生成结束');
     generating=false; // Live helper readiness supersedes a stale core preview event.
@@ -1510,7 +1567,8 @@ function startPrototype(defaultHtml) {
       const result=getResult(config,list);
       if(!result.errors.some(error=>error.floor===last.message_id))throw new Error('最新回复状态已通过校验，无需修复');
     }
-    const story=variableStory(last.message);if(!story.trim())throw new Error('最新 AI 回复没有剧情正文，无法重新判断状态');
+    const replacementSource=tailPlan?tailPlan.story:last.message;
+    const story=variableStory(replacementSource);if(!story.trim())throw new Error('最新 AI 回复没有剧情正文，无法重新判断状态');
     const schema=schemaFor(config),previous=getResult(config,list.slice(0,-1));
     if(previous.errors.length)throw new Error(`此前第 ${previous.errors[0].floor} 楼存在状态缺口，请先手动修复历史再更新最新回复`);
     const history=historyIdentity(list),schemaKey=JSON.stringify(schema),configKey=JSON.stringify(config),bindingKey=JSON.stringify(binding),profileKey=JSON.stringify(profile),requestContextKey=requestContextIdentity(binding);
@@ -1553,7 +1611,7 @@ function startPrototype(defaultHtml) {
             const savedOutput=diagnosticText(output);Object.assign(diagnostic,{status:'returned-awaiting-validation',output:savedOutput.text,truncated:savedOutput.truncated});
           }catch(error){failure='状态 API 请求失败，请检查连接配置和网络';Object.assign(diagnostic,{status:'request-error',requestError:safeDiagnosticError(error,[profile?.key])});}
           assertCurrent();
-          if(!failure){try{updated=validateExtraUpdate(output,last.message,previous.state,schema,last.message_id,receipt);diagnostic.status='validated-success';}catch(error){failure='状态模型输出未通过协议、栏目或读取凭据校验';Object.assign(diagnostic,{status:'validation-failed',localError:safeDiagnosticError(error)});}}
+          if(!failure){try{updated=validateExtraUpdate(output,replacementSource,previous.state,schema,last.message_id,receipt);diagnostic.status='validated-success';}catch(error){failure='状态模型输出未通过协议、栏目或读取凭据校验';Object.assign(diagnostic,{status:'validation-failed',localError:safeDiagnosticError(error)});}}
           apiUi.refreshDiagnostics();
           if(!failure)break;
           if(attempt===binding.attempts)throw new Error(`${failure}；已尝试 ${attempt} 次，原消息保留`);
@@ -1667,7 +1725,7 @@ function startPrototype(defaultHtml) {
   runtimeRegistration={dispose};window.parent[runtimeSlot]=runtimeRegistration;startChatObserver();
   eventOn(tavern_events.CHAT_CHANGED,newChatId=>{
     if(shouldReloadForChatChange(loadedChatId,newChatId)){dispose();window.location.reload();return;}
-    chatEpoch++;cancelExtraUpdate();extraDiagnostics=[];apiUi.clear();uninject?.();uninject=null;stateWindow.close();view?.remove();renderKey='';noticeKey='';notice.hidden=true;runtimeLogs=[];restoreDraft=null;capturedKey='';snapshotPreview.textContent='';report('设置随角色保存；修改后请预览并保存。');manager.close();generating=false;schedule();
+    chatEpoch++;clearTailPreview();cancelExtraUpdate();extraDiagnostics=[];apiUi.clear();uninject?.();uninject=null;stateWindow.close();view?.remove();renderKey='';noticeKey='';notice.hidden=true;runtimeLogs=[];restoreDraft=null;capturedKey='';snapshotPreview.textContent='';report('设置随角色保存；修改后请预览并保存。');manager.close();generating=false;schedule();
   });
   eventOn(tavern_events.GENERATION_AFTER_COMMANDS,beforeGenerate);
   eventOn(getButtonEvent('LoreState 设置'),()=>open().catch(e=>fault(e,'设置打开失败')));

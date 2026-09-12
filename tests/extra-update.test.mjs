@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {normalizeApiProfile,saveApiProfile,deleteApiProfile,boundApiProfile,extraModelRequest,normalizeUpdateSettings} from '../prototype/api-profiles.js';
-import {validateExtraUpdate,variableStory,settleContinuedMessage} from '../prototype/extra-update.js';
+import {validateExtraUpdate,variableStory,settleContinuedMessage,splitTruncatedUpdate} from '../prototype/extra-update.js';
 import {preparePrompt,applyState,replayState} from '../prototype/core.js';
 import {addReadReceipt,emptySnapshotStore,readReceipt} from '../prototype/snapshot-store.js';
 import {builtinOrderedPrompts,decodeBuiltinPreset} from '../prototype/builtin-preset.js';
@@ -130,4 +130,16 @@ test('道歉、拒答、空响应等无完整更新块的失败不发送理由�
       assert.ok(!JSON.stringify(request).includes('未知或重复栏目'));
     }
   }
+});
+
+test('尾部截断只提出明确单一起点，正文逐字保留，支持属性和闭合标签截断',()=>{
+  const story='正文 A & B。\n\n';
+  for(const partial of ['<Lore','<LoreS','<LoreSta'])assert.throws(()=>variableStory(story+partial),/未闭合/);
+  for(const tail of ['<LoreState','<LoreState version="3','<LoreState version="3"><Shared><地点>残值','<LoreState><Shared></Shared></LoreState']){
+    assert.deepEqual(splitTruncatedUpdate(story+tail),{story,tail});
+    assert.throws(()=>variableStory(story+tail),/未闭合/,'未经确认的原消息仍须拒绝');
+  }
+  for(const source of ['正文<Lore','正文<lorestate','正文<LoreStateOther','正文<LoreState/>','正文<LoreState></LoreState>',
+    '正文<LoreState><LoreState>','正文<LoreState>尾部<Lore','正文<LoreState>尾部</LoreState>后文','<LoreState>',
+    '正文</LoreState><LoreState>','正文<LoreState>尾部</LoreState错误'])assert.equal(splitTruncatedUpdate(source),null,source);
 });

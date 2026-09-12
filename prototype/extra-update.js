@@ -23,8 +23,21 @@ export function variableStory(source){
   const blocks=[...source.matchAll(new RegExp(TAG_PATTERN,'g'))];
   if(blocks.some(block=>(block[0].match(/<\/?LoreState\b/gi)??[]).length!==2))throw new Error('原消息状态标签存在嵌套，无法确定正文边界，请先手动修复');
   const story=source.replace(new RegExp(TAG_PATTERN,'g'),'');
-  if(/<\/?LoreState\b/i.test(story))throw new Error('原消息存在未闭合的状态标签，请先手动修复标签边界后重试');
+  if(/<\/?LoreState\b/i.test(story)||/<\/?(?:Lore|LoreS|LoreSt|LoreSta|LoreStat)\s*$/i.test(story))throw new Error('原消息存在未闭合的状态标签，请先手动修复标签边界后重试');
   return story;
+}
+// A proposal only: the user must confirm the entire suffix before it is replaced.
+export function splitTruncatedUpdate(source){
+  if(typeof source!=='string')return null;
+  const starts=[...source.matchAll(/<Lore/gi)];
+  if(starts.length!==1)return null;
+  const index=starts[0].index,tail=source.slice(index),story=source.slice(0,index);
+  if(!story.trim()||!/^<LoreState(?=\s|>|$)/.test(tail))return null;
+  if(/<\/LoreState\s*>/i.test(source)||/^<LoreState[^>]*\/>/.test(tail))return null;
+  // A closing tag cut off at EOF is also a truncated suffix, not a second block.
+  const closes=[...source.matchAll(/<\/Lore/gi)];
+  if(closes.length>1||closes.some(close=>close.index<index||!'</LoreState>'.startsWith(source.slice(close.index).trimEnd())))return null;
+  return {story,tail};
 }
 export function validateExtraUpdate(output,original,previous,schema,floor,receipt){
   // Only protocol-bearing output can provide useful correction feedback.
