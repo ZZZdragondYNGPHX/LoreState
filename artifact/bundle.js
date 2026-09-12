@@ -1423,10 +1423,14 @@ function startPrototype(defaultHtml) {
     chatObserver=new MutationObserver(()=>{
       if(closed||chatRepairTimer)return;
       chatRepairTimer=setTimeout(()=>{
-        chatRepairTimer=null;if(closed||hostGenerating())return;
-        const list=messages(),last=list.findLast(m=>m.role==='assistant');if(!last)return;
-        const result=getResult(settings(),list);
-        if(!viewIsIntact(last,result)){view?.remove();view=null;renderKey='';schedule();}
+        chatRepairTimer=null;if(closed)return;
+        try{
+          if(hostGenerating())return;
+          const config=settings();if(!active(config))return;
+          const list=messages(),last=list.findLast(m=>m.role==='assistant');if(!last)return;
+          const result=getResult(config,list);
+          if(!viewIsIntact(last,result)){view?.remove();view=null;renderKey='';schedule();}
+        }catch(e){fault(e,'状态栏恢复失败');}
       },50);
     });
     chatObserver.observe(chat,{childList:true,subtree:true});

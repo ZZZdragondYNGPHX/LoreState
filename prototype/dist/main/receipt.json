@@ -3,7 +3,7 @@
   "mode": "remote-only",
   "realHostVerified": false,
   "scriptId": "0aa89d30-099d-4cf3-8cfb-d367490ec067",
-  "sha256": "29832927e78271fe83d8a05335b230fd4c5e833f7e034c3382856ad419c80415",
+  "sha256": "3fb81930c3acc1e6e3df668f608cf9ae118e3429a33065149e8cc8cb31ec6016",
   "runtime": {
     "sillytavern": "1.18.0",
     "tavernHelper": "4.9.5"
