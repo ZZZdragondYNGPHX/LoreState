@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {replayState,inspectFloor,proposeRepair,stateChanges} from '../prototype/core.js';
+import {replayState,inspectFloor,stateChanges} from '../prototype/core.js';
 const schema={shared:['地点'],entity:['近况']};
 const wrap=(text,mode='delta')=>`<LoreState version="3" mode="${mode}">\n${text}\n</LoreState>`;
 const msg=(floor,message)=>({message_id:floor,role:'assistant',message});
@@ -28,15 +28,6 @@ test('历史编辑、选中分支替换、删除和初始化前楼层重算',()=
   assert.equal(inspectFloor(list,schema,1,3).state.shared.地点,'港口');
   list.pop();assert.equal(replayState(list,schema).state.shared.地点,'车站');
   assert.throws(()=>inspectFloor(list,schema,1,3),/不存在/);
-});
-test('基础修复保留正文和合法实体，仅修复文字中的独立 &，重放仍严格校验',()=>{
-  const source='正文 A & B\n'+wrap('<Shared><地点>A & B &amp; C &#65; &apos; D</地点></Shared>');
-  const fixed=proposeRepair(source);assert.ok(fixed.startsWith('正文 A & B\n'));
-  assert.ok(fixed.includes('A &amp; B &amp; C &#65; &apos; D'));
-  assert.equal(proposeRepair(fixed),null);
-  assert.equal(replayState([full,msg(3,fixed)],schema).errors.length,0);
-  assert.equal(proposeRepair(source+source),null);assert.equal(proposeRepair('<LoreState>未闭合 &'),null);
-  assert.equal(proposeRepair(wrap('<Entity id="A&B"/>')),null);
 });
 test('差异可区分删除、新增和实体离场，快照不受差异计算修改',()=>{
   const before={shared:{地点:'车站'},entities:{P01:{presence:'active'}}};

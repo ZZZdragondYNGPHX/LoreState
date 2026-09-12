@@ -73,18 +73,19 @@ await check('宿主主题覆盖下复选框仍是可见可点的原生控件',as
     assert(button('保存状态更新绑定',auto.closest('details')),'保存按钮必须和它保存的字段同卡片');
   }finally{theme.remove();manager.querySelector('#ls-tab-diagnostics').click();await tick();}
 });
-await check('错误轮、修复预览、写回、备份、撤销和告警恢复',async()=>{
+await check('基础格式修复已移除，旧备份仍可查看与恢复且拒绝覆盖变化回复',async()=>{
   await click('返回最新',manager);assert(manager.textContent.includes('本层更新失败'));
-  await click('预览基础格式修复',manager);assert(manager.querySelector('textarea').value.includes('&amp;'));assert(list[1].message.includes('A & B'));
-  await click('应用预览修复',manager);assert(list[1].message.includes('&amp;'));assert(notice.hidden);assert(manager.textContent.includes('本层更新成功'));
-  await click('撤销最近一次格式修复',manager);assert(list[1].message.includes('A & B'));assert(!notice.hidden);
+  assert(!button('预览基础格式修复'));assert(!button('应用预览修复'));
+  assert(!button('重新计算本层状态').hidden);
+  const original=list[1].message,repaired=original.replace('A & B','A &amp; B');
+  variables.chat[PROTO_KEY].repairBackup={floor:3,swipe:0,original,repaired};
+  await click('查看格式修复备份');assert(manager.querySelector('[aria-label="诊断报告与旧修复备份"]').value===original);
+  await click('撤销最近一次格式修复');assert(list[1].message===original);assert(notice.textContent.includes('已变化'));
+  list[1].message=repaired;await emit('MESSAGE_UPDATED');
+  await click('撤销最近一次格式修复');assert(list[1].message===original);assert(!variables.chat[PROTO_KEY].repairBackup);assert(!notice.hidden);
 });
 await check('关闭告警后同一错误不重复弹出',async()=>{
   notice.hidden=true;await emit('MESSAGE_UPDATED');assert(notice.hidden);
-});
-await check('预览后分支变化拒绝写回',async()=>{
-  await click('预览基础格式修复',manager);list[1].swipe_id=1;
-  await click('应用预览修复',manager);assert(list[1].message.includes('A & B'));assert(notice.textContent.includes('已变化'));list[1].swipe_id=0;
 });
 await check('流式未完成期间不写错误快照，结束后复验',async()=>{
   await emit('GENERATION_STARTED');const before=JSON.stringify(variables.chat);
@@ -368,6 +369,73 @@ await check('额外模型初次更新、重试与撤销保留正文；重试始�
   assert(extraCalls.at(-1).ordered_prompts.some(item=>item?.content?.includes('尚未建立')));assert((list[1].message.match(/<LoreState /g)||[]).length===1);
   await click('撤销最近一次状态更新');assert(list[1].message===first);assert(variables.chat[PROTO_KEY].current.state.shared.地点==='书店');
 });
+async function inlineRepairFixture(fn){
+  const savedVariables=structuredClone(variables),savedList=structuredClone(list),savedPlace=extraPlace;
+  try{
+    variables.chat[PROTO_KEY].variableUpdate={...variables.chat[PROTO_KEY].variableUpdate,mode:'inline',attempts:2};
+    list=[{message_id:0,role:'user',message:'去书店'},{message_id:1,role:'assistant',message:'正文 A & B。',swipe_id:0}];
+    extraPlace='书店';await emit('MESSAGE_UPDATED');await click('API 预设');await fn();
+  }finally{variables=savedVariables;list=savedList;extraPlace=savedPlace;window.generateRaw=normalExtra;await emit('MESSAGE_UPDATED');await click('API 预设');}
+}
+await check('随正文缺块手动重算共用模型配置，保留模式和正文，支持撤销',()=>inlineRepairFixture(async()=>{
+  const original=list[1].message,count=extraCalls.length;
+  await emit('GENERATION_ENDED');assert(extraCalls.length===count,'随正文错误不应自动请求');
+  await click('重新计算最新失败回复状态');
+  assert(extraCalls.length===count+1);assert(extraCalls.at(-1).custom_api.model==='model-A');
+  assert(list[1].message.startsWith(original+'\n\n'));assert(variables.chat[PROTO_KEY].variableUpdate.mode==='inline');
+  assert(variables.chat[PROTO_KEY].current.state.shared.地点==='书店');
+  await click('撤销最近一次状态更新');assert(list[1].message===original);
+}));
+await check('随正文错误块从本层前态重算，诊断按钮调用共用重试并保留块外正文',()=>inlineRepairFixture(async()=>{
+  list=[{message_id:1,role:'assistant',message:wrap('车站','full'),swipe_id:0},{message_id:2,role:'user',message:'去书店'},
+    {message_id:3,role:'assistant',message:'前文 A & B。'+wrap('错误 & 状态')+'后文。',swipe_id:0}];
+  const original=list[2].message;let attempts=0;variables.chat[PROTO_KEY].variableUpdate.attempts=3;
+  window.generateRaw=async request=>{extraCalls.push(request);attempts++;return attempts===1?extraReply(request).replaceAll('地点','不存在'):attempts===2?'抱歉，我无法完成这个请求。':extraReply(request);};
+  await emit('MESSAGE_UPDATED');await click('返回最新');await click('诊断修复');
+  await click('重新计算本层状态');assert(attempts===3);assert(!document.getElementById('ls-page-api').hidden);
+  assert(extraCalls.at(-2).ordered_prompts.some(item=>item?.content?.includes('纠错重试')));
+  assert(!extraCalls.at(-1).ordered_prompts.some(item=>item?.content?.includes('纠错重试')));
+  assert(extraCalls.at(-1).ordered_prompts.some(item=>item?.content?.includes('车站')));
+  assert(list[2].message.startsWith('前文 A & B。'));assert(list[2].message.endsWith('后文。'));
+  assert((list[2].message.match(/<LoreState /g)||[]).length===1);assert(!list[2].message.includes('错误 & 状态'));
+  await click('撤销最近一次状态更新');assert(list[2].message===original);
+}));
+await check('随正文修复拒绝历史、前态缺口、正常回复和损坏边界，请求前保持原文',()=>inlineRepairFixture(async()=>{
+  const cases=[
+    ['正文'+wrap('车站','full'),'无需修复'],
+    ['正文<LoreState version="3">未闭合','未闭合'],
+    ['正文<LoreState>'+wrap('车站','full'),'嵌套'],
+  ];
+  for(const [message,error] of cases){list[1].message=message;const count=extraCalls.length;await click('重新计算最新失败回复状态');assert(extraCalls.length===count);assert(list[1].message===message);assert(notice.textContent.includes(error),notice.textContent);}
+  list=[{message_id:1,role:'assistant',message:'缺少初始状态',swipe_id:0},{message_id:3,role:'assistant',message:'新的剧情',swipe_id:0}];
+  const count=extraCalls.length;await click('重新计算最新失败回复状态');assert(extraCalls.length===count);assert(notice.textContent.includes('第 1 楼'));
+  await click('返回最新');await click('上一 AI 层');await click('重新计算本层状态');assert(extraCalls.length===count);assert(notice.textContent.includes('仅支持'));
+}));
+await check('随正文修复取消及上下文变化后迟到结果不写入，失败保留原文',()=>inlineRepairFixture(async()=>{
+  const original=list[1].message;
+  for(const mutation of ['取消','分支','正文','配置']){
+    let resolve;const binding=structuredClone(variables.chat[PROTO_KEY].variableUpdate);
+    window.generateRaw=request=>new Promise(done=>{resolve=()=>done(extraReply(request));});
+    const running=button('重新计算最新失败回复状态').onclick();await tick();assert(resolve,'请求未发出');
+    if(mutation==='取消')await click('取消状态更新');
+    if(mutation==='分支')list[1].swipe_id=1;
+    if(mutation==='正文')list[1].message='用户编辑后的正文';
+    if(mutation==='配置')variables.chat[PROTO_KEY].variableUpdate.attempts=1;
+    const expected=list[1].message;resolve();await running;await tick();assert(list[1].message===expected);
+    list[1].message=original;list[1].swipe_id=0;variables.chat[PROTO_KEY].variableUpdate=binding;
+  }
+  window.generateRaw=async()=>{throw new Error('模拟网络失败');};
+  await click('重新计算最新失败回复状态');assert(list[1].message===original);
+}));
+await check('随正文修复允许跟随当前连接，失效自定义绑定不回退且回档保留区不可写',()=>inlineRepairFixture(async()=>{
+  const binding=variables.chat[PROTO_KEY].variableUpdate,original=list[1].message,count=extraCalls.length;
+  binding.profileId='deleted';await click('重新计算最新失败回复状态');assert(extraCalls.length===count);assert(list[1].message===original);
+  binding.source='current';await click('重新计算最新失败回复状态');assert(extraCalls.length===count+1);assert(!extraCalls.at(-1).custom_api);
+  await click('撤销最近一次状态更新');assert(list[1].message===original);
+  variables.chat[PROTO_KEY].checkpoint={cutoff:1};const before=extraCalls.length;
+  await click('重新计算最新失败回复状态');assert(extraCalls.length===before);assert(list[1].message===original);assert(notice.textContent.includes('回档前保留'));
+  delete variables.chat[PROTO_KEY].checkpoint;
+}));
 await check('状态请求失败或输出不合法不覆盖消息，日志不泄露请求密钥',async()=>{
   const before=list[1].message;
   window.generateRaw=async()=>{throw new Error('synthetic-private-key raw provider error');};await click('重新更新最新回复状态');assert(list[1].message===before);assert(!notice.textContent.includes('synthetic-private-key'));
@@ -436,7 +504,7 @@ await check('请求中切换聊天会取消旧请求，迟到结果不污染新�
 });
 await check('API 设置 JSON 重载后可读取；失效绑定禁止请求且不回退',async()=>{
   variables=JSON.parse(JSON.stringify(variables));await click('LoreState');await click('API 预设');assert(manager.querySelector('[aria-label="编辑 API 预设"]').options.length===2);
-  variables.chat[PROTO_KEY].variableUpdate={mode:'extra',profileId:'deleted'};const before=extraCalls.length;await click('重新更新最新回复状态');assert(extraCalls.length===before);assert(notice.textContent.includes('不存在'));
+  variables.chat[PROTO_KEY].variableUpdate={mode:'extra',profileId:'deleted'};await click('API 预设');const before=extraCalls.length;await click('重新更新最新回复状态');assert(extraCalls.length===before);assert(notice.textContent.includes('不存在'));
 });
 let presetRevision=1,presetCalls=[];
 window.getPresetNames=()=>['整理测试'];window.getPreset=name=>({name,revision:presetRevision});

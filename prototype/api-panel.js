@@ -30,10 +30,10 @@ export function createApiPanel({doc,read,write,binding,setBinding,run,cancel,und
   const limitRow=uiGrid(doc,bindingGroup);
   const attempts=field('请求总次数','number',limitRow),timeout=field('总超时（秒）','number',limitRow);
   attempts.min='1';attempts.max='5';attempts.step='1';timeout.min='15';timeout.max='600';timeout.step='1';
-  note(bindingGroup,'依次请求，失败后重试；次数包含首次请求。格式、协议、栏目或读取凭据校验失败时，下一次请求会带上本地校验原因进行纠错；总超时覆盖全部尝试，取消或聊天变化不会重试。流式只用于接收响应，完整校验前不写入状态。');
-  note(bindingGroup,'以上请求设置和绑定需保存后生效。关闭自动更新后，可手动整理最新回复。重试与撤销保留剧情正文。');
+  note(bindingGroup,'依次请求，失败后重试；次数包含首次请求。返回完整状态块但格式、协议、栏目或读取凭据校验失败时，下一次请求会带上本地校验原因；道歉、拒答、空响应等没有完整状态块的回复直接重试，不附带原因，也不沿用此前的纠错理由；总超时覆盖全部尝试，取消或聊天变化不会重试。流式只用于接收响应，完整校验前不写入状态。');
+  note(bindingGroup,'以上请求设置和绑定需保存后生效。自动更新只用于额外模型模式。随正文模式下，这里的模型与请求设置用于手动重算最新失败回复，无需切换模式。重试与撤销保留剧情正文。');
   const bindingActions=uiActions(doc,bindingGroup);
-  const runGroup=card('手动更新与撤销','对最新一条 AI 回复重新整理状态，或撤销上一次整理。',true);
+  const runGroup=card('手动更新与撤销','额外模式可整理最新回复；随正文模式仅重算最新失败回复。会重新判断状态内容，支持取消与撤销。',true);
   const runActions=uiActions(doc,runGroup);
   const profileGroup=card('管理 API 预设','填写状态模型的地址、密钥和模型名称；一份预设可供多张卡使用。',true);
   note(profileGroup,'密钥保存在当前酒馆用户的本地设置中，不写入角色卡或聊天记录；完整设置备份仍包含密钥。');
@@ -117,6 +117,7 @@ export function createApiPanel({doc,read,write,binding,setBinding,run,cancel,und
     auto.checked=config.auto;stream.checked=config.stream;attempts.value=config.attempts;timeout.value=config.timeoutSeconds;
     const current=profiles.find(p=>p.id===config.profileId);
     status.textContent=`当前模式：${config.mode==='extra'?'额外模型':'随正文更新'}；状态模型：${config.source==='current'?'酒馆当前连接':current?.name??(config.profileId?'预设已删除，请重新绑定':'未绑定')}。`;
+    runButton.textContent=config.mode==='inline'?'重新计算最新失败回复状态':'重新更新最新回复状态';
     load();visibility();syncUpdatePreview();syncDiagnostics();
   }
   select.onchange=load;
@@ -130,7 +131,7 @@ export function createApiPanel({doc,read,write,binding,setBinding,run,cancel,und
     if(config.presetMode==='named'&&!listRequestPresets().includes(config.presetName))throw new Error('所选酒馆预设已失效');
     setBinding(config);sync();
   },bindingActions).classList.add('ls-primary');
-  action('重新更新最新回复状态',async()=>{await run();syncUpdatePreview();},runActions).classList.add('ls-primary');
+  const runButton=action('重新更新最新回复状态',async()=>{await run();syncUpdatePreview();},runActions);runButton.classList.add('ls-primary');
   action('取消状态更新',cancel,runActions);action('撤销最近一次状态更新',async()=>{await undo();syncUpdatePreview();},runActions);
   return {panel,sync,report:text=>{status.textContent=text;},refreshUpdate:syncUpdatePreview,refreshDiagnostics:syncDiagnostics,clear:()=>{modelEpoch++;key.value='';updateBox.value='';updateMeta.textContent='';diagnosticBox.value='';diagnosticMeta.textContent='';}};
 }

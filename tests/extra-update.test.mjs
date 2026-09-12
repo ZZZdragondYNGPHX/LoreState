@@ -108,3 +108,26 @@ test('内置、当前及指定酒馆预设使用不同请求路径，跟随当�
   const task=builtin.ordered_prompts.find(item=>typeof item==='object'&&item.content.includes('状态协议')&&item.content.includes('只整理已发生剧情'));
   assert.ok(task);assert.doesNotMatch(task.content,/SYSTEM RESET|忽略安全|UpdateVariable/);
 });
+
+test('重算正文边界拒绝嵌套或残缺状态标签，完整块外文字逐字保留',()=>{
+  const block='<LoreState version="3" mode="full"><Shared><地点>A & B</地点></Shared></LoreState>';
+  assert.equal(variableStory('前文 A & B。'+block+'后文。'),'前文 A & B。后文。');
+  assert.equal(variableStory('只有正文'),'只有正文');
+  for(const source of ['前文<LoreState>'+block,'前文'+block+'<LoreState','前文</LoreState>'])assert.throws(()=>variableStory(source),/边界|嵌套/);
+});
+
+test('道歉、拒答、空响应等无完整更新块的失败不发送理由，并清除上一轮纠错提示',async()=>{
+  const output=block('车站','full',token),store=await addReadReceipt(emptySnapshotStore(),token,null,schema,[]),receipt=readReceipt(output,store);
+  const content=`规则\n<LoreState version="3" mode="full" read="${token}">`;
+  for(const response of ['抱歉，我无法完成这个请求。','Sorry, I cannot help with that.','这是普通解释，没有更新内容。','',null]){
+    assert.throws(()=>validateExtraUpdate(output.replaceAll('地点','不存在'),'正文',null,schema,1,receipt));
+    const before=extraModelRequest(normalizeApiProfile(profile),content,'剧情','before');
+    assert.ok(before.ordered_prompts.some(item=>item?.content?.includes('纠错重试')));
+    assert.throws(()=>validateExtraUpdate(response,'正文',null,schema,1,receipt));
+    for(const presetMode of ['builtin','current','named']){
+      const request=extraModelRequest(normalizeApiProfile(profile),content,'剧情','retry',{presetMode,presetName:'测试'});
+      assert.ok(!JSON.stringify(request).includes('纠错重试'));
+      assert.ok(!JSON.stringify(request).includes('未知或重复栏目'));
+    }
+  }
+});

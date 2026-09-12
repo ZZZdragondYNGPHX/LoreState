@@ -211,7 +211,7 @@ function applyState(previous,source,schema,floor=null,receipt=null){
   }
 }
 function repairHint(message){
-  if(message.includes('&'))return '文字中的独立 & 应转义为 &amp;。可预览基础格式修复。';
+  if(message.includes('&'))return '文字中的独立 & 应转义为 &amp;。请手动编辑原文；随正文模式的最新失败回复也可重新计算本层状态。';
   if(message.includes('未知或重复栏目'))return '核对栏目名称与 HTML 配置；同一范围内每个栏目只能出现一次。';
   if(message.includes('冷档'))return '先用空 delta 唤醒实体，下一轮读取旧资料后再更新。';
   if(message.includes('full')||message.includes('完整'))return '首次使用 version="3" mode="full"；已初始化后使用 delta。新实体须填写全部实体栏目。';
@@ -242,14 +242,6 @@ function inspectFloor(messages,schema,start,floor){
   const before=replayState(messages.filter(m=>m.message_id<floor),schema,start);
   const result=replayState(messages.filter(m=>m.message_id<=floor),schema,start);
   return {...result,floor,source:target.message,changes:stateChanges(before.state,result.state),error:result.errors.find(e=>e.floor===floor)??null,excluded:floor<start};
-}
-// Only repair unescaped ampersands in text nodes of one complete update block.
-// The caller must preview, validate and explicitly apply; never guess missing facts.
-function proposeRepair(source){
-  const blocks=[...source.matchAll(new RegExp(TAG_PATTERN,'g'))];
-  if(blocks.length!==1)return null;
-  const block=blocks[0],fixed=block[0].replace(/>([^<]*)</g,(_,text)=>'>'+text.replace(/&(?!amp;|lt;|gt;|quot;|apos;|#\d+;|#x[\da-fA-F]+;)/g,'&amp;')+'<');
-  return fixed===block[0]?null:source.slice(0,block.index)+fixed+source.slice(block.index+block[0].length);
 }
 function projectEntities(state,text=''){
   const entities=Object.values(state?.entities??{}),selected=new Set(),retrieved=[],deferred=[];
@@ -665,10 +657,10 @@ function createApiPanel({doc,read,write,binding,setBinding,run,cancel,undo,onErr
   const limitRow=uiGrid(doc,bindingGroup);
   const attempts=field('请求总次数','number',limitRow),timeout=field('总超时（秒）','number',limitRow);
   attempts.min='1';attempts.max='5';attempts.step='1';timeout.min='15';timeout.max='600';timeout.step='1';
-  note(bindingGroup,'依次请求，失败后重试；次数包含首次请求。格式、协议、栏目或读取凭据校验失败时，下一次请求会带上本地校验原因进行纠错；总超时覆盖全部尝试，取消或聊天变化不会重试。流式只用于接收响应，完整校验前不写入状态。');
-  note(bindingGroup,'以上请求设置和绑定需保存后生效。关闭自动更新后，可手动整理最新回复。重试与撤销保留剧情正文。');
+  note(bindingGroup,'依次请求，失败后重试；次数包含首次请求。返回完整状态块但格式、协议、栏目或读取凭据校验失败时，下一次请求会带上本地校验原因；道歉、拒答、空响应等没有完整状态块的回复直接重试，不附带原因，也不沿用此前的纠错理由；总超时覆盖全部尝试，取消或聊天变化不会重试。流式只用于接收响应，完整校验前不写入状态。');
+  note(bindingGroup,'以上请求设置和绑定需保存后生效。自动更新只用于额外模型模式。随正文模式下，这里的模型与请求设置用于手动重算最新失败回复，无需切换模式。重试与撤销保留剧情正文。');
   const bindingActions=uiActions(doc,bindingGroup);
-  const runGroup=card('手动更新与撤销','对最新一条 AI 回复重新整理状态，或撤销上一次整理。',true);
+  const runGroup=card('手动更新与撤销','额外模式可整理最新回复；随正文模式仅重算最新失败回复。会重新判断状态内容，支持取消与撤销。',true);
   const runActions=uiActions(doc,runGroup);
   const profileGroup=card('管理 API 预设','填写状态模型的地址、密钥和模型名称；一份预设可供多张卡使用。',true);
   note(profileGroup,'密钥保存在当前酒馆用户的本地设置中，不写入角色卡或聊天记录；完整设置备份仍包含密钥。');
@@ -752,6 +744,7 @@ function createApiPanel({doc,read,write,binding,setBinding,run,cancel,undo,onErr
     auto.checked=config.auto;stream.checked=config.stream;attempts.value=config.attempts;timeout.value=config.timeoutSeconds;
     const current=profiles.find(p=>p.id===config.profileId);
     status.textContent=`当前模式：${config.mode==='extra'?'额外模型':'随正文更新'}；状态模型：${config.source==='current'?'酒馆当前连接':current?.name??(config.profileId?'预设已删除，请重新绑定':'未绑定')}。`;
+    runButton.textContent=config.mode==='inline'?'重新计算最新失败回复状态':'重新更新最新回复状态';
     load();visibility();syncUpdatePreview();syncDiagnostics();
   }
   select.onchange=load;
@@ -765,7 +758,7 @@ function createApiPanel({doc,read,write,binding,setBinding,run,cancel,undo,onErr
     if(config.presetMode==='named'&&!listRequestPresets().includes(config.presetName))throw new Error('所选酒馆预设已失效');
     setBinding(config);sync();
   },bindingActions).classList.add('ls-primary');
-  action('重新更新最新回复状态',async()=>{await run();syncUpdatePreview();},runActions).classList.add('ls-primary');
+  const runButton=action('重新更新最新回复状态',async()=>{await run();syncUpdatePreview();},runActions);runButton.classList.add('ls-primary');
   action('取消状态更新',cancel,runActions);action('撤销最近一次状态更新',async()=>{await undo();syncUpdatePreview();},runActions);
   return {panel,sync,report:text=>{status.textContent=text;},refreshUpdate:syncUpdatePreview,refreshDiagnostics:syncDiagnostics,clear:()=>{modelEpoch++;key.value='';updateBox.value='';updateMeta.textContent='';diagnosticBox.value='';diagnosticMeta.textContent='';}};
 }
@@ -791,14 +784,20 @@ function normalizeExtraUpdateOutput(output){
   return output.trim().replace(/^```(?:xml)?\s*\n([\s\S]*?)\n```$/,'$1').trim();
 }
 function variableStory(source){
+  const blocks=[...source.matchAll(new RegExp(TAG_PATTERN,'g'))];
+  if(blocks.some(block=>(block[0].match(/<\/?LoreState\b/gi)??[]).length!==2))throw new Error('原消息状态标签存在嵌套，无法确定正文边界，请先手动修复');
   const story=source.replace(new RegExp(TAG_PATTERN,'g'),'');
   if(/<\/?LoreState\b/i.test(story))throw new Error('原消息存在未闭合的状态标签，请先手动修复标签边界后重试');
   return story;
 }
 function validateExtraUpdate(output,original,previous,schema,floor,receipt){
+  // Only protocol-bearing output can provide useful correction feedback.
+  retryHints.delete(receipt?.token);
+  let hasUpdateBlock=false;
   try{
     const text=normalizeExtraUpdateOutput(output);
     const blocks=[...text.matchAll(new RegExp(TAG_PATTERN,'g'))];
+    hasUpdateBlock=blocks.length>0;
     if(blocks.length!==1||blocks[0][0]!==text)throw new Error('状态模型必须只返回一个完整 LoreState 更新块');
     if(!text.startsWith(`<LoreState version="3" mode="${previous?'delta':'full'}" read="${receipt.token}">`))throw new Error('状态模型返回的 mode 或读取凭据不匹配，请重试');
     // This is the same parser and cold-record permission check used for replay.
@@ -809,7 +808,7 @@ function validateExtraUpdate(output,original,previous,schema,floor,receipt){
     retryHints.delete(receipt.token);
     return replaced?updated:original+'\n\n'+text;
   }catch(error){
-    rememberRetryHint(receipt,error);
+    if(hasUpdateBlock)rememberRetryHint(receipt,error);
     throw error;
   }
 }
@@ -908,9 +907,9 @@ function createControlCenter({doc,manager,panel,summary,status,floorSelect,detai
   const act=titles=>titles.map(title=>actions.get(title)).filter(Boolean);
   // Diagnostics page: the report for the selected floor first, then repair tools.
   uiActions(doc,card(repairPage,{title:'检查与报告',hint:'重新回放全部楼层，或复制一份不含正文的诊断报告。',open:true}),act(['重新校验全部楼层','复制诊断报告']));
-  const repair=card(repairPage,{title:'基础格式修复',hint:'只处理可以确定的格式问题；先预览并核对原文，再应用修复。',open:true});
-  uiActions(doc,repair,act(['预览基础格式修复','应用预览修复']));repair.append(repairBox);
-  uiActions(doc,card(repairPage,{title:'修复备份',hint:'查看上一次格式修复的原文，或把这条回复还原回去。'}),act(['查看格式修复备份','撤销最近一次格式修复']));
+  const repair=card(repairPage,{title:'状态重算',hint:'随正文更新失败时，可用 API 预设中的状态模型重新计算本层状态。仅支持最新回复，保留剧情正文；此前历史须无缺口，标签边界须可识别。',open:true});
+  uiActions(doc,repair,act(['重新计算本层状态']));repair.append(repairBox);
+  uiActions(doc,card(repairPage,{title:'旧格式修复备份',hint:'仅用于恢复旧版本留下的原文备份；不再提供基础格式修复。'}),act(['查看格式修复备份','撤销最近一次格式修复']));
   if(snapshotPanel)card(repairPage,{title:'历史快照与回档',hint:'回到某一楼的完整状态；正文保留，旧剧情仍在上下文中。',open:true}).append(snapshotPanel);
   // Move the original controls; handlers and unconfirmed drafts stay intact.
   panel.replaceChildren(status);status.className='ls-health';
@@ -918,7 +917,7 @@ function createControlCenter({doc,manager,panel,summary,status,floorSelect,detai
     const box=card(panel,{title:group.title,hint:group.hint,step:index+1,open:index===0});
     for(const item of group.items)if(Array.isArray(item))uiActions(doc,box,item);else box.append(item);
   });
-  for(const title of ['保存 HTML 并启用本聊天','应用预览修复'])actions.get(title)?.classList.add('ls-primary');
+  for(const title of ['保存 HTML 并启用本聊天','重新计算本层状态'])actions.get(title)?.classList.add('ls-primary');
   for(const title of ['删除所选预设','暂停本聊天'])actions.get(title)?.classList.add('ls-danger');
   if(apiPanel)body.append(apiPanel);
   const pages={state:statePage,diagnostics:repairPage,settings:panel,...(apiPanel?{api:apiPanel}:{})},tabs={};let active='state';
@@ -1105,7 +1104,7 @@ function startPrototype(defaultHtml) {
   notice.style.cssText='position:fixed;right:12px;top:12px;z-index:100000;max-width:min(440px,92vw);padding:16px;background:#382621;color:#fff;border:2px solid #efb06a;border-radius:8px;white-space:pre-wrap';
   const noticeText=node('p','',notice);
   button('查看诊断',notice,()=>openManager(chatSettings().current?.errors?.[0]?.floor));button('关闭提醒',notice,()=>{notice.hidden=true;});
-  let noticeKey='',runtimeLogs=[],extraDiagnostics=[],draft=null;
+  let noticeKey='',runtimeLogs=[],extraDiagnostics=[];
   function diagnosticText(value,limit=32000){
     const text=typeof value==='string'?value:value==null?'':String(value);if(text.length<=limit)return {text,truncated:false};
     const half=Math.floor((limit-32)/2);return {text:text.slice(0,half)+'\n…[中间内容因诊断长度限制省略]…\n'+text.slice(-half),truncated:true};
@@ -1130,7 +1129,7 @@ function startPrototype(defaultHtml) {
   const floorSelect=node('select',undefined,manager);floorSelect.setAttribute('aria-label','AI 楼层');
   const summary=node('p','',manager);summary.setAttribute('role','status');
   const details=node('div',undefined,manager),diagnostics=node('div',undefined,manager);
-  const repairBox=node('textarea',undefined,manager);repairBox.readOnly=true;repairBox.hidden=true;repairBox.setAttribute('aria-label','修复后的消息预览');repairBox.style.cssText='width:100%;height:180px';
+  const repairBox=node('textarea',undefined,manager);repairBox.readOnly=true;repairBox.hidden=true;repairBox.setAttribute('aria-label','诊断报告与旧修复备份');repairBox.style.cssText='width:100%;height:180px';
   function floorList(){return messages().filter(m=>m.role==='assistant');}
   function errorText(e){return `第 ${e.floor} 楼 · ${e.scope}${e.line?` · 原文第 ${e.line} 行 ${e.column} 列`:''}：${e.message}\n建议：${e.hint}`;}
   function showObject(title,value){const section=node('details',undefined,details);node('summary',title,section);const pre=node('pre',JSON.stringify(value,null,2),section);pre.style.cssText='white-space:pre-wrap;overflow-wrap:anywhere';}
@@ -1148,10 +1147,11 @@ function startPrototype(defaultHtml) {
   }
   function showFloor(){
     syncSnapshots();
-    draft=null;repairBox.hidden=true;applyRepair.disabled=true;details.replaceChildren();diagnostics.replaceChildren();
+    repairBox.hidden=true;recalculate.hidden=true;details.replaceChildren();diagnostics.replaceChildren();
     if(!floorSelect.value){summary.textContent='当前聊天没有可查看的 AI 楼层。';return;}
     const config=settings();if(!schemaFor(config)){summary.textContent='请先配置并启用 LoreState。';return;}
     const item=inspectFloor(messages(),schemaFor(config),chatSettings().start??1,Number(floorSelect.value));
+    recalculate.hidden=updateBinding().mode!=='inline'||!item.error||item.excluded||item.floor!==messages().at(-1)?.message_id;
     summary.textContent=item.excluded?'本层在初始化起点之前，未参与状态更新。':item.error?'本层更新失败，整轮未应用。':item.tainted?'本层已应用，但前面存在失败更新，状态有缺口。':'本层更新成功。';
     node('p',`最后连续正常楼层：${item.lastGoodFloor??'尚无'}；最后应用楼层：${item.lastAppliedFloor??'尚无'}`,details);
     summary.dataset.error=String(item.tainted);
@@ -1187,35 +1187,18 @@ function startPrototype(defaultHtml) {
   button('重新校验全部楼层',manager,async()=>{await refresh();syncFloors();});
   button('复制诊断报告',manager,async()=>{
     const result=getResult(),payload={version:'0.6.0',floor:Number(floorSelect.value),lastGoodFloor:result.lastGoodFloor,errors:result.errors,runtimeLogs};
-    repairBox.hidden=false;repairBox.value=JSON.stringify(payload,null,2);draft=null;applyRepair.disabled=true;
+    repairBox.hidden=false;repairBox.value=JSON.stringify(payload,null,2);
     try{await navigator.clipboard.writeText(repairBox.value);summary.textContent='诊断报告已复制，不含完整消息和状态正文。';}catch{summary.textContent='请从下方文本框手动复制诊断报告。';}
   });
-  button('预览基础格式修复',manager,()=>{
-    const id=identity(),list=messages(),floor=Number(floorSelect.value),original=list.find(m=>m.message_id===floor);
-    if(!original)throw new Error('请先选择 AI 楼层');
-    if(chatSettings().checkpoint)throw new Error('回档期间请通过快照恢复状态；格式修复需先撤销回档');
-    const repaired=proposeRepair(original.message);if(!repaired){summary.textContent='没有可自动修复的独立 &。请按诊断提示在酒馆编辑原始标签，再重新校验。';return;}
-    const candidate=list.map(m=>m===original?{...m,message:repaired}:m),config=settings();
-    const check=inspectFloor(candidate,schemaFor(config),chatSettings().start??1,floor);
-    if(check.excluded)throw new Error('该楼层不参与状态更新，请使用酒馆原生编辑');
-    if(check.error)throw new Error(`格式修复后仍未通过校验：${check.error.message}。请手动编辑原始标签。`);
-    const branch=getChatMessages(floor,{include_swipes:true})[0];
-    draft={id,floor,original:original.message,repaired,swipe:branch.swipe_id,schema:JSON.stringify(schemaFor(config)),start:chatSettings().start??1,history:JSON.stringify(list)};
-    repairBox.value=repaired;repairBox.hidden=false;applyRepair.disabled=false;summary.textContent='预览仅把文字中的独立 & 转为 &amp;。本层校验通过；点击应用会修改当前选中回复，并保留一次撤销备份。';
-  });
-  const applyRepair=button('应用预览修复',manager,async()=>{
-    if(hostGenerating())throw new Error('请等待本轮生成结束后再修复');
-    const plan=draft;if(!plan)throw new Error('请先预览修复');
-    const config=settings(),current=getChatMessages(plan.floor,{include_swipes:true})[0];
-    if(!matches(plan.id)||JSON.stringify(messages())!==plan.history||current?.swipe_id!==plan.swipe||JSON.stringify(schemaFor(config))!==plan.schema||(chatSettings().start??1)!==plan.start)throw new Error('聊天、分支或配置已变化，请重新预览');
-    if(typeof setChatMessages!=='function')throw new Error('酒馆助手缺少消息写入能力，请手动编辑原文');
-    updateVariablesWith(v=>({...v,[PROTO_KEY]:{...v[PROTO_KEY],repairBackup:{floor:plan.floor,swipe:plan.swipe,original:plan.original,repaired:plan.repaired}}}),{type:'chat'});
-    await setChatMessages([{message_id:plan.floor,message:plan.repaired}],{refresh:'affected'});
-    if(!matches(plan.id))return;
-    await refresh();syncFloors(plan.floor);
-  });applyRepair.disabled=true;
+  const recalculate=button('重新计算本层状态',manager,async()=>{
+    const floor=Number(floorSelect.value);
+    center.open('api');apiUi.sync();
+    try{await runExtraUpdate({repair:true,floor});apiUi.refreshUpdate();}
+    catch(error){apiUi.report(error.message);throw error;}
+  });recalculate.hidden=true;
   button('撤销最近一次格式修复',manager,async()=>{
-    if(hostGenerating())throw new Error('请等待本轮生成结束后再撤销');
+    if(extraJob||hostGenerating())throw new Error('请等待生成结束或取消状态更新');
+    if(chatSettings().checkpoint)throw new Error('恢复旧格式修复备份前请先撤销回档');
     const backup=chatSettings().repairBackup;if(!backup)throw new Error('本聊天没有格式修复备份');
     const id=identity(),current=getChatMessages(backup.floor,{include_swipes:true})[0];
     if(current?.swipe_id!==backup.swipe||current?.swipes?.[current.swipe_id]!==backup.repaired)throw new Error('目标回复已变化，为避免覆盖，请从备份手动恢复');
@@ -1224,7 +1207,7 @@ function startPrototype(defaultHtml) {
     updateVariablesWith(v=>{const next={...v[PROTO_KEY]};delete next.repairBackup;return {...v,[PROTO_KEY]:next};},{type:'chat'});
     await refresh();syncFloors(backup.floor);
   });
-  button('查看格式修复备份',manager,()=>{repairBox.value=chatSettings().repairBackup?.original??'没有备份';repairBox.hidden=false;draft=null;applyRepair.disabled=true;});
+  button('查看格式修复备份',manager,()=>{repairBox.value=chatSettings().repairBackup?.original??'没有备份';repairBox.hidden=false;});
   let restoreDraft=null,capturedKey='';
   const snapshotPanel=node('section'),snapshotSelect=node('select',undefined,snapshotPanel);
   snapshotSelect.setAttribute('aria-label','历史状态快照');
@@ -1508,22 +1491,28 @@ function startPrototype(defaultHtml) {
     })();
     try{await continuationWork;}finally{continuationWork=null;}
   }
-  async function runExtraUpdate(){
+  async function runExtraUpdate({repair=updateBinding().mode==='inline',floor}={}){
     if(extraJob)throw new Error('状态更新正在进行，请等待或取消');
     if(hostGenerating())throw new Error('请等待正文生成结束');
     generating=false; // Live helper readiness supersedes a stale core preview event.
-    await settleContinuation();
+    if(!repair)await settleContinuation();
     if(extraJob||hostGenerating())throw new Error('已有生成或状态更新正在进行，请稍后重试');
     const config=settings(),saved=chatSettings(),binding=updateBinding();
-    if(!active(config)||binding.mode!=='extra')throw new Error('请先启用本聊天的额外模型更新');
+    if(!active(config))throw new Error('请先配置并启用本聊天');
+    if(binding.mode!==(repair?'inline':'extra'))throw new Error('状态更新方式已变化，请重新打开对应入口');
     if(typeof generateRaw!=='function'||typeof stopGenerationById!=='function'||typeof setChatMessages!=='function')throw new Error('需要酒馆助手的独立生成、取消与消息写入接口');
     checkRequestPreset(binding);
     const profile=selectedStateModel(binding),id=identity(),epoch=chatEpoch,list=messages(),last=list.at(-1);
     if(!last||last.role!=='assistant'||last.message_id<(saved.start??1))throw new Error('请在最新一条 AI 回复后更新状态');
     if(saved.checkpoint&&last.message_id<=saved.checkpoint.cutoff)throw new Error('这条回复属于回档前保留的正文，请先发送新一轮，再更新新回复状态');
+    if(repair){
+      if(floor!==undefined&&floor!==last.message_id)throw new Error('仅支持重新计算最新 AI 回复；历史楼层请手动编辑原文');
+      const result=getResult(config,list);
+      if(!result.errors.some(error=>error.floor===last.message_id))throw new Error('最新回复状态已通过校验，无需修复');
+    }
     const story=variableStory(last.message);if(!story.trim())throw new Error('最新 AI 回复没有剧情正文，无法重新判断状态');
     const schema=schemaFor(config),previous=getResult(config,list.slice(0,-1));
-    if(previous.errors.length)throw new Error('此前楼层存在状态缺口，请先修复历史再更新最新回复');
+    if(previous.errors.length)throw new Error(`此前第 ${previous.errors[0].floor} 楼存在状态缺口，请先手动修复历史再更新最新回复`);
     const history=historyIdentity(list),schemaKey=JSON.stringify(schema),configKey=JSON.stringify(config),bindingKey=JSON.stringify(binding),profileKey=JSON.stringify(profile),requestContextKey=requestContextIdentity(binding);
     const token=crypto.randomUUID();let generationId=crypto.randomUUID();
     let rejectCancel,timer;
@@ -1607,13 +1596,13 @@ function startPrototype(defaultHtml) {
       if(historyIdentity(messages())===planned.history)return;
       const last=messages().at(-1);
       if(!last||last.role!=='assistant'||(!['swipe','regenerate','continue'].includes(planned.type)&&last.message_id<=planned.lastFloor))return;
-      runExtraUpdate().catch(e=>{if(matches(planned.id)&&chatEpoch===planned.epoch){fault(e,'自动状态更新失败');schedule();}});
+      runExtraUpdate({repair:false}).catch(e=>{if(matches(planned.id)&&chatEpoch===planned.epoch){fault(e,'自动状态更新失败');schedule();}});
     };
     autoTimer=setTimeout(()=>wait(0),0);
   }
   function schedule(){
     if(pending||closed||hostGenerating())return;pending=true;const id=identity();
-    queue=queue.then(async()=>{pending=false;if(!matches(id)){if(!closed)schedule();return;}if(!hostGenerating()){await refresh();if(manager.open&&!draft)syncFloors();}}).catch(e=>fault(e,'状态刷新失败'));
+    queue=queue.then(async()=>{pending=false;if(!matches(id)){if(!closed)schedule();return;}if(!hostGenerating()){await refresh();if(manager.open)syncFloors();}}).catch(e=>fault(e,'状态刷新失败'));
   }
   async function beforeGenerate(type,_options,dryRun){
     if(closed)return;
@@ -1678,7 +1667,7 @@ function startPrototype(defaultHtml) {
   runtimeRegistration={dispose};window.parent[runtimeSlot]=runtimeRegistration;startChatObserver();
   eventOn(tavern_events.CHAT_CHANGED,newChatId=>{
     if(shouldReloadForChatChange(loadedChatId,newChatId)){dispose();window.location.reload();return;}
-    chatEpoch++;cancelExtraUpdate();extraDiagnostics=[];apiUi.clear();uninject?.();uninject=null;stateWindow.close();view?.remove();renderKey='';noticeKey='';notice.hidden=true;runtimeLogs=[];draft=null;restoreDraft=null;capturedKey='';snapshotPreview.textContent='';report('设置随角色保存；修改后请预览并保存。');manager.close();generating=false;schedule();
+    chatEpoch++;cancelExtraUpdate();extraDiagnostics=[];apiUi.clear();uninject?.();uninject=null;stateWindow.close();view?.remove();renderKey='';noticeKey='';notice.hidden=true;runtimeLogs=[];restoreDraft=null;capturedKey='';snapshotPreview.textContent='';report('设置随角色保存；修改后请预览并保存。');manager.close();generating=false;schedule();
   });
   eventOn(tavern_events.GENERATION_AFTER_COMMANDS,beforeGenerate);
   eventOn(getButtonEvent('LoreState 设置'),()=>open().catch(e=>fault(e,'设置打开失败')));

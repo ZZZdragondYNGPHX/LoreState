@@ -179,7 +179,7 @@ export function applyState(previous,source,schema,floor=null,receipt=null){
   }
 }
 export function repairHint(message){
-  if(message.includes('&'))return '文字中的独立 & 应转义为 &amp;。可预览基础格式修复。';
+  if(message.includes('&'))return '文字中的独立 & 应转义为 &amp;。请手动编辑原文；随正文模式的最新失败回复也可重新计算本层状态。';
   if(message.includes('未知或重复栏目'))return '核对栏目名称与 HTML 配置；同一范围内每个栏目只能出现一次。';
   if(message.includes('冷档'))return '先用空 delta 唤醒实体，下一轮读取旧资料后再更新。';
   if(message.includes('full')||message.includes('完整'))return '首次使用 version="3" mode="full"；已初始化后使用 delta。新实体须填写全部实体栏目。';
@@ -210,14 +210,6 @@ export function inspectFloor(messages,schema,start,floor){
   const before=replayState(messages.filter(m=>m.message_id<floor),schema,start);
   const result=replayState(messages.filter(m=>m.message_id<=floor),schema,start);
   return {...result,floor,source:target.message,changes:stateChanges(before.state,result.state),error:result.errors.find(e=>e.floor===floor)??null,excluded:floor<start};
-}
-// Only repair unescaped ampersands in text nodes of one complete update block.
-// The caller must preview, validate and explicitly apply; never guess missing facts.
-export function proposeRepair(source){
-  const blocks=[...source.matchAll(new RegExp(TAG_PATTERN,'g'))];
-  if(blocks.length!==1)return null;
-  const block=blocks[0],fixed=block[0].replace(/>([^<]*)</g,(_,text)=>'>'+text.replace(/&(?!amp;|lt;|gt;|quot;|apos;|#\d+;|#x[\da-fA-F]+;)/g,'&amp;')+'<');
-  return fixed===block[0]?null:source.slice(0,block.index)+fixed+source.slice(block.index+block[0].length);
 }
 export function projectEntities(state,text=''){
   const entities=Object.values(state?.entities??{}),selected=new Set(),retrieved=[],deferred=[];
