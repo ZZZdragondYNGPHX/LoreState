@@ -103,6 +103,17 @@ await check('正文全宽、大窗口展开与关闭恢复焦点',async()=>{
   assert(window.open);assert(large.getBoundingClientRect().height>300);assert(large.getBoundingClientRect().width>=window.clientWidth-34);assert(large.getAttribute('sandbox')==='');
   assert(large.srcdoc===frame.srcdoc);button('关闭状态窗口',window).click();await tick();assert(!window.open);assert(document.activeElement===expand);
 });
+await check('宿主重建聊天楼层后状态栏自动恢复',async()=>{
+  const oldView=document.querySelector('.lorestate-prototype-view');
+  const chat=document.getElementById('chat');chat.replaceChildren();
+  for(const m of list){const el=document.createElement('div');el.className='mes';el.setAttribute('mesid',m.message_id);chat.append(el);}
+  await new Promise(resolve=>setTimeout(resolve,120));
+  const repaired=document.querySelector('.lorestate-prototype-view');
+  assert(!oldView.isConnected,'旧状态栏应随宿主楼层重建而脱离');
+  assert(repaired&&repaired!==oldView,'应在新楼层挂载新的状态栏');
+  assert(repaired.parentElement?.getAttribute('mesid')===String(list.findLast(m=>m.role==='assistant').message_id),'状态栏应挂到最新 AI 楼层');
+  assert(repaired.querySelector('iframe.lorestate-state-frame')?.srcdoc,'恢复后的状态栏 iframe 不应为空');
+});
 await check('完整快照回档、原子写入、保留正文与撤销',async()=>{
   variables.chat.unrelated={keep:true};
   list.push({message_id:3,role:'assistant',message:wrap('未来地点'),swipe_id:0});await emit('MESSAGE_UPDATED');
