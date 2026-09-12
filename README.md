@@ -2,7 +2,7 @@
 
 LoreState 为 SillyTavern 文字角色卡保存持续状态。AI 在正文后输出状态更新，脚本负责校验、合并、历史回放与状态栏展示。人物、国家、组织、地点、物品和事件可以使用各自的栏目；冷档按需读取。
 
-当前维护线是 **Tavern Helper 文字状态脚本的 `main` 开发分支**，当前稳定版为不可移动标签 **`0.10.4`**。历史 `0.10.3` RC 已从误建的版本号 branch 原样固化为同名兼容 tag；它不再接受提交。
+当前维护线是 **Tavern Helper 文字状态脚本的 `main` 开发分支**，当前稳定版为不可移动标签 **`0.10.6`**。历史 `0.10.3` RC 已从误建的版本号 branch 原样固化为同名兼容 tag；它不再接受提交。
 
 ## 从这里开始
 
@@ -19,17 +19,17 @@ LoreState 为 SillyTavern 文字角色卡保存持续状态。AI 在正文后输
 
 | 入口 | 性质 | 说明 |
 | --- | --- | --- |
-| [0.10.4 固定远程组件](prototype/dist/0.10.4/lorestate-script.json) | 当前稳定版 | 固定引用 `@0.10.4/artifact/bundle.js`；不随 `main` 变化 |
+| [0.10.6 固定远程组件](prototype/dist/0.10.6/lorestate-script.json) | 当前稳定版 | 固定引用 `@0.10.6/artifact/bundle.js`；不随 `main` 变化 |
 | [main 远程组件](prototype/dist/main/lorestate-script.json) | 开发版 | 固定引用 `@main/artifact/bundle.js`；会随 `main` 更新 |
 | [main 脚本代码](artifact/bundle.js) | 开发版生成物 | 由 `prototype/` 源码构建，不手工维护 |
 | `0.10.0`～`0.10.2` Git tags | 历史正式版 | 不可移动；固定源码与 bundle，尚无新制式版本目录 |
 | `0.10.3` Git tag | 历史兼容快照 | 由原 RC branch 同 SHA 固化；不可移动，不再继续开发 |
 | `prototype-v0.x` tags / `prototype/dist/v0.x` | 历史 | 仅用于旧版本复现 |
 
-稳定安装应优先使用 `0.10.4`；需要跟随开发时才使用 `@main`。固定版本入口不得引用 `@main`。
+稳定安装应优先使用 `0.10.6`；需要跟随开发时才使用 `@main`。固定版本入口不得引用 `@main`。
 
 ```js
-import 'https://cdn.jsdelivr.net/gh/ZZZdragondYNGPHX/LoreState@0.10.4/artifact/bundle.js';
+import 'https://testingcf.jsdelivr.net/gh/ZZZdragondYNGPHX/LoreState@0.10.6/artifact/bundle.js';
 ```
 
 已有 **0.9.0** 配置和聊天可以保留，只更新脚本代码后重新读取状态。跨更旧版本升级到模块结构仍须按 0.9.0 指南使用新配置、新聊天；当前没有增加旧协议自动迁移。
@@ -51,7 +51,7 @@ npm test
 `npm run build` 生成 `main` 开发入口。准备新的固定版本时，在创建 tag **之前**传入新的版本号，例如：
 
 ```sh
-npm run build -- 0.10.5
+npm run build -- 0.10.7
 ```
 
 它会生成对应的 `prototype/dist/<version>/`，其中 loader 固定引用同名 tag 的 `artifact/bundle.js`。正式版本只能用不可移动 tag 表示；禁止再创建裸版本号 branch 或 `release-*` 长期分支。

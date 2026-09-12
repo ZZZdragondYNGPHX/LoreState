@@ -1,3 +1,11 @@
+# 0.10.6 · 柏宝书与 Grid 主题布局修复 · 2026-09-12
+
+基底 `main / 74139f78b3e6a1636370d43e5c678e03d613f1fb`。用户授权验证后推送 main 与新固定标签 0.10.6。维护源、合成回归和完整 bundle 的真实宿主定向布局检查通过；消息重载前后内容相同。生成 main 与 0.10.6 的 loader/receipt 及 artifact/bundle.js，SHA-256 `ddab7eb115baae9879ed1830a750ce764eb822d53f71be6fd2f25a53021cc00c`。
+
+源码、自动化、真实宿主和未测边界见[0.10.6 发布说明](../docs/发布材料/0.10.6-楼层布局兼容.md)。发布以远端 main 与 0.10.6 指向本提交为准；旧标签不变，人工验收状态未设置。真实模型重新总结及手机实机仍为下一验收门。以下均为历史记录。
+
+---
+
 # 0.10.4 固定版本发布 · 2026-09-12
 
 `main` 从远端 `b1f801c` 构建固定版本目录后，以提交 `83b4fe98900fadc408e825daa0816ee51499de68` 同时固定 `main` 与不可移动标签 `0.10.4`。生成物为 `artifact/bundle.js`、`prototype/dist/0.10.4/lorestate-script.json` 和 `prototype/dist/0.10.4/receipt.json`；bundle SHA-256 为 `ecbc8894c29f7f888d2c56eb82c2299b6c634ebcf1ac654055d41c381f1b1b51`。`npm run check`、tag 环境版本守卫、105 项 Node 测试、11 项模板检查、59 项最终 bundle 模拟宿主检查及 `git diff --check` 通过；`cdn.jsdelivr.net/...@0.10.4/artifact/bundle.js` 实取哈希与发布产物一致。

@@ -115,6 +115,43 @@ await check('宿主重建聊天楼层后状态栏自动恢复',async()=>{
   assert(repaired.parentElement?.getAttribute('mesid')===String(list.findLast(m=>m.role==='assistant').message_id),'状态栏应挂到最新 AI 楼层');
   assert(repaired.querySelector('iframe.lorestate-state-frame')?.srcdoc,'恢复后的状态栏 iframe 不应为空');
 });
+await check('Grid 主题与长摘要共存：窄屏、摘要更新、宿主重建及作用域',async()=>{
+  const view=document.querySelector('.lorestate-prototype-view'),mes=view.parentElement;
+  const block=document.createElement('div');block.className='mes_block';
+  const summary=()=>{
+    const host=document.createElement('div');host.className='bbs-fp-host';
+    const root=host.attachShadow({mode:'open'}),text=document.createElement('div');
+    text.style.cssText='white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
+    text.textContent='合成楼层摘要'.repeat(120);root.append(text);return host;
+  };
+  const theme=document.createElement('style');
+  theme.textContent='.ls-grid-fixture{display:grid;grid-template-columns:auto auto auto 1fr}.ls-grid-fixture>.mes_block{display:contents}';
+  document.head.append(theme);mes.classList.add('ls-grid-fixture');mes.append(block);block.append(view);
+  const outside=document.createElement('div');outside.className='mes ls-grid-fixture';
+  const outsideHost=summary();outside.append(outsideHost);document.getElementById('chat').append(outside);
+  const layout=document.getElementById('lorestate-floor-layout');
+  try{
+    let host=summary();block.prepend(host);await new Promise(resolve=>setTimeout(resolve,120));
+    const fits=()=>{
+      const current=mes.querySelector('.lorestate-prototype-view');
+      assert(current.getBoundingClientRect().width<=mes.getBoundingClientRect().width+1,'状态栏被长摘要撑宽');
+      assert(current.querySelector('iframe').getBoundingClientRect().width<=mes.clientWidth+1,'iframe 超出楼层');
+      assert(mes.querySelectorAll('.lorestate-prototype-view').length===1,'状态栏重复');
+    };
+    mes.style.width='336px';layout.disabled=true;
+    assert(view.getBoundingClientRect().width>1000,'夹具必须复现未修复的网格撑宽');layout.disabled=false;
+    for(const width of [320,336,768,1200]){mes.style.width=width+'px';fits();}
+    assert(getComputedStyle(outsideHost).gridColumnStart==='auto','不应接管没有 LoreState 的楼层');
+    host.shadowRoot.firstChild.textContent+='连续英文'.repeat(200);fits();
+    // 模拟扩展晚到、重挂与整体重建；不需要再次注入兼容样式。
+    host.remove();host=summary();block.prepend(host);fits();
+    block.replaceChildren(summary());await new Promise(resolve=>setTimeout(resolve,160));fits();
+    mes.classList.remove('ls-grid-fixture');mes.style.width='336px';fits();
+  }finally{
+    layout.disabled=false;theme.remove();outside.remove();mes.classList.remove('ls-grid-fixture');mes.style.width='';
+    const current=mes.querySelector('.lorestate-prototype-view');if(current)mes.append(current);block.remove();
+  }
+});
 await check('未配置或暂停聊天时 DOM 变化不读取历史、不抛异常',async()=>{
   const saved=variables.script,enabled=variables.chat[PROTO_KEY].enabled,read=window.getChatMessages,errors=[];
   let reads=0;const onError=e=>{errors.push(e.message);e.preventDefault();};
@@ -167,7 +204,9 @@ await check('重新启动保留快照和回档基线，不重复归档',async()=
   const count=readSnapshots(variables.chat[PROTO_KEY]).length;
   variables.chat=JSON.parse(JSON.stringify(variables.chat));
   window.dispatchEvent(new Event('pagehide'));handlers.clear();
+  assert(!document.getElementById('lorestate-floor-layout'),'销毁时应移除楼层兼容样式');
   if(new URLSearchParams(location.search).has('bundle'))Function(await(await fetch('../artifact/bundle.js?v=0.8.0')).text())();else startPrototype(html);
+  assert(document.querySelectorAll('#lorestate-floor-layout').length===1,'重启后兼容样式只能有一份');
   await tick();await tick();
   assert(readSnapshots(variables.chat[PROTO_KEY]).length===count);
   assert(variables.chat[PROTO_KEY].current.state.shared.地点==='回档后的新地点');

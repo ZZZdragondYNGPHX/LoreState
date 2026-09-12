@@ -1,4 +1,4 @@
-# LoreState｜让纯文字状态栏记住上一轮 · 0.10.5 原型试用
+# LoreState｜让纯文字状态栏记住上一轮 · 0.10.6 原型试用
 
 做纯文字卡时，我遇到过一个问题：状态栏明明只变了一两项，AI 却要每轮把整张状态表重新写一遍。越写越长，也容易漏掉前面的内容。
 
@@ -18,14 +18,14 @@
 
 增量减少的是反复生成状态栏和携带历史标签的冗余；当前完整文字状态仍会进入上下文，实际 token 变化取决于卡和聊天内容。
 
-当前稳定脚本为不可移动标签 `0.10.5`；`main` 是持续更新的开发入口。稳定安装不会随 `main` 的后续提交变化。
+当前稳定脚本为不可移动标签 `0.10.6`；`main` 是持续更新的开发入口。稳定安装不会随 `main` 的后续提交变化。
 
 **安装**
 
 需要酒馆助手。可以导入下面的远程脚本 JSON，也可以在酒馆助手中新建角色脚本，填入：
 
 ```js
-import 'https://cdn.jsdelivr.net/gh/ZZZdragondYNGPHX/LoreState@0.10.5/artifact/bundle.js';
+import 'https://testingcf.jsdelivr.net/gh/ZZZdragondYNGPHX/LoreState@0.10.6/artifact/bundle.js';
 ```
 
 **main 分支（最新开发版）**
@@ -36,7 +36,7 @@ import 'https://cdn.jsdelivr.net/gh/ZZZdragondYNGPHX/LoreState@main/artifact/bun
 
 启用后从 **魔法棒 → LoreState · 原型设置** 打开。手动新建脚本的作者需要开启脚本数据随卡导出；导入版已配置。
 
-[远程版脚本 JSON · 0.10.5](https://github.com/ZZZdragondYNGPHX/LoreState/raw/refs/tags/0.10.5/prototype/dist/0.10.5/lorestate-script.json)
+[远程版脚本 JSON · 0.10.6](https://github.com/ZZZdragondYNGPHX/LoreState/raw/refs/tags/0.10.6/prototype/dist/0.10.6/lorestate-script.json)
 [main 远程版脚本 JSON · 持续更新](https://github.com/ZZZdragondYNGPHX/LoreState/raw/refs/heads/main/prototype/dist/main/lorestate-script.json)
 [main 分支脚本代码 · 持续更新](https://github.com/ZZZdragondYNGPHX/LoreState/blob/main/artifact/bundle.js)
 [项目仓库](https://github.com/ZZZdragondYNGPHX/LoreState)

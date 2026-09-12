@@ -56,6 +56,10 @@ export function startPrototype(defaultHtml) {
   let extraJob=null,autoUpdate=null,autoTimer=null,chatEpoch=0,continuationWork=null;
   const node=(tag,text,parent)=>{const el=doc.createElement(tag);if(text!==undefined)el.textContent=text;parent?.append(el);return el;};
   const stateWindow=createStateWindow(doc);
+  // Grid themes flatten .mes_block with display:contents. Keep the summary host
+  // from contributing its long, single-line preview to an auto-sized grid column.
+  const floorLayout=node('style','#chat .mes:has(.lorestate-prototype-view) > .mes_block > .bbs-fp-host,#chat .mes:has(.lorestate-prototype-view) > .bbs-fp-host{min-width:0;grid-column:1 / -1}',doc.head);
+  floorLayout.id='lorestate-floor-layout';
   const panel=node('section',undefined,doc.body);panel.id='lorestate-prototype-settings';panel.setAttribute('aria-label','LoreState 原型设置');
   const status=node('p','选择状态栏条目，再粘贴 HTML。保存后在下一次 AI 回复建立状态。',panel);status.setAttribute('role','status');
   const report=text=>{status.textContent=text;};
@@ -679,7 +683,7 @@ export function startPrototype(defaultHtml) {
   eventOn(getButtonEvent('LoreState 设置'),()=>open().catch(e=>fault(e,'设置打开失败')));
   function dispose(){
     if(closed)return;
-    closed=true;cancelExtraUpdate();apiUi.clear();menuObserver?.disconnect();chatObserver?.disconnect();chatObserver=null;if(chatRepairTimer){clearTimeout(chatRepairTimer);chatRepairTimer=null;}stateWindow.dispose();menu.remove();panel.remove();manager.remove();notice.remove();view?.remove();
+    closed=true;cancelExtraUpdate();apiUi.clear();menuObserver?.disconnect();chatObserver?.disconnect();chatObserver=null;if(chatRepairTimer){clearTimeout(chatRepairTimer);chatRepairTimer=null;}floorLayout.remove();stateWindow.dispose();menu.remove();panel.remove();manager.remove();notice.remove();view?.remove();
     const cleanup=uninject;uninject=null;cleanup?.();
     if(runtimeRegistration&&window.parent[runtimeSlot]===runtimeRegistration)delete window.parent[runtimeSlot];
   }
