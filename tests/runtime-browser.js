@@ -880,6 +880,25 @@ await check('跟随当前连接使用独立提示词，非 Chat Completion 不�
   const context=window.SillyTavern.getContext;window.SillyTavern.getContext=()=>({...context(),mainApi:'textgenerationwebui'});
   await open();await click('生成 HTML 草稿');assert(calls.length===1);assert(document.querySelector('.ls-style-dialog').textContent.includes('Chat Completion'));
 }));
+await check('首次选择非首条目，刷新与切页保留，独立绑定后可生成 HTML',()=>appearanceFixture(async({calls,open})=>{
+  const original=window.getWorldbook;
+  const valid=(await original('test-book'))[0];
+  window.getWorldbook=async()=>[{uid:91,name:'普通背景',content:'不是栏目'}, {...valid,uid:92}];
+  try{
+    variables.script[PROTO_KEY]={};await emit('CHAT_CHANGED');await click('LoreState');
+    const select=document.querySelector('[aria-label="状态栏条目"]');
+    select.value='92';select.onchange();
+    await click('刷新世界书列表');assert(select.value==='92','刷新丢失选择');
+    await click('打开外观制作台');assert(select.value==='92','制作台丢失选择');
+    await click('设置');assert(select.value==='92','返回设置丢失选择');
+    await click('确认绑定状态栏条目');
+    assert(variables.script[PROTO_KEY].setupBinding.uid===92);assert(!variables.script[PROTO_KEY].ready);
+    variables=JSON.parse(JSON.stringify(variables));await emit('CHAT_CHANGED');await click('LoreState');assert(select.value==='92','保存的绑定没有恢复');
+    await click('外观制作');await open();await click('生成 HTML 草稿');assert(calls.length===1,'未使用所选栏目生成');
+    window.getWorldbook=async()=>[{uid:91,name:'普通背景',content:'不是栏目'}];
+    await click('设置');assert(select.value==='','条目删除后静默回退首项');
+  }finally{window.getWorldbook=original;await emit('CHAT_CHANGED');}
+}));
 await check('首次启用前可以保存 API 绑定并制作草稿，应用仍要求正常初始化',()=>appearanceFixture(async({calls,open})=>{
   variables.script[PROTO_KEY]={};await click('API 预设');input('状态模型来源','current');await click('保存状态更新绑定');
   assert(variables.chat[PROTO_KEY].variableUpdate.source==='current');await click('外观制作');await open();await click('生成 HTML 草稿');assert(calls.length===1);assert(!variables.script[PROTO_KEY].ready);

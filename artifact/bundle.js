@@ -1933,24 +1933,38 @@ function startPrototype(defaultHtml) {
   const bookLabel=node('label','角色／聊天绑定的世界书',panel),books=node('select',undefined,bookLabel);books.setAttribute('aria-label','世界书');
   const entryLabel=node('label','状态栏条目',panel),entries=node('select',undefined,entryLabel);entries.setAttribute('aria-label','状态栏条目');
   const rules=node('textarea',undefined,panel);rules.readOnly=true;rules.setAttribute('aria-label','条目内容');
-  let loadedEntries=[];
+  let loadedEntries=[],loadedBook='',selectionIdentity=null,entryLoad=0;
   const selectedEntry=()=>loadedEntries.find(e=>String(e.uid)===entries.value);
   async function loadEntries(){
-    const id=identity(),name=books.value;if(!name){loadedEntries=[];entries.replaceChildren();rules.value='';return;}
-    const data=await getWorldbook(name);if(!matches(id)||books.value!==name)return;
-    loadedEntries=data;entries.replaceChildren();for(const e of data){const opt=node('option',e.name||`条目 ${e.uid}`,entries);opt.value=String(e.uid);}
-    const saved=settings();if(saved.book===name&&data.some(e=>e.uid===saved.uid))entries.value=String(saved.uid);
+    const id=identity(),name=books.value,request=++entryLoad;
+    const saved=settings().setupBinding??settings();
+    const wanted=selectionIdentity&&matches(selectionIdentity)&&loadedBook===name?entries.value:saved.book===name&&saved.uid!=null?String(saved.uid):null;
+    loadedEntries=[];loadedBook='';entries.replaceChildren();rules.value='';
+    if(!name)return;
+    const data=await getWorldbook(name);if(!matches(id)||books.value!==name||request!==entryLoad)return;
+    loadedEntries=data;loadedBook=name;selectionIdentity=id;
+    for(const e of data){const opt=node('option',e.name||`条目 ${e.uid}`,entries);opt.value=String(e.uid);}
+    if(wanted!==null)entries.value=data.some(e=>String(e.uid)===wanted)?wanted:'';
     rules.value=selectedEntry()?.content??'';
+    if(wanted&&!selectedEntry())report('原先选择的条目已不存在，请重新选择并确认绑定。');
   }
   async function loadBooks(){
+    const saved=settings().setupBinding??settings();
+    const wanted=selectionIdentity&&matches(selectionIdentity)?books.value:saved.book;
     const bound=getCharWorldbookNames('current'),chatBook=getChatWorldbookName('current');
     const names=[...new Set([bound.primary,...bound.additional,chatBook].filter(Boolean))];books.replaceChildren();
     for(const name of names)node('option',name,books).value=name;
-    if(names.includes(settings().book))books.value=settings().book;
+    if(wanted)books.value=names.includes(wanted)?wanted:'';
     await loadEntries();if(!names.length)report('当前角色没有绑定世界书。请先在酒馆绑定状态栏世界书，再刷新列表。');
   }
   books.onchange=()=>loadEntries().catch(e=>fault(e,'世界书读取失败'));entries.onchange=()=>{rules.value=selectedEntry()?.content??'';};
   button('刷新世界书列表',panel,loadBooks);
+  button('确认绑定状态栏条目',panel,()=>{
+    const entry=selectedEntry(),schema=dataSchemaFromEntry(entry),previous=settings();
+    if(previous.ready&&previous.schema&&!sameSchema(schema,previous.schema))throw new Error('已有配置不支持改变栏目，以免影响其他聊天。新栏目请使用独立角色脚本。');
+    writeConfig({...previous,setupBinding:{book:books.value,uid:entry.uid}});
+    report(`已确认绑定“${entry.name||entry.uid}”。可以打开外观制作台生成 HTML；保存 HTML 并启用后才会更新活动配置。`);
+  });
   const maker=node('textarea',undefined,panel);maker.readOnly=true;maker.setAttribute('aria-label','HTML 制作提示词');maker.placeholder='点击下方按钮生成提示词，可复制给网页 AI';
   button('生成并复制 HTML 制作提示词',panel,async()=>{
     if(!selectedEntry()?.content?.trim())throw new Error('请先选择有内容的状态栏条目');
@@ -2063,7 +2077,7 @@ function startPrototype(defaultHtml) {
     if(previous.ready&&previous.schema&&!sameSchema(schema,previous.schema))throw new Error('已有配置不支持改变栏目，以免影响其他聊天。新栏目请使用独立角色脚本。');
     const activePresetId=previous.activePresetId??'default';
     const activeName=listPresets(previous).find(p=>p.id===activePresetId)?.name??'默认样式';
-    const config=savePreset({...previous,version:4,ready:true,book,uid:entry.uid,entryName:entry.name,html:html.value,schema,activePresetId},activeName,html.value,activePresetId);
+    const config=savePreset({...previous,version:4,ready:true,book,uid:entry.uid,setupBinding:{book,uid:entry.uid},entryName:entry.name,html:html.value,schema,activePresetId},activeName,html.value,activePresetId);
     updateVariablesWith(v=>({...v,[PROTO_KEY]:config}),{type:'script'});
     const old=chatSettings();updateVariablesWith(v=>({...v,[PROTO_KEY]:{...old,enabled:true,start:old.start??(previous.ready?1:Math.max(1,messages().length))}}),{type:'chat'});
     // Separate display and prompt copy filters; neither edits the source message.
@@ -2123,7 +2137,7 @@ function startPrototype(defaultHtml) {
     readDiagnostics:()=>extraDiagnostics,clearDiagnostics:()=>{extraDiagnostics=[];}});
   const ruleDisclosure=node('details');node('summary','查看条目原文',ruleDisclosure);ruleDisclosure.append(rules);
   const makerDisclosure=node('details');node('summary','制作提示词与下一轮提示预览',makerDisclosure);makerDisclosure.append(a('生成并复制 HTML 制作提示词'),a('查看下一轮状态提示'),maker);
-  const appearanceSchema=()=>settings().schema??dataSchemaFromEntry();
+  const appearanceSchema=()=>settings().ready?settings().schema:dataSchemaFromEntry();
   const appearanceInput=options=>({...options,schema:appearanceSchema(),html:options.mode==='new'?'':html.value});
   function appearanceSummary(){
     const config=settings(),preset=listPresets(config).find(p=>p.id===config.activePresetId);
@@ -2160,7 +2174,7 @@ function startPrototype(defaultHtml) {
   const openAppearance=button('打开外观制作台',panel,async()=>{center.select('appearance');await loadSettings();appearanceUi.sync();});
   const center=createControlCenter({doc,manager,panel,summary,status,floorSelect,details,diagnostics,repairBox,tailPreview,snapshotPanel,apiPanel:apiUi.panel,loadApi:apiUi.sync,actions,loadSettings,
     appearancePanel:appearanceUi.panel,loadAppearance:async()=>{await loadSettings();appearanceUi.sync();},settingsGroups:[
-    {title:'世界书与规则',hint:'选择状态栏目；首次启用使用外观制作台里的 HTML 草稿。初始化与日常换肤分开。',items:[bookLabel,entryLabel,[a('刷新世界书列表'),openAppearance],ruleDisclosure,[a('保存 HTML 并启用本聊天')]]},
+    {title:'世界书与规则',hint:'选择条目后确认绑定，再到外观制作台生成 HTML，最后保存并启用。',items:[bookLabel,entryLabel,[a('刷新世界书列表'),a('确认绑定状态栏条目'),openAppearance],ruleDisclosure,[a('保存 HTML 并启用本聊天')]]},
     {title:'初始档案与字段约束',hint:'可选：给新聊天一份确定的初始状态，并用文字规则约束字段。保存的默认值用于新聊天，已有聊天保留自己的配置。',items:[authorHelp,initialLabel,[a('生成初始档案模板')],constraintLabel,[a('预览作者配置')],policyPreview,[a('保存为新聊天默认配置'),a('应用到尚未开始的本聊天')]]},
     {title:'聊天维护',hint:'重新计算本聊天状态，或暂停本聊天的状态更新。',items:[[a('重新读取当前聊天状态'),a('暂停本聊天')]]},
   ]});
@@ -2461,7 +2475,7 @@ function startPrototype(defaultHtml) {
   runtimeRegistration={dispose};window.parent[runtimeSlot]=runtimeRegistration;startChatObserver();
   eventOn(tavern_events.CHAT_CHANGED,newChatId=>{
     if(shouldReloadForChatChange(loadedChatId,newChatId)){dispose();window.location.reload();return;}
-    ejsGeneration=null;chatEpoch++;appearanceUi?.close();clearTailPreview();cancelExtraUpdate();extraDiagnostics=[];apiUi.clear();uninject?.();uninject=null;stateWindow.close();view?.remove();renderKey='';noticeKey='';notice.hidden=true;runtimeLogs=[];restoreDraft=null;capturedKey='';snapshotPreview.textContent='';report('设置随角色保存；修改后请预览并保存。');manager.close();generating=false;schedule();
+    ejsGeneration=null;selectionIdentity=null;entryLoad++;chatEpoch++;appearanceUi?.close();clearTailPreview();cancelExtraUpdate();extraDiagnostics=[];apiUi.clear();uninject?.();uninject=null;stateWindow.close();view?.remove();renderKey='';noticeKey='';notice.hidden=true;runtimeLogs=[];restoreDraft=null;capturedKey='';snapshotPreview.textContent='';report('设置随角色保存；修改后请预览并保存。');manager.close();generating=false;schedule();
   });
   eventOn(tavern_events.GENERATION_AFTER_COMMANDS,beforeGenerate);
   eventOn(getButtonEvent('LoreState 设置'),()=>open().catch(e=>fault(e,'设置打开失败')));
