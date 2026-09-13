@@ -301,13 +301,45 @@ ${purpose==='narration'?'仅输出剧情正文，不输出状态标签。':'输�
 }
 function playPrompt(rules,schema,result,text=''){return preparePrompt(rules,schema,result,text).content;}
 function authorPrompt(rules){
-  const parsed=parseModules(rules);if(!parsed)throw new Error('请使用以【LoreState模块 v1】开头的模块条目，不转换旧条目');checkSchema(moduleShape(parsed));
-  return `请根据以下状态栏条目制作 LoreState 的完整静态 HTML，只返回 HTML。
-公共栏目直接用 data-lore-field="栏目名"。需要逐个实体展示时，使用一个 data-lore-entity 容器（覆盖人物、国家、组织、地点、物品、事件等所有类别），容器内的 data-lore-field 属于实体栏目；脚本按在场实体自动复制容器，不需要写循环。公共和实体可以只选其一，也可以并用，无需选择脚本模式。
-实体容器内可用独立文字节点 data-lore-name、data-lore-id、data-lore-identity、data-lore-type、data-lore-confirmed 展示名称、编号、识别信息、类别、最后确认时间。每个绑定节点只放文字，不包含标题或其他绑定节点。实体容器只能有一个，不能嵌套。栏目名以文字或下划线开头，其后仅文字、数字、下划线或连字符，每类最多 32 个；栏目值为普通文字。
-示例：<section><h3>地点</h3><p data-lore-field="地点"></p></section><article data-lore-entity><h3 data-lore-name></h3><p data-lore-field="近况"></p></article>
-使用 CSS 和 details/summary，适应窄屏和长文字。CSS 放 style 中，不使用 JavaScript、事件属性、外部资源、表单、iframe、SVG 或网络请求。不使用双花括号占位符，也不要求 AI 每轮重写 HTML。内容由脚本以 textContent 填入。
-模块条目存在时，栏目以声明为准，必须展示所有公共与各类栏目。在唯一实体容器内用 <section data-lore-module="人物"> 包住人物专用栏目，其他模块同理；这些分区不可嵌套。脚本只保留当前类别分区。不可增删或改名声明栏目。\n状态栏条目：\n${rules}`;
+  const parsed=parseModules(rules);
+  if(!parsed)throw new Error('请使用以【LoreState模块 v1】开头的模块条目，不转换旧条目');
+  const schema=moduleShape(parsed);checkSchema(schema);
+  const modules=Object.entries(schema.modules),firstType=modules[0][0],fence=String.fromCharCode(96).repeat(3);
+  const sections=modules.slice(0,2).map(([type,fields])=>[
+    '<section><h2>'+type+' · <span data-lore-count="'+type+'"></span></h2>',
+    '<p data-lore-empty="'+type+'">暂无记录</p>',
+    '<article data-lore-each="'+type+'"><h3 data-lore-name></h3><p data-lore-field="'+fields[0]+'"></p></article></section>'
+  ].join('\n')).join('\n');
+  const example=['<!doctype html>','<html lang="zh-CN" data-lore-template="2">','<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">',
+    '<style>body{margin:0;padding:16px;font:1rem/1.6 system-ui;background:#162129;color:#eef1eb}main{display:grid;gap:12px;grid-template-columns:minmax(0,1fr)}section{min-width:0}p{overflow-wrap:anywhere}@media(min-width:640px){main{grid-template-columns:repeat(2,minmax(0,1fr))}}</style></head>',
+    '<body><header><h1>旅途状态</h1>'+(schema.shared.length?'<p data-lore-shared="'+schema.shared[0]+'"></p>':'')+'</header>',
+    '<main>',sections,'</main>',
+    '<details><summary>封存档案 · <span data-lore-count="'+firstType+'" data-lore-presence="cold"></span></summary><p>最多显示 5 项；完整档案请看历史与诊断。</p><article data-lore-each="'+firstType+'" data-lore-presence="cold" data-lore-limit="5"><b data-lore-name></b><p data-lore-identity></p></article></details>',
+    '</body></html>'
+  ].join('\n');
+  return [
+    '请根据下列数据 schema 制作 LoreState Template API v2 的完整静态 HTML，只返回 HTML。',
+    '目标是分区清晰的游戏 HUD：人物、物品、事件、世界状态各有布局；可使用 CSS Grid/Flex、渐变、伪元素、静态 CSS 变量和原生 details/summary。',
+    '数据 schema 由模块条目决定，HTML 只读展示，不决定存储字段。可以省略整类、只显示部分字段、重复同一字段、让同类型在多个区域出现。',
+    '公共字段：'+(schema.shared.join('、')||'无'),
+    '分类型实体字段：\n'+modules.map(([type,fields])=>type+'：'+fields.join('、')).join('\n'),
+    '必须使用 <html data-lore-template="2">。这是 Template API v2，不是 XML version 4；XML 仍为 version="3"，config.version 仍为 4。旧模板属性不接受，也不自动转换。',
+    '查询：data-lore-each="精确模块名" 复制本节点；多个区域独立渲染，each/count/empty 不得嵌套。data-lore-presence="active|cold|all" 默认 active，不推断未知在场状态。',
+    '可选 data-lore-select-id="作者已知的精确实体编号" 同时适用于 each/count/empty；不靠名称或第一项猜玩家。data-lore-limit="5" 仅用于 each，值为 1–100 的十进制整数，不带前导零。保持输入遍历顺序，不排序；limit 不表示最近任务。',
+    '字段：each 内用 data-lore-field="该类型已声明字段"；公共值始终用 data-lore-shared="公共字段"，可放在 each 内外。同名公共/实体字段互不替代。未知模块和字段报错，省略字段合法。',
+    '元数据：each 内使用 data-lore-name、data-lore-id、data-lore-type、data-lore-identity、data-lore-confirmed；属性值必须为空，分别显示名称、编号、类别、识别信息、最后确认时间。',
+    '全局：data-lore-count="模块名" 和 data-lore-empty="模块名" 只在 each 外；count 显示完整查询数量，不受其他 each 的 limit 影响；empty 是仅在同条件查询为空时显示的静态容器，内部不放查询或绑定。',
+    '每个输出绑定是正文中的独立文字节点：无子元素，不同时放多个输出属性，不与 each/empty 同节点。标题、装饰和布局放在绑定外围。不要使用双花括号或未定义的 data-lore-* 属性。',
+    '所有动态值由 textContent 填入。缺失/null 显示“尚未记录”，空字符串保留；有限数字和布尔值显示文字；对象、数组和非有限数字显示“数据格式异常”。',
+    'HTML 只制作一次，状态模型每轮仍只产 XML v3，不生成或重写 HTML。模板与存档分离，换肤不修改 full/delta、快照、回档或聊天数据。',
+    '只用静态 HTML/CSS。禁止 JavaScript、事件属性、外链/网络资源、图片、字体下载、SVG、iframe、表单、contenteditable 和作者 http-equiv。META 仅用 UTF-8 charset 与标准 viewport。',
+    'CSS 使用浏览器 CSSOM 校验；只开放常见排版/颜色/渐变/变换函数与 media/supports/keyframes/container/layer。禁止 @import、url()、image-set()、attr()、CSS 转义和未知函数；图案/符号用字面 Unicode。空 sandbox 和固定 CSP 由 renderer 管理。',
+    '重复区域禁止 id 以及 for/ARIA IDREF 引用，改用 class 和静态 aria-label；静态区域 id 唯一、引用目标必须存在。',
+    '模板最多 100000 字符、5000 源元素、32 个 each；总克隆最多 500，最终最多 30000 元素/2000000 字符。冷档建议分类型 limit，并显示 count 与完整档案入口说明。',
+    '320px 单列，宽屏再分栏；网格子项 min-width:0，长 CJK/无空格文字可折行。支持 200% 字体缩放、可见焦点、44px 折叠热区和 reduced-motion。内容在 iframe 内滚动，另有宿主展开窗口；本期不做数值条、任意属性绑定、tabs 或自动测高。',
+    '以下可运行示例只选择部分字段，允许按风格重新布局：',fence+'html',example,fence,'状态栏条目：',rules
+  ].join('\n');
+
 }
 
 const ENTITY_DELETE_TOTAL_LIMIT=500;
@@ -401,73 +433,258 @@ function installEntityDeleteProtocol(hooks){
   });
 }
 
-function templateSchema(html,rules,Parser=DOMParser){
-  const parsed=parseModules(rules);
-  if(!parsed)throw new Error('请使用以【LoreState模块 v1】开头的模块条目，不转换旧条目');
-  return validateTemplateSchema(html,moduleShape(parsed),Parser);
-}
-function validateTemplateSchema(html,declared,Parser=DOMParser){
-  const {schema,doc}=inspectTemplate(html,Parser);
-  if(!declared)return schema;
-  checkSchema(declared);
-  for(const scope of ['shared','entity'])if(schema[scope].length!==declared[scope].length||schema[scope].some(f=>!declared[scope].includes(f)))throw new Error('HTML 栏目必须与模块声明一致');
-  for(const group of doc.querySelectorAll('[data-lore-module]')){
-    const type=group.getAttribute('data-lore-module');
-    if(!Object.hasOwn(declared.modules??{},type))throw new Error('HTML 使用了未声明模块：'+type);
-    for(const el of group.querySelectorAll('[data-lore-field]'))if(!declared.modules[type].includes(el.getAttribute('data-lore-field')))throw new Error('HTML 模块包含其他类别栏目：'+type);
-  }
-  for(const [type,fields] of Object.entries(declared.modules??{})){
-    const visible=[...doc.querySelectorAll('[data-lore-entity] [data-lore-field]')].filter(el=>!el.closest('[data-lore-module]')||el.closest('[data-lore-module]').getAttribute('data-lore-module')===type).map(el=>el.getAttribute('data-lore-field'));
-    if(fields.some(f=>!visible.includes(f))||visible.some(f=>!fields.includes(f)))throw new Error('HTML 必须完整且仅展示所属模块栏目：'+type);
-  }
-  return declared;
-}
-// Declarative HTML/CSS only. Opaque sandbox + CSP contain styles and prevent code/network access.
-function inspectTemplate(html, Parser=DOMParser) {
-  if(typeof html!=='string'||!html.trim()||html.length>100000)throw new Error('HTML 必须为非空文字，最多 100000 字符');
-  const doc=new Parser().parseFromString(html,'text/html');
-  if(doc.querySelector('[data-lore-person]'))throw new Error('v3 模板请使用 data-lore-entity；不迁移旧人物模板');
-  const allowed=new Set('HTML HEAD BODY TITLE META STYLE DIV SECTION ARTICLE HEADER FOOTER MAIN ASIDE NAV P SPAN H1 H2 H3 H4 H5 H6 STRONG EM B I SMALL BR HR UL OL LI DL DT DD TABLE THEAD TBODY TFOOT TR TH TD CAPTION DETAILS SUMMARY LABEL BLOCKQUOTE PRE CODE'.split(' '));
-  for(const el of doc.querySelectorAll('*')){
-    if(!allowed.has(el.tagName))throw new Error(`HTML 原型不接受 ${el.tagName}，请使用静态 HTML/CSS`);
-    for(const attr of el.attributes)if(/^on/i.test(attr.name)||['src','href','srcdoc','action','formaction','http-equiv','contenteditable'].includes(attr.name.toLowerCase()))throw new Error(`HTML 不接受属性 ${attr.name}`);
-  }
-  const regions=[...doc.querySelectorAll('[data-lore-entity]')];
-  const forbidden=['HTML','HEAD','BODY','STYLE','META','TITLE'];
-  if(regions.length>1||regions.some(el=>forbidden.includes(el.tagName)))throw new Error('只允许一个正文实体容器');
-  for(const group of doc.querySelectorAll('[data-lore-module]'))if(!group.closest('[data-lore-entity]')||group.hasAttribute('data-lore-entity')||group.hasAttribute('data-lore-field')||group.querySelector('[data-lore-module]')||!group.getAttribute('data-lore-module')?.trim())throw new Error('模块分区必须在实体容器内，不可嵌套或同时绑定栏目');
-  const bindings='[data-lore-field],[data-lore-name],[data-lore-id],[data-lore-identity],[data-lore-type],[data-lore-confirmed]';
-  for(const el of doc.querySelectorAll(bindings)){
-    if(forbidden.includes(el.tagName)||el.hasAttribute('data-lore-entity')||el.querySelector(bindings)||['data-lore-field','data-lore-name','data-lore-id','data-lore-identity','data-lore-type','data-lore-confirmed'].filter(a=>el.hasAttribute(a)).length!==1)throw new Error('绑定须位于独立文字节点');
-    if(!el.hasAttribute('data-lore-field')&&!el.closest('[data-lore-entity]'))throw new Error('实体信息必须放在实体容器中');
-  }
-  const nodes=[...doc.querySelectorAll('[data-lore-field]')];
-  const schema={shared:[],entity:[]};
-  for(const el of nodes){const fields=schema[el.closest('[data-lore-entity]')?'entity':'shared'],name=el.getAttribute('data-lore-field');if(!fields.includes(name))fields.push(name);}
-  checkSchema(schema);
-  if(regions.length&&!schema.entity.length)throw new Error('实体容器至少需要一个实体栏目');
-  return {doc,schema};
-}
-function renderTemplate(html,state,Parser=DOMParser){
-  const {doc}=inspectTemplate(html,Parser);
-  function fill(root,fields){for(const el of root.querySelectorAll('[data-lore-field]')){const field=el.getAttribute('data-lore-field');el.textContent=Object.hasOwn(fields??{},field)?fields[field]:'尚未记录';}}
-  const region=doc.querySelector('[data-lore-entity]');
-  if(region){
-    for(const entity of Object.values(state?.entities??{}).filter(p=>p.presence==='active')){
-      const clone=region.cloneNode(true);
-      for(const group of clone.querySelectorAll('[data-lore-module]'))if(group.getAttribute('data-lore-module')!==entity.type)group.remove();
-      fill(clone,entity.fields);
-      for(const key of ['name','id','identity','type','confirmed'])for(const el of clone.querySelectorAll(`[data-lore-${key}]`))el.textContent=entity[key]??'未知';
-      // Repeated HTML must not create duplicate document IDs.
-      clone.removeAttribute('id');for(const el of clone.querySelectorAll('[id]'))el.removeAttribute('id');
-      region.before(clone);
+
+// Template API v2 is presentation only: never derive or persist a data schema here.
+const TEMPLATE_V2_LIMITS = Object.freeze({
+  sourceChars: 100000, sourceElements: 5000, repeaters: 32,
+  clones: 500, outputElements: 30000, outputChars: 2000000,
+});
+const V2_QUERY = ['data-lore-each', 'data-lore-count', 'data-lore-empty'];
+const V2_META = ['name', 'id', 'type', 'identity', 'confirmed'];
+const V2_OUTPUT = ['data-lore-field', 'data-lore-shared', 'data-lore-count', ...V2_META.map(k => 'data-lore-' + k)];
+const V2_MODIFIERS = ['data-lore-presence', 'data-lore-select-id', 'data-lore-limit'];
+const V2_KNOWN = new Set(['data-lore-template', ...V2_QUERY, ...V2_OUTPUT, ...V2_MODIFIERS]);
+const V2_QUERY_SELECTOR = V2_QUERY.map(a => '[' + a + ']').join(',');
+const V2_OUTPUT_SELECTOR = V2_OUTPUT.map(a => '[' + a + ']').join(',');
+const V2_IDREFS = new Set('for headers aria-activedescendant aria-controls aria-describedby aria-details aria-errormessage aria-flowto aria-labelledby aria-owns'.split(' '));
+const V2_TAGS = new Set('HTML HEAD BODY TITLE META STYLE DIV SECTION ARTICLE HEADER FOOTER MAIN ASIDE NAV P SPAN H1 H2 H3 H4 H5 H6 STRONG EM B I U S SMALL SUB SUP MARK BR WBR HR UL OL LI DL DT DD TABLE THEAD TBODY TFOOT TR TH TD CAPTION DETAILS SUMMARY LABEL BLOCKQUOTE PRE CODE KBD SAMP ABBR TIME FIGURE FIGCAPTION'.split(' '));
+const V2_GLOBAL_ATTRS = new Set('id class style title lang dir role tabindex'.split(' '));
+const V2_NATIVE_ATTRS = {META: ['charset', 'name', 'content'], DETAILS: ['open', 'name'], OL: ['start', 'reversed', 'type'], LI: ['value'], TH: ['colspan', 'rowspan', 'scope', 'headers', 'abbr'], TD: ['colspan', 'rowspan', 'headers'], LABEL: ['for'], TIME: ['datetime']};
+const V2_CSS_FUNCTIONS = new Set(('var calc min max clamp minmax repeat fit-content rgb rgba hsl hsla hwb lab lch oklab oklch color color-mix light-dark ' +
+  'linear-gradient radial-gradient conic-gradient repeating-linear-gradient repeating-radial-gradient repeating-conic-gradient ' +
+  'translate translatex translatey translatez translate3d scale scalex scaley scalez scale3d rotate rotatex rotatey rotatez rotate3d skew skewx skewy matrix matrix3d perspective cubic-bezier steps ' +
+  'not is where has nth-child nth-last-child nth-of-type nth-last-of-type lang dir selector counter counters').split(' '));
+const V2_UPGRADE = '模板 API 已升级，请重新制作 v2 模板；旧 HTML 与聊天存档保留。需要完整 <html data-lore-template="2"> 文档';
+
+// Use a bounded lexical gate AND the browser's parsed CSSOM. Escapes, unknown
+// functions/at-rules and resource-bearing syntax are rejected, not normalized open.
+function v2CssTokens(source) {
+  if (/[\\\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(source)) throw new Error('CSS 不接受转义或控制字符，请使用字面 Unicode');
+  let text = '', stack = [];
+  for (let i = 0; i < source.length; i++) {
+    const ch = source[i];
+    if (ch === '/' && source[i + 1] === '*') {
+      const end = source.indexOf('*/', i + 2);
+      if (end < 0) throw new Error('CSS 注释未闭合');
+      i = end + 1; continue;
     }
-    region.remove();
+    if (ch === '"' || ch === "'") {
+      const end = source.indexOf(ch, i + 1);
+      if (end < 0 || /[\r\n]/.test(source.slice(i + 1, end))) throw new Error('CSS 字符串未闭合');
+      text += '""'; i = end; continue;
+    }
+    if ('({['.includes(ch)) stack.push(ch);
+    if (')}]'.includes(ch) && stack.pop() !== {')': '(', '}': '{', ']': '['}[ch]) throw new Error('CSS 括号未配对');
+    text += ch;
   }
-  for(const el of doc.querySelectorAll('[data-lore-field]'))if(!el.closest('[data-lore-entity]')){const field=el.getAttribute('data-lore-field');el.textContent=Object.hasOwn(state?.shared??{},field)?state.shared[field]:'尚未记录';}
-  const csp=doc.createElement('meta');csp.httpEquiv='Content-Security-Policy';csp.content="default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'";doc.head.prepend(csp);
-  const base=doc.createElement('style');base.textContent='*{box-sizing:border-box}body{margin:0;padding:12px;color:#e5dfd3;background:#242421;font:14px/1.6 system-ui} [data-lore-field]{white-space:pre-wrap;overflow-wrap:anywhere}';doc.head.insertBefore(base,csp.nextSibling);
-  return '<!doctype html>'+doc.documentElement.outerHTML;
+  if (stack.length) throw new Error('CSS 括号未闭合');
+  for (const match of text.matchAll(/@([-\w]+)/g)) {
+    if (!['media', 'supports', 'keyframes', 'container', 'layer'].includes(match[1].toLowerCase())) throw new Error('CSS 不接受 @' + match[1]);
+  }
+  for (const match of text.matchAll(/([-a-zA-Z][\w-]*)\s*\(/g)) {
+    const name = match[1].toLowerCase();
+    if (text[match.index - 1] !== '@' && !['and', 'or'].includes(name) && !V2_CSS_FUNCTIONS.has(name)) throw new Error('CSS 不接受函数 ' + name + '()');
+  }
+  if (/(?:^|[;{])\s*(?:behavior|-moz-binding)\s*:/i.test(text)) throw new Error('CSS 包含执行型属性');
+  return text;
+}
+function v2CheckDeclarations(style) {
+  for (const property of style) {
+    if (['behavior', '-moz-binding'].includes(property.toLowerCase())) throw new Error('CSS 包含执行型属性');
+    v2CssTokens(style.getPropertyValue(property));
+  }
+}
+function v2CheckCss(element) {
+  if (element.hasAttribute('style')) {
+    const tokens = v2CssTokens(element.getAttribute('style'));
+    if (/[{}@]/.test(tokens)) throw new Error('style 属性只接受 CSS 声明');
+    v2CheckDeclarations(element.style);
+  }
+  if (element.tagName !== 'STYLE') return;
+  const tokens = v2CssTokens(element.textContent);
+  if (typeof CSSStyleSheet !== 'function') throw new Error('当前浏览器缺少 CSSStyleSheet 校验接口');
+  const sheet = new CSSStyleSheet(); sheet.replaceSync(element.textContent);
+  if (tokens.trim() && !sheet.cssRules.length) throw new Error('CSS 未解析为受支持的规则');
+  function visit(rules) {
+    for (const rule of rules) {
+      const grouping = ['CSSContainerRule', 'CSSLayerBlockRule', 'CSSLayerStatementRule'].includes(rule.constructor.name);
+      if (![1, 4, 7, 8, 12].includes(rule.type) && !grouping) throw new Error('CSS 规则未开放：' + rule.constructor.name);
+      if (rule.style) v2CheckDeclarations(rule.style);
+      if (rule.cssRules) visit(rule.cssRules);
+    }
+  }
+  visit(sheet.cssRules);
+}
+function v2CheckElement(element) {
+  if (!V2_TAGS.has(element.tagName)) throw new Error('静态模板不接受 ' + element.tagName);
+  for (const attr of element.attributes) {
+    const name = attr.name.toLowerCase();
+    if (name.startsWith('data-lore-') && !V2_KNOWN.has(name)) throw new Error('未知模板属性：' + name);
+    if (/^on/i.test(name) || !(V2_GLOBAL_ATTRS.has(name) || /^aria-[a-z-]+$/.test(name) || /^data-[a-z0-9_-]+$/.test(name) || V2_NATIVE_ATTRS[element.tagName]?.includes(name))) throw new Error('静态模板不接受属性 ' + name);
+    if (name === 'tabindex' && !['0', '-1'].includes(attr.value)) throw new Error('tabindex 只接受 0 或 -1');
+  }
+  if (element.tagName === 'META') {
+    const attrs = [...element.attributes].map(a => a.name);
+    const charset = attrs.length === 1 && element.getAttribute('charset')?.toLowerCase() === 'utf-8';
+    const viewport = attrs.length === 2 && element.getAttribute('name')?.toLowerCase() === 'viewport' && /^\s*width\s*=\s*device-width\s*,\s*initial-scale\s*=\s*1(?:\.0)?\s*$/i.test(element.getAttribute('content') ?? '');
+    if (!charset && !viewport) throw new Error('META 只接受 UTF-8 charset 或标准 viewport');
+  }
+  v2CheckCss(element);
+}
+
+
+function v2ReadQuery(node, attribute, region) {
+  const type = node.getAttribute(attribute), presence = node.getAttribute('data-lore-presence') ?? 'active';
+  if (!type || type !== type.trim()) throw new Error('区域 ' + region + ' 需要精确模块名称');
+  if (!['active', 'cold', 'all'].includes(presence)) throw new Error('区域 ' + region + ' presence 只接受 active/cold/all');
+  const selectId = node.getAttribute('data-lore-select-id');
+  if (selectId !== null && (!selectId || selectId !== selectId.trim())) throw new Error('区域 ' + region + ' select-id 需要非空精确编号');
+  const rawLimit = node.getAttribute('data-lore-limit');
+  if (rawLimit !== null && (attribute !== 'data-lore-each' || !/^(?:[1-9]\d?|100)$/.test(rawLimit))) throw new Error('区域 ' + region + ' limit 仅用于 each，值为 1–100 的十进制整数');
+  return {node, kind: attribute.slice(10), region, type, presence, selectId, limit: rawLimit === null ? undefined : Number(rawLimit)};
+}
+function v2PublicPlan(queries, bindings) {
+  const freeze = items => Object.freeze(items.map(item => Object.freeze(item)));
+  return Object.freeze({apiVersion: 2,
+    queries: freeze(queries.map(({node, ...query}) => query)),
+    bindings: freeze(bindings.map(({node, ...binding}) => binding)), diagnostics: Object.freeze([])});
+}
+function inspectTemplateV2(html, Parser = DOMParser) {
+  if (typeof html !== 'string' || !html.trim() || html.length > TEMPLATE_V2_LIMITS.sourceChars) throw new Error('HTML 必须为非空文字，最多 100000 字符');
+  const complete = /^(?:\s*<!doctype\s+html\s*>)?\s*<html(?:\s|>)/i.test(html.trim()) && /<\/html>\s*$/i.test(html);
+  const doc = new Parser().parseFromString(html, 'text/html');
+  if (!complete || doc.documentElement.getAttribute('data-lore-template') !== '2' || doc.querySelector('[data-lore-person],[data-lore-entity],[data-lore-module]')) throw new Error(V2_UPGRADE);
+  const elements = [], walker = doc.createTreeWalker(doc.documentElement, 1);
+  for (let el = doc.documentElement; el; el = walker.nextNode()) {
+    if (elements.length >= TEMPLATE_V2_LIMITS.sourceElements) throw new Error('模板原始 DOM 超过 5000 元素预算');
+    elements.push(el); v2CheckElement(el);
+  }
+  const queries = [], bindings = [], ids = new Map();
+  let repeaters = 0;
+  for (const el of elements) {
+    if (el.hasAttribute('data-lore-template') && el !== doc.documentElement) throw new Error('版本标识仅属于 HTML 根节点');
+    const attrs = V2_QUERY.filter(a => el.hasAttribute(a));
+    if (attrs.length > 1) throw new Error('一个节点只接受一种查询');
+    if (V2_MODIFIERS.some(a => el.hasAttribute(a)) && !attrs.length) throw new Error('查询修饰符须与 each/count/empty 同节点');
+    if (attrs.length) {
+      if (!doc.body.contains(el) || el === doc.body || ['STYLE', 'META', 'TITLE'].includes(el.tagName)) throw new Error('查询必须位于正文区域');
+      if (el.parentElement?.closest(V2_QUERY_SELECTOR)) throw new Error('each/count/empty 查询不得嵌套');
+      const query = v2ReadQuery(el, attrs[0], queries.length + 1); queries.push(query);
+      if (query.kind === 'each' && ++repeaters > TEMPLATE_V2_LIMITS.repeaters) throw new Error('模板最多 32 个 each 区域');
+      if (query.kind === 'empty' && [...el.querySelectorAll('*')].some(child => [...child.attributes].some(a => a.name.startsWith('data-lore-')))) throw new Error('empty 只接受静态内容，不嵌套查询或绑定');
+    }
+    if (el.hasAttribute('id')) {
+      const id = el.getAttribute('id');
+      if (!id || /\s/.test(id) || ids.has(id)) throw new Error('静态 id 须非空且唯一：' + id);
+      ids.set(id, el);
+    }
+    if (el.closest('[data-lore-each]') && [...el.attributes].some(a => a.name === 'id' || V2_IDREFS.has(a.name))) throw new Error('重复区域不接受 id 或 IDREF 引用，请使用 class 与静态 aria-label');
+  }
+  const eachByNode = new Map(queries.filter(q => q.kind === 'each').map(q => [q.node, q]));
+  for (const el of elements) {
+    for (const attr of el.attributes) if (V2_IDREFS.has(attr.name)) {
+      const refs = attr.value.trim().split(/\s+/);
+      if (refs.some(id => !ids.has(id) || ids.get(id).closest('[data-lore-each]'))) throw new Error('静态引用需要已存在的非重复区 id：' + attr.name);
+    }
+    const attrs = V2_OUTPUT.filter(a => el.hasAttribute(a));
+    if (!attrs.length) continue;
+    if (attrs.length !== 1 || !doc.body.contains(el) || el === doc.body || ['STYLE', 'META', 'TITLE'].includes(el.tagName) || el.children.length || el.hasAttribute('data-lore-each') || el.hasAttribute('data-lore-empty')) throw new Error('绑定须位于正文独立文字节点，不混用输出属性');
+    const attribute = attrs[0], field = el.getAttribute(attribute), owner = eachByNode.get(el.closest('[data-lore-each]'));
+    if (attribute !== 'data-lore-shared' && attribute !== 'data-lore-count' && !owner) throw new Error('实体绑定须位于 each 区域：' + attribute);
+    if (V2_META.some(key => attribute === 'data-lore-' + key) && field !== '') throw new Error('元数据绑定属性值必须为空：' + attribute);
+    bindings.push({node: el, attribute, field, region: owner?.region ?? null, type: owner?.type ?? null});
+  }
+  return {doc, queries, bindings, elementCount: elements.length, plan: v2PublicPlan(queries, bindings)};
+}
+function v2ValidateInspection(inspection, dataSchema) {
+  checkSchema(dataSchema);
+  for (const query of inspection.queries) {
+    if (!Object.hasOwn(dataSchema.modules ?? {}, query.type)) throw new Error('区域 ' + query.region + ' 使用未声明模块：' + query.type);
+  }
+  for (const binding of inspection.bindings) {
+    if (binding.attribute === 'data-lore-field' && !dataSchema.modules[binding.type].includes(binding.field)) throw new Error('区域 ' + binding.region + ' / ' + binding.type + ' 未声明字段：' + binding.field);
+    if (binding.attribute === 'data-lore-shared' && !dataSchema.shared.includes(binding.field)) throw new Error('区域 ' + (binding.region ?? '公共') + ' / shared 未声明字段：' + binding.field);
+  }
+  return inspection;
+}
+function validateTemplateV2(html, dataSchema, Parser = DOMParser) {
+  return v2ValidateInspection(inspectTemplateV2(html, Parser), dataSchema).plan;
+}
+
+// Queries preserve input traversal order; neither limit nor the first match means "player" or "latest".
+function selectEntities(state, {type, presence = 'active', selectId = null, limit} = {}) {
+  if (typeof type !== 'string' || !type || !['active', 'cold', 'all'].includes(presence)) throw new Error('实体查询需要精确类别与有效 presence');
+  if (selectId !== null && (typeof selectId !== 'string' || !selectId)) throw new Error('实体查询需要非空 selectId');
+  if (limit !== undefined && (!Number.isInteger(limit) || limit < 1 || limit > 100)) throw new Error('实体查询 limit 为 1–100');
+  const selected = Object.values(state?.entities ?? {}).filter(entity => entity && entity.type === type &&
+    (presence === 'all' ? ['active', 'cold'].includes(entity.presence) : entity.presence === presence) &&
+    (selectId === null || entity.id === selectId));
+  return limit === undefined ? selected : selected.slice(0, limit);
+}
+function v2DisplayValue(value, diagnostics, context) {
+  if (value === null || value === undefined) return '尚未记录';
+  if (typeof value === 'string' || typeof value === 'boolean' || (typeof value === 'number' && Number.isFinite(value))) return String(value);
+  diagnostics.push(Object.freeze({code: 'invalid-value', ...context}));
+  return '数据格式异常';
+}
+function v2EscapedLength(text, available) {
+  let length = text.length;
+  if (length > available) throw new Error('模板输出超过 2000000 字符预算');
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === '&') length += 4;
+    else if (text[i] === '<' || text[i] === '>') length += 3;
+    else if (text[i] === '\u00a0') length += 5;
+    if (length > available) throw new Error('模板输出超过 2000000 字符预算');
+  }
+  return length;
+}
+function renderTemplateV2(html, state, dataSchema, Parser = DOMParser, diagnostics = []) {
+  const {doc, queries, bindings, elementCount} = v2ValidateInspection(inspectTemplateV2(html, Parser), dataSchema);
+  const csp = doc.createElement('meta'); csp.httpEquiv = 'Content-Security-Policy';
+  csp.content = "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'";
+  const base = doc.createElement('style');
+  base.textContent = '*{box-sizing:border-box;min-width:0}html,body{margin:0;max-width:100%}body{padding:12px;color:#e5dfd3;background:#242421;font:14px/1.6 system-ui}p,span,dd,li,h1,h2,h3,h4,h5,h6{overflow-wrap:anywhere}' + V2_OUTPUT_SELECTOR + '{white-space:pre-wrap;overflow-wrap:anywhere}';
+  doc.head.prepend(csp, base); // Author CSS follows the minimal readable baseline.
+  let outputElements = elementCount + 2, outputChars = '<!doctype html>'.length + doc.documentElement.outerHTML.length, clones = 0;
+  function setText(node, value, context) {
+    const text = v2DisplayValue(value, diagnostics, context), previous = node.innerHTML.length;
+    const length = v2EscapedLength(text, TEMPLATE_V2_LIMITS.outputChars - outputChars + previous);
+    outputChars += length - previous; node.textContent = text;
+  }
+  function bind(node, entity, region) {
+    const attribute = V2_OUTPUT.find(a => node.hasAttribute(a)), field = node.getAttribute(attribute);
+    const value = attribute === 'data-lore-shared' ? state?.shared?.[field] : attribute === 'data-lore-field' ? entity?.fields?.[field] : entity?.[attribute.slice(10)];
+    setText(node, value, {region, field: field || attribute.slice(10), entityId: entity?.id ?? null});
+  }
+  // Use the scopes recorded before cloning; removing each attributes never reclassifies fields.
+  for (const binding of bindings) if (binding.region === null && binding.attribute === 'data-lore-shared') bind(binding.node, null, null);
+  for (const query of queries.filter(q => q.kind !== 'each')) {
+    const matches = selectEntities(state, query);
+    if (query.kind === 'count') setText(query.node, matches.length, {region: query.region, field: 'count'});
+    else if (matches.length) {
+      outputChars -= query.node.outerHTML.length; outputElements -= query.node.querySelectorAll('*').length + 1;
+      query.node.remove();
+    }
+  }
+  for (const query of queries.filter(q => q.kind === 'each')) {
+    const selected = selectEntities(state, query), source = query.node, size = source.querySelectorAll('*').length + 1;
+    if (clones + selected.length > TEMPLATE_V2_LIMITS.clones) throw new Error('模板总克隆超过 500 预算，请缩小查询或设置 limit');
+    outputChars -= source.outerHTML.length; outputElements -= size;
+    for (const attr of ['data-lore-each', ...V2_MODIFIERS]) source.removeAttribute(attr);
+    const sourceChars = source.outerHTML.length, fragment = doc.createDocumentFragment();
+    for (const entity of selected) {
+      if (outputElements + size > TEMPLATE_V2_LIMITS.outputElements) throw new Error('模板输出超过 30000 元素预算');
+      if (outputChars + sourceChars > TEMPLATE_V2_LIMITS.outputChars) throw new Error('模板输出超过 2000000 字符预算');
+      outputElements += size; outputChars += sourceChars; clones++;
+      const clone = source.cloneNode(true);
+      for (const node of clone.querySelectorAll(V2_OUTPUT_SELECTOR)) bind(node, entity, query.region);
+      fragment.append(clone);
+    }
+    source.replaceWith(fragment);
+  }
+  const result = '<!doctype html>' + doc.documentElement.outerHTML;
+  if (result.length > TEMPLATE_V2_LIMITS.outputChars) throw new Error('模板输出超过 2000000 字符预算');
+  return result;
 }
 
 // Presets contain presentation only; rules and chat state are never copied here.
@@ -1334,17 +1551,25 @@ function startPrototype(defaultHtml) {
     try{await navigator.clipboard.writeText(maker.value);report('制作提示词已复制。交给网页 AI 后，将 HTML 粘贴到下方。');}
     catch{report('制作提示词已生成，请从文本框手动复制。');}
   });
-  const htmlLabel=node('label','粘贴网页 AI 生成的 HTML',panel),html=node('textarea',undefined,htmlLabel);html.setAttribute('aria-label','HTML 模板');html.rows=9;html.value=settings().html||defaultHtml;
+  const htmlLabel=node('label','粘贴网页 AI 生成的 HTML',panel),html=node('textarea',undefined,htmlLabel);html.setAttribute('aria-label','HTML 模板');html.rows=9;html.value=settings().html??defaultHtml;
   const presetLabel=node('label','HTML 预设（随卡保存）',panel),presetSelect=node('select',undefined,presetLabel);presetSelect.setAttribute('aria-label','HTML 预设');
   const nameLabel=node('label','预设名称',panel),presetName=node('input',undefined,nameLabel);presetName.maxLength=40;presetName.setAttribute('aria-label','预设名称');
+  const presetSourceDisclosure=node('details',undefined,panel);node('summary','查看所选预设原文（含旧模板，可复制备份）',presetSourceDisclosure);
+  const presetSource=node('textarea',undefined,presetSourceDisclosure);presetSource.readOnly=true;presetSource.setAttribute('aria-label','所选预设 HTML 原文');
+  function syncPresetSource(){const preset=listPresets(settings()).find(p=>p.id===presetSelect.value);presetName.value=preset?.name??'我的样式';presetSource.value=preset?.html??'';}
   function syncPresets(id=settings().activePresetId??'default'){
     presetSelect.replaceChildren();for(const p of listPresets(settings())){const option=node('option',p.name,presetSelect);option.value=p.id;}
     if(listPresets(settings()).some(p=>p.id===id))presetSelect.value=id;
-    presetName.value=listPresets(settings()).find(p=>p.id===presetSelect.value)?.name??'我的样式';
+    syncPresetSource();
   }
   function writeConfig(config){updateVariablesWith(v=>({...v,[PROTO_KEY]:config}),{type:'script'});}
-  function validateSkin(source){const config=settings(),parsed={schema:validateTemplateSchema(source,config.schema??null)};if(config.ready&&schemaFor(config)&&!sameSchema(parsed.schema,schemaFor(config)))throw new Error('预设的栏目必须与当前配置一致；可以调整顺序和外观，不能增删栏目');return parsed;}
-  presetSelect.onchange=()=>{presetName.value=listPresets(settings()).find(p=>p.id===presetSelect.value)?.name??'';};
+  function dataSchemaFromEntry(entry=selectedEntry()){
+    const parsed=parseModules(entry?.content??'');
+    if(!parsed)throw new Error('请使用以【LoreState模块 v1】开头的模块条目，不转换旧条目');
+    return moduleShape(parsed);
+  }
+  function validateSkin(source){return validateTemplateV2(source,settings().schema??dataSchemaFromEntry());}
+  presetSelect.onchange=syncPresetSource;
   button('另存为新预设',panel,()=>{validateSkin(html.value);const id=crypto.randomUUID();writeConfig(savePreset(settings(),presetName.value,html.value,id));syncPresets(id);report('已保存新预设。点击“应用所选预设”才会切换当前样式。');});
   button('覆盖所选预设',panel,async()=>{validateSkin(html.value);const config=settings(),id=presetSelect.value;if(!id)throw new Error('请先保存一份预设');let next=savePreset(config,presetName.value,html.value,id);if(id===(config.activePresetId??'default'))next={...next,html:html.value};writeConfig(next);syncPresets(id);renderKey='';await refresh();report('预设已更新，聊天状态保留。');});
   button('应用所选预设',panel,async()=>{const config=settings(),preset=listPresets(config).find(p=>p.id===presetSelect.value);if(!preset)throw new Error('请先保存一份预设');validateSkin(preset.html);if(!config.ready)throw new Error('请先点击“保存 HTML 并启用本聊天”完成初始配置');writeConfig({...config,presets:listPresets(config),html:preset.html,activePresetId:preset.id});html.value=preset.html;renderKey='';await refresh();report(`已应用“${preset.name}”，聊天状态保留。`);});
@@ -1356,12 +1581,25 @@ function startPrototype(defaultHtml) {
     if(pending&&list.some(m=>m.message_id===pending.floor&&m.message!==pending.original))throw new Error('续写尚未整理完成，请重新读取当前聊天状态；原分支变化时需先恢复原分支');
     return replaySnapshots(list,schemaFor(config),chatSettings().start??1,chatSettings().checkpoint);
   };
+  function templatePreviewState(schema){
+    const example=fields=>Object.fromEntries(fields.map(f=>[f,f+'的示例文字'])),entities={},modules=Object.entries(schema.modules??{});
+    modules.forEach(([type,fields],index)=>{
+      const activeCount=modules.length>1&&index===modules.length-1?0:index===0?2:1;
+      for(let n=0;n<=activeCount;n++){
+        const id='X'+index+'_'+n,presence=n===activeCount?'cold':'active';
+        entities[id]={id,type,name:type+'示例 '+(n+1),identity:'合成预览 · 非聊天档案',presence,confirmed:null,fields:example(fields)};
+      }
+    });
+    return {shared:example(schema.shared),entities};
+  }
   button('预览 HTML（不保存）',panel,()=>{
-    const schema=templateSchema(html.value,selectedEntry()?.content??''),config=settings();
-    const example=fields=>Object.fromEntries(fields.map(f=>[f,`${f}的示例文字`]));
-    const state=schemaFor(config)&&sameSchema(schema,schemaFor(config))?getResult(config).state:null;
-    preview.srcdoc=renderTemplate(html.value,state??{shared:example(schema.shared),entities:schema.modules?Object.fromEntries(Object.entries(schema.modules).map(([type,fields],i)=>['X'+i,{id:'X'+i,name:type+'示例',identity:'实体识别信息',type,confirmed:null,presence:'active',fields:example(fields)}])):schema.entity.length?{P01:{id:'P01',name:'示例实体',identity:'实体识别信息',type:'通用',confirmed:null,presence:'active',fields:example(schema.entity)}}:{}});
-    report(`公共栏目：${schema.shared.join('、')||'无'}；实体栏目：${schema.entity.join('、')||'无'}。预览未保存。`);
+    const schema=dataSchemaFromEntry(),config=settings();
+    const current=schemaFor(config)&&sameSchema(schema,schemaFor(config))?getResult(config).state:null;
+    const diagnostics=[];
+    try{preview.srcdoc=renderTemplateV2(html.value,current??templatePreviewState(schema),schema,DOMParser,diagnostics);}
+    catch(error){preview.removeAttribute('srcdoc');throw error;}
+    preview.title=current?'LoreState 当前聊天状态预览':'LoreState 合成预览（非聊天状态）';
+    report((current?'当前聊天状态预览':'合成预览（非聊天状态；含冷热档与空区）')+'；模板仅选择展示字段，完整数据 schema 保留。预览未保存。'+(diagnostics.length?' 数据格式异常：'+diagnostics.length+' 处。':''));
   });
   const regexId='lorestate-text-prototype-tags-v1';
   async function installRegex(){
@@ -1375,7 +1613,7 @@ function startPrototype(defaultHtml) {
     if(!entry?.content?.trim())throw new Error('请先选中状态栏条目');
     if(!ctx().getCurrentChatId()||!messages().length)throw new Error('请先打开角色聊天');
     if(ctx().chatMetadata?.wishnote_v1?.enabled||ctx().chatMetadata?.lorestate_v1?.enabled)throw new Error('本聊天启用了旧扩展状态，请先停用旧版或使用新测试聊天');
-    const schema=templateSchema(html.value,entry.content),previous=settings();
+    const schema=dataSchemaFromEntry(entry),previous=settings();validateTemplateV2(html.value,schema);
     if(previous.ready&&previous.schema&&!sameSchema(schema,previous.schema))throw new Error('已有配置不支持改变栏目，以免影响其他聊天。新栏目请使用独立角色脚本。');
     const activePresetId=previous.activePresetId??'default';
     const activeName=listPresets(previous).find(p=>p.id===activePresetId)?.name??'默认样式';
@@ -1442,7 +1680,7 @@ function startPrototype(defaultHtml) {
   const center=createControlCenter({doc,manager,panel,summary,status,floorSelect,details,diagnostics,repairBox,tailPreview,snapshotPanel,apiPanel:apiUi.panel,loadApi:apiUi.sync,actions,loadSettings,settingsGroups:[
     {title:'世界书与规则',hint:'选择随卡世界书里的状态栏条目；它决定 LoreState 记录哪些栏目。',items:[bookLabel,entryLabel,[a('刷新世界书列表')],ruleDisclosure]},
     {title:'外观模板',hint:'粘贴网页 AI 生成的 HTML，预览确认后保存并启用本聊天。',items:[htmlLabel,[a('预览 HTML（不保存）'),a('保存 HTML 并启用本聊天')],preview,makerDisclosure]},
-    {title:'外观预设',hint:'同一套栏目可以保存多份外观，随角色卡保存，随时切换。',items:[presetLabel,nameLabel,[a('应用所选预设'),a('另存为新预设'),a('覆盖所选预设'),a('删除所选预设')]]},
+    {title:'外观预设',hint:'同一数据 schema 可自由分区、隐藏或重复展示字段；换肤保留存档。',items:[presetLabel,nameLabel,[a('应用所选预设'),a('另存为新预设'),a('覆盖所选预设'),a('删除所选预设')],presetSourceDisclosure]},
     {title:'初始档案与字段约束',hint:'可选：给新聊天一份确定的初始状态，并用文字规则约束字段。',items:[authorHelp,initialLabel,[a('生成初始档案模板')],constraintLabel,[a('预览作者配置')],policyPreview,[a('保存为新聊天默认配置'),a('应用到尚未开始的本聊天')]]},
     {title:'聊天维护',hint:'重新计算本聊天状态，或暂停本聊天的状态更新。',items:[[a('重新读取当前聊天状态'),a('暂停本聊天')]]},
   ]});
@@ -1458,6 +1696,7 @@ function startPrototype(defaultHtml) {
   function viewIsIntact(last,result){
     if(!view?.isConnected||view.parentElement!==expectedViewParent(last))return false;
     if(!result.state)return true;
+    if(view.dataset.templateState==='error'&&view.querySelector('.lorestate-template-error'))return true;
     const frame=view.querySelector('iframe.lorestate-state-frame');
     return !!frame?.isConnected;
   }
@@ -1481,22 +1720,26 @@ function startPrototype(defaultHtml) {
   function paint(result,list){
     const last=list.findLast(m=>m.role==='assistant');if(!last)return;
     const message=doc.querySelector(`#chat .mes[mesid="${last.message_id}"]`);if(!message)return;
-    const config=settings(),key=JSON.stringify([last.message_id,result.state,result.errors,config.html,chatSettings().checkpoint?.id]);
+    const config=settings(),key=JSON.stringify([last.message_id,result.state,result.errors,config.html,schemaFor(config),chatSettings().checkpoint?.id]);
     if(viewIsIntact(last,result)&&renderKey===key)return;
     view?.remove();view=node('section',undefined,message.querySelector('.mes_block')||message);view.className='lorestate-prototype-view';view.style.cssText='display:block;position:relative;width:100%;max-width:100%;min-width:0;box-sizing:border-box;flex:1 0 100%;grid-column:1 / -1;clear:both;margin:12px 0;padding:12px 0;border-top:1px solid #778063';
     node('small',result.errors.length?`状态存在缺口：${result.errors.length} 轮失败，最早第 ${result.errors[0].floor} 楼；最后连续正常楼层 ${result.lastGoodFloor??'尚无'}。后续有效更新已应用，需核对剧情。`:result.state?'LoreState · 当前状态':'LoreState · 等待首次完整状态',view);
     if(chatSettings().checkpoint)node('p',`状态已回档至第 ${chatSettings().checkpoint.floor} 楼快照；旧正文保留。`,view);
     button('查看历史与诊断',view,()=>openManager(result.errors[0]?.floor));
-    if(result.state){
-      const source=renderTemplate(config.html,result.state);
-      const expand=button('展开状态窗口',view,()=>stateWindow.open(source));expand.style.cssText='display:inline-block;min-height:44px;margin:8px 8px 12px 0;padding:8px 12px;cursor:pointer';
-      const frame=createStateFrame(doc,'LoreState 当前状态');frame.srcdoc=source;view.append(frame);stateWindow.update(source);
-      const cold=Object.values(result.state.entities).filter(p=>p.presence==='cold');
-      if(cold.length){const archive=node('details',undefined,view);node('summary',`本地冷档 · ${cold.length} 个实体`,archive);
-        for(const p of cold){const item=node('details',undefined,archive);node('summary',`${p.type} · ${p.name} · ${p.id} · ${p.identity} · 最后确认：${p.confirmed??'剧情时间未知'} · 更新楼层：${p.confirmedFloor??'未知'}`,item);
-          let loaded=false;item.ontoggle=()=>{if(item.open&&!loaded){for(const f of entityFields(schemaFor(config),p.type)){node('h4',f,item);const text=node('p',p.fields[f]??'尚未记录',item);text.style.cssText='white-space:pre-wrap;overflow-wrap:anywhere';}loaded=true;}};
-        }
-      }
+    const logTemplate=message=>{runtimeLogs.push({time:new Date().toISOString(),stage:'模板渲染',message});runtimeLogs=runtimeLogs.slice(-30);};
+    try{
+      if(result.state){
+        const diagnostics=[],source=renderTemplateV2(config.html,result.state,schemaFor(config),DOMParser,diagnostics);
+        const expand=button('展开状态窗口',view,()=>stateWindow.open(source));expand.style.cssText='display:inline-block;min-height:44px;margin:8px 8px 12px 0;padding:8px 12px;cursor:pointer';
+        const frame=createStateFrame(doc,'LoreState 当前状态');frame.srcdoc=source;view.append(frame);stateWindow.update(source);
+        if(diagnostics.length){const text='模板发现 '+diagnostics.length+' 处数据格式异常，已显示文字提示；存档保持原样。';node('p',text,view).setAttribute('role','status');logTemplate(text);}
+      }else validateTemplateV2(config.html,schemaFor(config));
+    }catch(error){
+      stateWindow.close();view.dataset.templateState='error';
+      const message='状态栏模板待修正：'+String(error?.message??error);
+      const warning=node('p',message,view);warning.className='lorestate-template-error';warning.setAttribute('role','alert');warning.style.overflowWrap='anywhere';
+      button('打开模板设置',view,()=>center.open('settings'));
+      logTemplate(message);report(message+' 状态更新与历史记录继续运行。');
     }
     if(result.errors.length)button('重新读取状态',view,()=>refresh());renderKey=key;
   }
@@ -1743,5 +1986,5 @@ function startPrototype(defaultHtml) {
 }
 
 installEntityDeleteProtocol({getApplyState:()=>applyState,setApplyState:value=>{applyState=value;},getPreparePrompt:()=>preparePrompt,setPreparePrompt:value=>{preparePrompt=value;}});
-startPrototype("<!doctype html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\"><style>\nbody{background:#f4eedf;color:#36372c;font-family:system-ui;padding:18px}\nheader{border-bottom:1px solid #b9ad8b;padding-bottom:8px;margin-bottom:14px}\nsmall{letter-spacing:.14em;color:#72785e}h2{margin:3px 0;font-size:20px}\nmain{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}\nsection{border-left:3px solid #9caa82;padding-left:10px}h3{margin:0;font-size:12px;color:#70765c}p{margin:4px 0}\n</style></head><body><header><small>TRAVEL NOTES</small><h2>旅途手记</h2></header><main>\n<section><h3>当前位置</h3><p data-lore-field=\"地点\"></p></section>\n<section><h3>当前时间</h3><p data-lore-field=\"时间\"></p></section>\n<article data-lore-entity><h3 data-lore-name></h3><small data-lore-type></small><small data-lore-confirmed></small><section><h3>概况</h3><p data-lore-field=\"概况\"></p></section>\n<section><h3>当前状态</h3><p data-lore-field=\"当前状态\"></p></section>\n</article></main></body></html>\n");
+startPrototype("<!doctype html>\n<html lang=\"zh-CN\" data-lore-template=\"2\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>LoreState · 旅途档案</title>\n<style>\n:root{\n  --ls-bg:#11191f;--ls-surface:#1a252d;--ls-card:#202e37;--ls-line:#34444e;\n  --ls-text:#eaf0ef;--ls-muted:#b1c0c8;--ls-accent:#e1c185;--ls-mint:#a6d9c0;\n  --ls-radius:14px;--ls-gap:16px;\n}\nbody{margin:0;padding:clamp(12px,2.5vw,24px);background:var(--ls-bg);color:var(--ls-text);font-family:system-ui,sans-serif;font-size:.875rem;line-height:1.6}\nh1,h2,h3,p,dl,dd{margin:0}h1{font-size:1.5rem;font-weight:650;letter-spacing:.08em}\nh2{font-size:1rem;font-weight:650}h3{font-size:1rem;font-weight:600}\np,dd,span,b,small,h1,h2,h3{overflow-wrap:anywhere}small{font-size:.75rem}\n.brand{display:flex;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:20px}\n.brand-mark{display:grid;place-items:center;flex:0 0 42px;height:42px;border:1px solid var(--ls-accent);border-radius:12px;color:var(--ls-accent);font-weight:700;letter-spacing:.06em}\n.eyebrow{color:var(--ls-accent);font-size:.6875rem;letter-spacing:.2em;font-weight:600}\n.edition{margin-left:auto;padding:4px 10px;border:1px solid var(--ls-line);border-radius:999px;color:var(--ls-muted);font-size:.75rem}\n.context{display:grid;grid-template-columns:minmax(0,1fr);gap:12px;padding:16px 18px;border:1px solid var(--ls-line);border-radius:var(--ls-radius);background:linear-gradient(115deg,#283740,#1a252d);margin-bottom:var(--ls-gap)}\n.context dt{font-size:.75rem;color:var(--ls-muted);margin-bottom:3px}.context dd{font-size:1rem;color:var(--ls-text)}\n.context .place dd{font-size:1.125rem;font-weight:600}\n.dashboard{display:grid;grid-template-columns:minmax(0,1fr);gap:var(--ls-gap)}\n.panel{padding:16px;border:1px solid var(--ls-line);border-radius:var(--ls-radius);background:var(--ls-surface);min-width:0}\n.panel-heading{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:14px;flex-wrap:wrap}\n.panel-heading h2{display:flex;align-items:baseline;gap:9px}.section-index{color:var(--ls-accent);font-size:.6875rem;letter-spacing:.1em;font-weight:500}\n.count{color:var(--ls-muted);font-size:.75rem}.count b{color:var(--ls-text);font-weight:500}\n.empty{padding:14px;border:1px dashed var(--ls-line);border-radius:9px;color:var(--ls-muted);font-size:.8125rem}\n.character{padding:14px;border:1px solid #3c4d57;border-radius:11px;background:var(--ls-card)}\n.character+.character{margin-top:10px}.character-top{display:flex;align-items:flex-start;gap:10px}\n.portrait{flex:0 0 32px;display:grid;place-items:center;min-height:36px;border-radius:9px;background:#30433f;color:var(--ls-mint);font-size:1.125rem}\n.identity{color:var(--ls-muted);font-size:.75rem}.character-title{flex:1}\n.badge{display:inline-block;padding:2px 8px;border:1px solid #496258;border-radius:6px;color:var(--ls-mint);font-size:.75rem;margin-top:8px}\n.goal{margin-top:12px;padding-top:10px;border-top:1px solid var(--ls-line)}.label{display:block;margin-bottom:3px;color:var(--ls-muted);font-size:.75rem}\ndetails.record{margin-top:10px;color:var(--ls-muted);font-size:.75rem}.record p{margin:6px 0}.record b{font-weight:500;color:var(--ls-text)}\nsummary{cursor:pointer;min-height:44px;padding:10px 0;overflow-wrap:anywhere}summary::marker{color:var(--ls-accent)}summary:focus,summary:focus-visible{outline:2px solid var(--ls-accent);outline-offset:3px;border-radius:4px}\n.inventory-item{display:flex;align-items:flex-start;gap:10px;padding:11px 0;border-top:1px solid var(--ls-line)}\n.item-mark{flex:0 0 28px;display:grid;place-items:center;width:28px;min-height:32px;color:var(--ls-accent);border:1px solid var(--ls-line);border-radius:7px}.item-copy{flex:1}\n.inventory-item p{font-size:.75rem;color:var(--ls-muted);margin-top:3px}.inventory-item b{font-weight:500;color:var(--ls-text)}\n.event{padding:0 0 0 12px;border-left:2px solid var(--ls-accent)}.event+.event{margin-top:18px}.event>p{margin-top:6px;font-size:.8125rem}\n.event details{margin-top:6px;color:var(--ls-muted);font-size:.75rem}\n.world-item+.world-item{border-top:1px solid var(--ls-line);margin-top:12px;padding-top:12px}\n.world-fields{display:grid;grid-template-columns:minmax(0,1fr);gap:10px;margin-top:10px}.world-fields dt{font-size:.75rem;color:var(--ls-muted)}.world-fields dd{font-size:.8125rem}\n.archive{margin-top:var(--ls-gap);border:1px solid var(--ls-line);border-radius:var(--ls-radius);padding:2px 16px;background:var(--ls-surface)}\n.archive>summary{font-size:.875rem;color:var(--ls-muted)}.archive-note{font-size:.75rem;color:var(--ls-muted);margin:2px 0 14px}\n.archive-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:16px;padding-bottom:16px}.archive-grid h3{font-size:.8125rem;color:var(--ls-accent);margin-bottom:6px}\n.archive-item{padding:7px 0;border-top:1px solid var(--ls-line)}.archive-item b{font-size:.8125rem;font-weight:500}.archive-item p{font-size:.75rem;color:var(--ls-muted)}\n.archive-grid .empty{padding:6px 0;border:0;font-size:.75rem}\n.footnote{margin-top:12px;font-size:.6875rem;letter-spacing:.04em;color:var(--ls-muted);text-align:right}\n@media(min-width:420px){.context{grid-template-columns:minmax(0,1.2fr) minmax(0,1fr)}.archive-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}\n@media(min-width:640px){.dashboard{grid-template-columns:minmax(0,1.3fr) minmax(0,1fr)}.party{grid-row:span 2}.world{grid-column:1 / -1}.world-fields{grid-template-columns:repeat(2,minmax(0,1fr))}}\n@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important;scroll-behavior:auto!important}}\n</style>\n</head>\n<body>\n<header class=\"brand\">\n  <span class=\"brand-mark\" aria-hidden=\"true\">LS</span>\n  <div><p class=\"eyebrow\">LORESTATE / FIELD JOURNAL</p><h1>旅途档案</h1></div>\n  <span class=\"edition\">状态总览</span>\n</header>\n<dl class=\"context\">\n  <div class=\"place\"><dt>当前位置</dt><dd data-lore-shared=\"地点\"></dd></div>\n  <div><dt>剧情时间</dt><dd data-lore-shared=\"时间\"></dd></div>\n</dl>\n<main class=\"dashboard\">\n  <section class=\"panel party\" aria-label=\"在场人物\">\n    <header class=\"panel-heading\"><h2><span class=\"section-index\">01</span>在场人物</h2><span class=\"count\"><b data-lore-count=\"人物\"></b> 位</span></header>\n    <p class=\"empty\" data-lore-empty=\"人物\">此刻没有在场人物。</p>\n    <article class=\"character\" data-lore-each=\"人物\">\n      <div class=\"character-top\"><span class=\"portrait\" aria-hidden=\"true\">◇</span><div class=\"character-title\"><h3 data-lore-name></h3><p class=\"identity\" data-lore-identity></p><span class=\"badge\" data-lore-field=\"身体状况\"></span></div></div>\n      <div class=\"goal\"><span class=\"label\">眼下目标</span><p data-lore-field=\"当前目标\"></p></div>\n      <details class=\"record\"><summary>档案信息</summary><p>编号 · <b data-lore-id></b></p><p>最后确认 · <b data-lore-confirmed></b></p></details>\n    </article>\n  </section>\n\n  <section class=\"panel inventory\" aria-label=\"随行物品\">\n    <header class=\"panel-heading\"><h2><span class=\"section-index\">02</span>随行物品</h2><span class=\"count\"><b data-lore-count=\"物品\"></b> 项</span></header>\n    <p class=\"empty\" data-lore-empty=\"物品\">暂无物品记录。</p>\n    <article class=\"inventory-item\" data-lore-each=\"物品\">\n      <span class=\"item-mark\" aria-hidden=\"true\">▱</span>\n      <div class=\"item-copy\"><h3 data-lore-name></h3><p>持有者 · <b data-lore-field=\"持有者\"></b></p><p>状态 · <b data-lore-field=\"完好状况\"></b></p></div>\n    </article>\n  </section>\n  <section class=\"panel quests\" aria-label=\"当前事件\">\n    <header class=\"panel-heading\"><h2><span class=\"section-index\">03</span>当前事件</h2><span class=\"count\"><b data-lore-count=\"事件\"></b> 件</span></header>\n    <p class=\"empty\" data-lore-empty=\"事件\">暂时没有需要追踪的事件。</p>\n    <article class=\"event\" data-lore-each=\"事件\">\n      <h3 data-lore-name></h3><p data-lore-field=\"进展\"></p>\n      <details><summary>事项与触发条件</summary><p data-lore-field=\"事项\"></p></details>\n    </article>\n  </section>\n  <section class=\"panel world\" aria-label=\"世界动向\">\n    <header class=\"panel-heading\"><h2><span class=\"section-index\">04</span>世界动向</h2><span class=\"count\"><b data-lore-count=\"国家\"></b> 个国家</span></header>\n    <p class=\"empty\" data-lore-empty=\"国家\">世界局势尚待记录。</p>\n    <article class=\"world-item\" data-lore-each=\"国家\">\n      <h3 data-lore-name></h3><dl class=\"world-fields\"><div><dt>政局</dt><dd data-lore-field=\"政局\"></dd></div><div><dt>外交</dt><dd data-lore-field=\"外交\"></dd></div></dl>\n    </article>\n  </section>\n</main>\n<details class=\"archive\">\n  <summary>封存档案 · 按类别查看</summary>\n  <p class=\"archive-note\">每类最多显示 5 项，数量为完整冷档总数。完整档案请看历史与诊断。</p>\n  <div class=\"archive-grid\">\n    <section><h3>人物 · <span data-lore-count=\"人物\" data-lore-presence=\"cold\"></span></h3>\n      <p class=\"empty\" data-lore-empty=\"人物\" data-lore-presence=\"cold\">暂无封存记录</p>\n      <article class=\"archive-item\" data-lore-each=\"人物\" data-lore-presence=\"cold\" data-lore-limit=\"5\"><b data-lore-name></b><p data-lore-identity></p></article>\n    </section>\n    <section><h3>物品 · <span data-lore-count=\"物品\" data-lore-presence=\"cold\"></span></h3>\n      <p class=\"empty\" data-lore-empty=\"物品\" data-lore-presence=\"cold\">暂无封存记录</p>\n      <article class=\"archive-item\" data-lore-each=\"物品\" data-lore-presence=\"cold\" data-lore-limit=\"5\"><b data-lore-name></b><p data-lore-identity></p></article>\n    </section>\n    <section><h3>事件 · <span data-lore-count=\"事件\" data-lore-presence=\"cold\"></span></h3>\n      <p class=\"empty\" data-lore-empty=\"事件\" data-lore-presence=\"cold\">暂无封存记录</p>\n      <article class=\"archive-item\" data-lore-each=\"事件\" data-lore-presence=\"cold\" data-lore-limit=\"5\"><b data-lore-name></b><p data-lore-identity></p></article>\n    </section>\n    <section><h3>国家 · <span data-lore-count=\"国家\" data-lore-presence=\"cold\"></span></h3>\n      <p class=\"empty\" data-lore-empty=\"国家\" data-lore-presence=\"cold\">暂无封存记录</p>\n      <article class=\"archive-item\" data-lore-each=\"国家\" data-lore-presence=\"cold\" data-lore-limit=\"5\"><b data-lore-name></b><p data-lore-identity></p></article>\n    </section>\n  </div>\n</details>\n<footer class=\"footnote\">LORESTATE · 只记录已确认的状态</footer>\n</body>\n</html>\n");
 })();

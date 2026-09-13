@@ -1,9 +1,71 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>世界手记</title><style>
-body{margin:0;padding:16px;background:#242421;color:#e5dfd3;font:14px/1.6 system-ui}*{box-sizing:border-box}h2,h3,p{margin:0 0 8px}header,article{padding:12px;border:1px solid #736e60;border-radius:8px;margin-bottom:12px}main{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));gap:12px}small,dt{color:#c2b79e}dd{margin:0 0 10px;overflow-wrap:anywhere}header{display:flex;flex-wrap:wrap;gap:12px}
-</style></head><body><h2>世界手记</h2><header><div><small>地点</small><p data-lore-field="地点"></p></div><div><small>时间</small><p data-lore-field="时间"></p></div></header><main>
-<article data-lore-entity><small data-lore-type></small><h3 data-lore-name></h3>
-<section data-lore-module="人物"><dl><dt>身体状况</dt><dd data-lore-field="身体状况"></dd><dt>当前目标</dt><dd data-lore-field="当前目标"></dd></dl></section>
-<section data-lore-module="物品"><dl><dt>持有者</dt><dd data-lore-field="持有者"></dd><dt>完好状况</dt><dd data-lore-field="完好状况"></dd></dl></section>
-<section data-lore-module="国家"><dl><dt>政局</dt><dd data-lore-field="政局"></dd><dt>外交</dt><dd data-lore-field="外交"></dd></dl></section>
-<section data-lore-module="事件"><dl><dt>事项</dt><dd data-lore-field="事项"></dd><dt>进展</dt><dd data-lore-field="进展"></dd></dl></section>
-</article></main></body></html>
+<!doctype html>
+<html lang="zh-CN" data-lore-template="2">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LoreState · 紧凑日志</title>
+<style>
+:root{--ink:#25362f;--muted:#4f6459;--line:#bac9b9;--paper:#f5f3e9;--accent:#355d4b;--surface:#fffef6}
+body{margin:0;padding:clamp(12px,2.5vw,24px);background:var(--paper);color:var(--ink);font-family:system-ui,sans-serif;font-size:.875rem;line-height:1.7}
+h1,h2,h3,p,dd{margin:0}h1{font-size:1.5rem}h2{font-size:1rem;color:var(--accent)}h3{font-size:.9375rem}p,span,dd,h1,h2,h3,b{overflow-wrap:anywhere}
+.masthead{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap;border-bottom:2px solid var(--accent);padding-bottom:12px}
+.masthead small{font-size:.6875rem;letter-spacing:.12em;color:var(--muted)}
+.context{display:flex;flex-wrap:wrap;gap:8px 24px;padding:12px 0;color:var(--muted);font-size:.8125rem}.context b{color:var(--ink);font-weight:500}
+.layout{display:grid;grid-template-columns:minmax(0,1fr);gap:14px}.region{border:1px solid var(--line);border-radius:10px;padding:14px;background:var(--surface);min-width:0}
+.region>header{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:8px}.count{font-size:.75rem;color:var(--muted)}
+.entry{padding:10px 0;border-top:1px solid var(--line)}.entry p{font-size:.8125rem;color:var(--muted)}.entry b{font-weight:500;color:var(--ink)}
+.person{border-left:3px solid var(--accent);padding-left:10px}.person p{margin-top:4px}
+.empty{padding:8px 0;color:var(--muted);font-size:.8125rem}.quest{padding-left:10px;border-left:3px solid #926427}
+summary{min-height:44px;padding:10px 0;cursor:pointer}summary:focus,summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.entry summary{font-size:.75rem;color:var(--muted)}.entry details p{font-size:.75rem}
+.archive{margin-top:14px;border-top:1px solid var(--line)}.archive-note{font-size:.75rem;color:var(--muted)}
+.archive-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:12px;margin-top:10px}.archive-grid h3{color:var(--accent);font-size:.8125rem}.archive-item{padding:6px 0;border-bottom:1px solid var(--line)}.archive-item b{font-size:.8125rem}.archive-item p{font-size:.75rem;color:var(--muted)}
+@media(min-width:600px){.layout,.archive-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+</style>
+</head>
+<body>
+<header class="masthead"><h1>旅途手记</h1><small>LORESTATE / COMPACT JOURNAL</small></header>
+<div class="context"><p>地点 · <b data-lore-shared="地点"></b></p><p>时间 · <b data-lore-shared="时间"></b></p></div>
+<main class="layout">
+  <section class="region party" aria-label="在场人物">
+    <header><h2>在场人物</h2><span class="count"><b data-lore-count="人物"></b> 位</span></header>
+    <p class="empty" data-lore-empty="人物">暂无在场人物。</p>
+    <article class="entry person" data-lore-each="人物"><h3 data-lore-name></h3><p>身体 · <b data-lore-field="身体状况"></b></p><p>目标 · <b data-lore-field="当前目标"></b></p></article>
+  </section>
+  <section class="region inventory" aria-label="物品清单">
+    <header><h2>物品清单</h2><span class="count"><b data-lore-count="物品"></b> 项</span></header>
+    <p class="empty" data-lore-empty="物品">暂无物品。</p>
+    <article class="entry" data-lore-each="物品"><h3 data-lore-name></h3><p>持有者 · <b data-lore-field="持有者"></b></p><p>状态 · <b data-lore-field="完好状况"></b></p></article>
+  </section>
+  <section class="region quests" aria-label="事件记录">
+    <header><h2>事件记录</h2><span class="count"><b data-lore-count="事件"></b> 件</span></header>
+    <p class="empty" data-lore-empty="事件">暂无事件。</p>
+    <article class="entry quest" data-lore-each="事件"><h3 data-lore-name></h3><p data-lore-field="进展"></p><details><summary>事项与条件</summary><p data-lore-field="事项"></p></details></article>
+  </section>
+  <section class="region world" aria-label="国家动向">
+    <header><h2>国家动向</h2><span class="count"><b data-lore-count="国家"></b> 个国家</span></header>
+    <p class="empty" data-lore-empty="国家">暂无国家记录。</p>
+    <article class="entry" data-lore-each="国家"><h3 data-lore-name></h3><p>政局 · <b data-lore-field="政局"></b></p><p>外交 · <b data-lore-field="外交"></b></p></article>
+  </section>
+</main>
+<details class="archive"><summary>封存档案 · 冷档</summary><p class="archive-note">每类最多展示 5 项；完整档案请看历史与诊断。</p><div class="archive-grid">
+    <section><h3>人物 · <span data-lore-count="人物" data-lore-presence="cold"></span></h3>
+      <p class="empty" data-lore-empty="人物" data-lore-presence="cold">暂无封存记录</p>
+      <article class="archive-item" data-lore-each="人物" data-lore-presence="cold" data-lore-limit="5"><b data-lore-name></b><p data-lore-identity></p></article>
+    </section>
+    <section><h3>物品 · <span data-lore-count="物品" data-lore-presence="cold"></span></h3>
+      <p class="empty" data-lore-empty="物品" data-lore-presence="cold">暂无封存记录</p>
+      <article class="archive-item" data-lore-each="物品" data-lore-presence="cold" data-lore-limit="5"><b data-lore-name></b><p data-lore-identity></p></article>
+    </section>
+    <section><h3>事件 · <span data-lore-count="事件" data-lore-presence="cold"></span></h3>
+      <p class="empty" data-lore-empty="事件" data-lore-presence="cold">暂无封存记录</p>
+      <article class="archive-item" data-lore-each="事件" data-lore-presence="cold" data-lore-limit="5"><b data-lore-name></b><p data-lore-identity></p></article>
+    </section>
+    <section><h3>国家 · <span data-lore-count="国家" data-lore-presence="cold"></span></h3>
+      <p class="empty" data-lore-empty="国家" data-lore-presence="cold">暂无封存记录</p>
+      <article class="archive-item" data-lore-each="国家" data-lore-presence="cold" data-lore-limit="5"><b data-lore-name></b><p data-lore-identity></p></article>
+    </section>
+</div></details>
+</body>
+</html>

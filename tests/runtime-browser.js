@@ -1,8 +1,9 @@
 import {startPrototype} from '../prototype/runtime.js';
 import {PROTO_KEY} from '../prototype/core.js';
 import {readSnapshots} from '../prototype/snapshot-store.js';
+import {planRestore} from '../prototype/snapshots.js';
 const output=document.getElementById('result'),results=[];
-const html='<p data-lore-field="地点"></p>';
+const html='<!doctype html><html data-lore-template="2"><head></head><body><p data-lore-shared="地点"></p></body></html>';
 const wrap=(text,mode='delta')=>`<LoreState version="3" mode="${mode}"><Shared><地点>${text}</地点></Shared></LoreState>`;
 let list=[{message_id:1,role:'assistant',message:wrap('车站','full'),swipe_id:0},{message_id:3,role:'assistant',message:wrap('A & B'),swipe_id:0}];
 let chatId='test',chatRef=[],variables={script:{[PROTO_KEY]:{ready:true,schema:{shared:['地点'],entity:[]},html}},chat:{[PROTO_KEY]:{enabled:true,start:1}}};
@@ -212,12 +213,12 @@ await check('重新启动保留快照和回档基线，不重复归档',async()=
   assert(variables.chat[PROTO_KEY].current.state.shared.地点==='回档后的新地点');
 });
 await check('世界实体冷档展示与生成提示接入，活动事件始终注入且预取不改状态',async()=>{
-  const entityHtml='<p data-lore-field="时间"></p><article data-lore-entity><b data-lore-name></b><small data-lore-type></small><p data-lore-field="概况"></p></article>';
+  const entityHtml='<!doctype html><html data-lore-template="2"><head></head><body><p data-lore-shared="时间"></p></body></html>';
   variables.script[PROTO_KEY]={ready:true,book:'test-book',uid:1,schema:{shared:['时间'],entity:['概况']},html:entityHtml};
   variables.chat={[PROTO_KEY]:{enabled:true,start:1}};chatId='world-v3';chatRef=[];
   list=[{message_id:1,role:'assistant',swipe_id:0,message:'<LoreState version="3" mode="full"><Shared><时间>第三天</时间></Shared><Entity id="N01" name="北境公国" type="国家" identity="北方国家" mode="full" presence="cold"><概况>国库尚有三百金币</概况></Entity><Entity id="E01" name="送货承诺" type="事件" identity="港口订单" mode="full" pending="true"><概况>明天交付货物</概况></Entity></LoreState>'}];
   await emit('CHAT_CHANGED');await tick();
-  assert(document.body.textContent.includes('本地冷档 · 1 个实体'));assert(document.body.textContent.includes('国家 · 北境公国'));
+  assert(!document.querySelector('.lorestate-prototype-view').textContent.includes('本地冷档'));await click('LoreState');const currentManager=document.querySelector('[aria-label="LoreState 控制中心"]');assert(currentManager.textContent.includes('国家 · 北境公国'),'管理器应保留冷档');currentManager.close();
   let prompt='';window.injectPrompts=items=>{prompt=items[0].content;return {uninject(){}};};
   const generate=async()=>{for(const fn of handlers.get('GENERATION_AFTER_COMMANDS')??[])await fn('normal',{},false);};
   await generate();assert(prompt.includes('明天交付货物'));assert(!prompt.includes('国库尚有三百金币'));
@@ -295,7 +296,7 @@ await check('用户消息不允许状态续写，在读取世界书前中止',as
 });
 let authorPromptText='';
 await check('作者初始档案预览、保存默认值与当前空聊天应用分离',async()=>{
-  variables.script[PROTO_KEY]={ready:true,book:'test-book',uid:1,schema:{shared:['地点'],entity:['状态']},html:'<p data-lore-field="地点"></p><article data-lore-entity><b data-lore-name></b><p data-lore-field="状态"></p></article>'};
+  variables.script[PROTO_KEY]={ready:true,book:'test-book',uid:1,schema:{shared:['地点'],entity:['状态']},html};
   variables.chat={[PROTO_KEY]:{enabled:true,start:1}};chatId='author-policy';chatRef=[];list=[{message_id:0,role:'assistant',message:'开场白',swipe_id:0}];await emit('CHAT_CHANGED');
   await click('LoreState');document.querySelector('#ls-tab-settings').click();await tick();
   const initial=document.querySelector('[aria-label="作者初始档案"]'),constraints=document.querySelector('[aria-label="字段约束"]');
@@ -469,8 +470,10 @@ await check('随正文修复允许跟随当前连接，失效自定义绑定不�
   const binding=variables.chat[PROTO_KEY].variableUpdate,original=list[1].message,count=extraCalls.length;
   binding.profileId='deleted';await click('重新计算最新失败回复状态');assert(extraCalls.length===count);assert(list[1].message===original);
   binding.source='current';await click('重新计算最新失败回复状态');assert(extraCalls.length===count+1);assert(!extraCalls.at(-1).custom_api);
+  const snapshot=readSnapshots(variables.chat[PROTO_KEY]).findLast(s=>s.result.state&&!s.result.tainted&&!s.result.errors.length);
   await click('撤销最近一次状态更新');assert(list[1].message===original);
-  variables.chat[PROTO_KEY].checkpoint={cutoff:1};const before=extraCalls.length;
+  // Use a complete real checkpoint: a cutoff-only object also triggers the observer's schema error.
+  variables.chat[PROTO_KEY].checkpoint=planRestore(snapshot,list,variables.script[PROTO_KEY].schema,variables.chat[PROTO_KEY].start??1).checkpoint;const before=extraCalls.length;
   await click('重新计算最新失败回复状态');assert(extraCalls.length===before);assert(list[1].message===original);assert(notice.textContent.includes('回档前保留'));
   delete variables.chat[PROTO_KEY].checkpoint;
 }));
@@ -718,6 +721,90 @@ await check('续写时切换分支不覆盖，恢复原分支后可以完成整�
   list[1].swipe_id=1;list[1].message='其他分支';await emit('GENERATION_ENDED');assert(list[1].message==='其他分支');assert(variables.chat[PROTO_KEY].continuationPending);
   list[1].swipe_id=0;list[1].message=original+'原分支续写';await emit('MESSAGE_UPDATED');assert(!variables.chat[PROTO_KEY].continuationPending);assert(list[1].message==='抵达车站。原分支续写');
 });
+// New presentation tests use a fresh synthetic chat and the unchanged module declarations.
+const hudHtml=await(await fetch('../prototype/example.html')).text();
+const compactHtml=await(await fetch('../prototype/module-example.html')).text();
+const v2Editor=()=>document.querySelector('[aria-label="HTML 模板"]');
+const v2Select=()=>document.querySelector('[aria-label="HTML 预设"]');
+const v2Protected=()=>JSON.stringify({schema:variables.script[PROTO_KEY].schema,authorPolicy:variables.script[PROTO_KEY].authorPolicy,start:variables.chat[PROTO_KEY].start,policy:variables.chat[PROTO_KEY].policy,checkpoint:variables.chat[PROTO_KEY].checkpoint,snapshotStore:variables.chat[PROTO_KEY].snapshotStore,variableUpdate:variables.chat[PROTO_KEY].variableUpdate,state:variables.chat[PROTO_KEY].current?.state});
+let compactPresetId;
+await check('Template v2 首次预览为标记的合成数据，不写配置、不装正则、不请求模型',async()=>{
+  variables.script={[PROTO_KEY]:{}};variables.chat={[PROTO_KEY]:{enabled:true,start:1,variableUpdate:{mode:'inline'}}};chatId='template-v2';chatRef=[];
+  list=[{message_id:0,role:'assistant',message:'合成旅途开场',swipe_id:0}];window.getWorldbook=async()=>[{uid:1,name:'模块状态',content:moduleRules}];
+  await emit('CHAT_CHANGED');await click('LoreState');await click('刷新世界书列表');v2Editor().value=hudHtml;
+  const before=JSON.stringify(variables),regex=window.updateTavernRegexesWith,model=window.generateRaw;let calls=0;
+  window.updateTavernRegexesWith=async()=>{calls++;};window.generateRaw=async()=>{calls++;};
+  try{await click('预览 HTML（不保存）');assert(JSON.stringify(variables)===before);assert(calls===0);}
+  finally{window.updateTavernRegexesWith=regex;window.generateRaw=model;}
+  const preview=document.querySelector('iframe[title="LoreState 合成预览（非聊天状态）"]');assert(preview?.srcdoc.includes('合成预览'));assert(preview.getAttribute('sandbox')==='');
+  await click('保存 HTML 并启用本聊天');assert(variables.script[PROTO_KEY].version===4);assert(Object.keys(variables.script[PROTO_KEY].schema.modules).length===4);
+});
+await check('最终 bundle 按人物/物品/事件/国家分区；冷档只出现在作者 iframe 内',async()=>{
+  list.push({message_id:1,role:'assistant',swipe_id:0,message:'合成正文。<LoreState version="3" mode="full"><Shared><地点>白帆港</地点><时间>第三日清晨</时间></Shared><Entity id="P1" name="林舟" type="人物" identity="同行书商" mode="full"><身体状况>健康</身体状况><当前目标>取回旅途手记</当前目标></Entity><Entity id="I1" name="铜钥匙" type="物品" identity="仓库钥匙" mode="full"><持有者>林舟</持有者><完好状况>完好</完好状况></Entity><Entity id="I2" name="旧罗盘" type="物品" identity="封存器物" mode="full" presence="cold"><持有者>守塔人</持有者><完好状况>指针损坏</完好状况></Entity><Entity id="E1" name="送货承诺" type="事件" identity="港口委托" mode="full" pending="true"><事项>日落前交付</事项><进展>已领取货物</进展></Entity><Entity id="N1" name="北境公国" type="国家" identity="北方国家" mode="full"><政局>港口开放</政局><外交>使者抵达</外交></Entity></LoreState>'});
+  const chat=document.getElementById('chat');chat.replaceChildren();for(const message of list){const el=document.createElement('div');el.className='mes';el.setAttribute('mesid',message.message_id);chat.append(el);}
+  await emit('MESSAGE_UPDATED');const view=document.querySelector('.lorestate-prototype-view'),frame=view.querySelector('iframe');assert(frame,'应生成 v2 iframe');
+  const rendered=new DOMParser().parseFromString(frame.srcdoc,'text/html');assert(rendered.querySelector('.party').textContent.includes('林舟'));assert(!rendered.querySelector('.party').textContent.includes('铜钥匙'));
+  assert(rendered.querySelector('.inventory').textContent.includes('铜钥匙'));assert(!rendered.querySelector('.inventory').textContent.includes('旧罗盘'));
+  assert(rendered.querySelector('.quests').textContent.includes('已领取货物'));assert(rendered.querySelector('.world').textContent.includes('使者抵达'));assert(rendered.querySelector('.archive').textContent.includes('旧罗盘'));
+  assert(!view.querySelector('details'));assert(!view.textContent.includes('本地冷档'));assert(frame.getAttribute('sandbox')==='');assert(variables.chat[PROTO_KEY].current.errors.length===0);
+  await click('LoreState');assert(manager.textContent.includes('物品 · 旧罗盘'));manager.close();
+});
+await check('同 schema 预览使用当前状态；更换两套皮肤与部分字段预设保留数据合同',async()=>{
+  await click('LoreState');document.getElementById('ls-tab-settings').click();await click('刷新世界书列表');
+  const before=v2Protected();v2Editor().value=compactHtml;await click('预览 HTML（不保存）');assert(v2Protected()===before);
+  assert(document.querySelector('iframe[title="LoreState 当前聊天状态预览"]').srcdoc.includes('白帆港'));
+  document.querySelector('[aria-label="预设名称"]').value='紧凑日志';await click('另存为新预设');compactPresetId=v2Select().value;
+  await click('应用所选预设');assert(v2Protected()===before);assert(document.querySelector('.lorestate-prototype-view iframe').srcdoc.includes('COMPACT JOURNAL'));
+  v2Editor().value='<!doctype html><html data-lore-template="2"><head></head><body><p data-lore-shared="地点"></p><article data-lore-each="人物" data-lore-limit="1"><b data-lore-name></b><span data-lore-field="身体状况"></span><em data-lore-field="身体状况"></em></article></body></html>';
+  await click('覆盖所选预设');assert(v2Protected()===before);assert(variables.script[PROTO_KEY].schema.modules.国家.includes('外交'));
+  v2Editor().value=compactHtml;await click('覆盖所选预设');assert(v2Protected()===before);
+});
+
+const legacyTemplate='<p data-lore-field="地点"></p><article data-lore-entity><b data-lore-name></b></article>';
+await check('所有非法模板写入口均不改配置；旧预设原文可复制且不自动转换',async()=>{
+  const config=variables.script[PROTO_KEY];config.presets.push({id:'legacy-template',name:'旧模板备份',html:legacyTemplate});
+  document.getElementById('ls-tab-settings').click();await tick();v2Select().value='legacy-template';v2Select().onchange();
+  assert(document.querySelector('[aria-label="所选预设 HTML 原文"]').value===legacyTemplate);
+  const before=JSON.stringify(variables);await click('应用所选预设');assert(JSON.stringify(variables)===before);assert(notice.textContent.includes('模板 API 已升级'));
+  v2Editor().value=legacyTemplate;
+  for(const label of ['预览 HTML（不保存）','另存为新预设','覆盖所选预设','保存 HTML 并启用本聊天']){await click(label);assert(JSON.stringify(variables)===before,label+' 不应写入');}
+  assert(variables.script[PROTO_KEY].presets.find(p=>p.id==='legacy-template').html===legacyTemplate);
+  v2Editor().value=compactHtml;v2Select().value=compactPresetId;v2Select().onchange();
+});
+await check('旧模板启动原文与存档保留，错误态不触发 MutationObserver 重建循环',async()=>{
+  variables.script[PROTO_KEY].html=legacyTemplate;const before=JSON.stringify(variables.chat[PROTO_KEY].current.state);
+  window.dispatchEvent(new Event('pagehide'));handlers.clear();
+  if(new URLSearchParams(location.search).has('bundle'))Function(await(await fetch('../artifact/bundle.js')).text())();else startPrototype(hudHtml);
+  await tick();await tick();manager=document.querySelector('[aria-label="LoreState 控制中心"]');notice=document.querySelector('aside[role="alert"]');
+  const view=document.querySelector('.lorestate-prototype-view');assert(view.querySelector('.lorestate-template-error'));assert(!view.querySelector('iframe'));
+  assert(v2Editor().value===legacyTemplate);assert(variables.script[PROTO_KEY].html===legacyTemplate);assert(JSON.stringify(variables.chat[PROTO_KEY].current.state)===before);
+  await new Promise(resolve=>setTimeout(resolve,180));assert(document.querySelector('.lorestate-prototype-view')===view,'模板错误态应保留同一挂载节点');
+  await click('打开模板设置',view);assert(document.getElementById('ls-tab-settings').getAttribute('aria-selected')==='true');
+});
+await check('模板错误不阻断状态更新、快照和宿主可信缺口提示',async()=>{
+  list[1].message=list[1].message.replace('白帆港','雨后码头');await emit('MESSAGE_EDITED');
+  assert(variables.chat[PROTO_KEY].current.state.shared.地点==='雨后码头');assert(readSnapshots(variables.chat[PROTO_KEY]).some(s=>s.floor===1));
+  assert(document.querySelector('.lorestate-template-error'));assert(variables.script[PROTO_KEY].html===legacyTemplate);
+  list.push({message_id:2,role:'assistant',swipe_id:0,message:wrap('坏 & 状态')});
+  const bad=document.createElement('div');bad.className='mes';bad.setAttribute('mesid','2');document.getElementById('chat').append(bad);
+  await emit('MESSAGE_UPDATED');assert(variables.chat[PROTO_KEY].current.errors.length===1);assert(document.querySelector('.lorestate-prototype-view').textContent.includes('状态存在缺口'));
+  list.pop();bad.remove();await emit('MESSAGE_DELETED');
+});
+await check('旧模板可被有效 v2 预设替换；唯一尾部和展开窗口同步恢复',async()=>{
+  await click('LoreState');document.getElementById('ls-tab-settings').click();await tick();v2Select().value=compactPresetId;v2Select().onchange();
+  const before=v2Protected();await click('应用所选预设');assert(v2Protected()===before);
+  const views=document.querySelectorAll('.lorestate-prototype-view');assert(views.length===1);assert(!views[0].querySelector('.lorestate-template-error'));
+  const frame=views[0].querySelector('iframe');assert(frame.srcdoc.includes('雨后码头'));assert(frame.getAttribute('sandbox')==='');
+  await click('展开状态窗口',views[0]);const large=document.querySelector('#lorestate-state-window iframe');assert(large.srcdoc===frame.srcdoc);assert(large.getAttribute('sandbox')==='');await click('关闭状态窗口');
+  assert(variables.script[PROTO_KEY].presets.find(p=>p.id==='legacy-template').html===legacyTemplate);
+});
+await check('真实模块 schema 变更仍受保护；隐藏字段并不等于删存档字段',async()=>{
+  const before=JSON.stringify(variables),worldbook=window.getWorldbook;
+  window.getWorldbook=async()=>[{uid:1,name:'更改后的模块',content:moduleRules.replace('栏目：身体状况、当前目标','栏目：身体状况、当前目标、额外字段')}];
+  try{await click('刷新世界书列表');v2Editor().value=compactHtml;await click('保存 HTML 并启用本聊天');assert(JSON.stringify(variables)===before);assert(notice.textContent.includes('已有配置不支持改变栏目'));}
+  finally{window.getWorldbook=worldbook;await click('刷新世界书列表');}
+});
+
 output.textContent=results.join('\n');
 // ?preview[=state|diagnostics|settings|api] leaves the control center open for a visual check.
 const preview=new URLSearchParams(location.search).get('preview');

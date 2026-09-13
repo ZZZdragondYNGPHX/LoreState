@@ -1,6 +1,8 @@
 # LoreState 文档
 
-当前稳定版是不可移动标签 `0.10.6`，固定入口不随 `main` 变化；`main` 远程组件用于持续开发。历史 `0.10.3` 只作冻结 RC/兼容引用。版本规则统一见[版本管理](版本管理.md)。
+当前稳定版是不可移动标签 `0.11.0`，固定入口不随 `main` 变化；`main` 远程组件用于持续开发。历史 `0.10.3` 只作冻结 RC/兼容引用。版本规则统一见[版本管理](版本管理.md)。
+
+0.11.0 使用 Template API v2；新 HTML 作者接口和两套同 schema 皮肤见 [HTML 模板适配指南](HTML模板适配指南.md)。旧模板原文保留，需重制为 v2；状态与快照不迁移。旧固定标签行为保持原样。详情见 [0.11.0 发布说明](发布材料/0.11.0-Template-API-v2.md)。
 
 ## 按任务阅读
 
@@ -22,6 +24,6 @@
 
 ## 当前交付
 
-[0.10.6 固定远程组件](../prototype/dist/0.10.6/lorestate-script.json) · [main 远程组件](../prototype/dist/main/lorestate-script.json) · [main 脚本代码](../artifact/bundle.js) · [版本管理](版本管理.md) · [协议参考](../prototype/world-memory.md) · [当前验证记录](../prototype/verification.md)
+[0.11.0 固定远程组件](../prototype/dist/0.11.0/lorestate-script.json) · [main 远程组件](../prototype/dist/main/lorestate-script.json) · [main 脚本代码](../artifact/bundle.js) · [版本管理](版本管理.md) · [协议参考](../prototype/world-memory.md) · [当前验证记录](../prototype/verification.md)
 
 历史迁移、旧扩展和旧验证说明集中在[历史归档](archive/README.md)，不再混入活动文档入口。

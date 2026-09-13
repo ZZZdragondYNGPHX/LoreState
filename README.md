@@ -2,7 +2,9 @@
 
 LoreState 为 SillyTavern 文字角色卡保存持续状态。AI 在正文后输出状态更新，脚本负责校验、合并、历史回放与状态栏展示。人物、国家、组织、地点、物品和事件可以使用各自的栏目；冷档按需读取。
 
-当前维护线是 **Tavern Helper 文字状态脚本的 `main` 开发分支**，当前稳定版为不可移动标签 **`0.10.6`**。历史 `0.10.3` RC 已从误建的版本号 branch 原样固化为同名兼容 tag；它不再接受提交。
+当前维护线是 **Tavern Helper 文字状态脚本的 `main` 开发分支**，当前稳定版为不可移动标签 **`0.11.0`**。历史 `0.10.3` RC 已从误建的版本号 branch 原样固化为同名兼容 tag；它不再接受提交。
+
+**0.11.0 引入 Template API v2**：多区域 HUD、部分/重复字段与作者自定义冷档布局。仅展示层破坏性升级，旧模板保留原文但需重制；XML v3、数据 schema 与存档不变。此前的 `0.10.6` 标签保持原样。详见 [v2 作者接口与两套示例](docs/HTML模板适配指南.md)及 [0.11.0 发布说明](docs/发布材料/0.11.0-Template-API-v2.md)。
 
 ## 从这里开始
 
@@ -19,20 +21,20 @@ LoreState 为 SillyTavern 文字角色卡保存持续状态。AI 在正文后输
 
 | 入口 | 性质 | 说明 |
 | --- | --- | --- |
-| [0.10.6 固定远程组件](prototype/dist/0.10.6/lorestate-script.json) | 当前稳定版 | 固定引用 `@0.10.6/artifact/bundle.js`；不随 `main` 变化 |
+| [0.11.0 固定远程组件](prototype/dist/0.11.0/lorestate-script.json) | 当前稳定版 | 固定引用 `@0.11.0/artifact/bundle.js`；不随 `main` 变化 |
 | [main 远程组件](prototype/dist/main/lorestate-script.json) | 开发版 | 固定引用 `@main/artifact/bundle.js`；会随 `main` 更新 |
 | [main 脚本代码](artifact/bundle.js) | 开发版生成物 | 由 `prototype/` 源码构建，不手工维护 |
 | `0.10.0`～`0.10.2` Git tags | 历史正式版 | 不可移动；固定源码与 bundle，尚无新制式版本目录 |
 | `0.10.3` Git tag | 历史兼容快照 | 由原 RC branch 同 SHA 固化；不可移动，不再继续开发 |
 | `prototype-v0.x` tags / `prototype/dist/v0.x` | 历史 | 仅用于旧版本复现 |
 
-稳定安装应优先使用 `0.10.6`；需要跟随开发时才使用 `@main`。固定版本入口不得引用 `@main`。
+固定安装使用 `0.11.0`；需要跟随开发时才使用 `@main`。固定版本入口不得引用 `@main`。
 
 ```js
-import 'https://testingcf.jsdelivr.net/gh/ZZZdragondYNGPHX/LoreState@0.10.6/artifact/bundle.js';
+import 'https://testingcf.jsdelivr.net/gh/ZZZdragondYNGPHX/LoreState@0.11.0/artifact/bundle.js';
 ```
 
-已有 **0.9.0** 配置和聊天可以保留，只更新脚本代码后重新读取状态。跨更旧版本升级到模块结构仍须按 0.9.0 指南使用新配置、新聊天；当前没有增加旧协议自动迁移。
+已有模块配置、聊天与快照可以保留。升级 **0.11.0** 时需重新制作并应用 Template API v2 HTML；旧模板原文保留，未换模板时显示升级提示，状态引擎继续运行。跨更旧版本升级到模块结构仍按 0.9.0 指南处理；本版不新增旧数据协议迁移。
 
 目标环境沿用 SillyTavern 1.18.0 / 酒馆助手 4.9.5。自动化验证范围见[验证记录](prototype/verification.md)；自动测试不等于真实 SillyTavern、真实模型与人工游玩验收。
 

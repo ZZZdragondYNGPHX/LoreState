@@ -1,6 +1,6 @@
-# 当前入口：0.10.4 固定版与 main 开发版
+# 当前入口：0.11.0 固定版与 main 开发版
 
-请从[作者目录](../docs/README.md)、[模块试卡](../docs/0.9.0模块条目与试卡.md)和[隐藏助手兼容与更新](../docs/隐藏助手兼容与更新.md)进入。稳定安装使用 [0.10.4 固定远程组件](dist/0.10.4/lorestate-script.json)；持续开发使用 [main 远程组件](dist/main/lorestate-script.json) 和 [main 脚本代码](../artifact/bundle.js)。旧固定标签保持不变。
+请从[作者目录](../docs/README.md)、[模块试卡](../docs/0.9.0模块条目与试卡.md)和[隐藏助手兼容与更新](../docs/隐藏助手兼容与更新.md)进入。固定安装使用 [0.11.0 固定远程组件](dist/0.11.0/lorestate-script.json)；持续开发使用 [main 远程组件](dist/main/lorestate-script.json) 和 [main 脚本代码](../artifact/bundle.js)。旧固定标签保持不变。
 
 以下保留各阶段说明，版本内的“当前”指当时阶段，不代表最新主线；其中旧离线链接仅是历史记录，不是当前交付入口。
 
@@ -34,27 +34,24 @@
 
 ## 作者与读者流程
 
-1. 稳定使用时导入 `dist/0.10.4/lorestate-script.json`；需要跟随开发时才导入 `dist/main/lorestate-script.json`。开启脚本数据随卡导出，只启用一个版本。
+1. 固定使用对应 `0.11.0` 组件；main 入口用于开发。升级时保留存档并换用 v2 HTML，不自动转换旧模板。开启脚本数据随卡导出，只启用一个版本。
 2. 从魔法棒打开 LoreState 设置，选择当前角色绑定的世界书状态栏条目。
 3. 复制 HTML 制作提示词与条目给网页 AI，粘贴生成的 HTML，预览并保存。
 4. 保存会自动添加两条本卡正则：仅显示隐藏、仅提示词过滤；两者都保留正文与消息原文。启用本卡局部正则。
-5. 作者可保存最多 20 份 HTML 预设；公共与人物的栏目集合分别一致才可切换。换外观不改聊天状态。
+5. 作者可保存最多 20 份 HTML 预设；v2 可自由选择展示字段与分区，换外观不改 DataSchema、策略或聊天状态。
 6. 读者正常聊天即可。最新 AI 回复旁显示完整状态；AI 首次给完整内容，之后仅给变化。编辑原始 AI 标签后可点击“重新读取当前聊天状态”纠错。
 
-## HTML 接口
+## HTML 接口：Template API v2
 
-```html
-<section><h3>地点</h3><p data-lore-field="地点"></p></section>
-<article data-lore-person>
-  <h3 data-lore-name></h3><small data-lore-id></small>
-  <p data-lore-field="衣着"></p>
-</article>
-```
+`0.11.0` 与后续 main 已改用多区域静态模板；此前的固定 `0.10.6` 保留旧接口。旧 HTML/预设原文保留但不运行；XML v3、config.version=4、存档 DataSchema 与聊天快照不变。
 
-人物容器外为公共栏目，容器内为人物栏目；两者都可单独使用。只能有一个人物容器，脚本按在场人物复制。可选 `data-lore-identity` 显示稳定识别信息。每个绑定节点独立放文字，标签标题放旁边。重复人物区域请使用 class 样式，不依赖 id（渲染时移除重复 ID）。
+公共值使用 `data-lore-shared`，每类实体用独立 `data-lore-each="类别"`；each 内的 `data-lore-field` 只引用所属模块字段，允许部分字段、重复字段和同类多区。支持 active/cold/all、精确 ID、limit、count 和 empty。
 
-仅支持静态 HTML/CSS 和原生折叠，文字使用 textContent 填入不允许脚本的 iframe。每类最多 32 个栏目，值为普通文字，不引入数值运算或复杂变量结构。
+参考 [完整 API 与可复制模板](../docs/HTML模板适配指南.md)。[默认 HUD](example.html) 与 [紧凑日志](module-example.html) 共用 [模块条目](module-example.txt)，换肤不修改存储 schema。
 
+模板保留空 sandbox、固定 CSP、静态 HTML/CSS 和原生 details/summary。CSSOM 与词法门拒绝外部资源、转义及未开放的函数/规则；不开放任意 JS。动态值一律使用 textContent，正文尾部不再额外生成冷档 UI。
+
+以下统一协议和人物档案说明属于早期 0.4.x 历史记录，当前 XML v3 以 [世界实体协议](world-memory.md) 和模块指南为准。
 ## 统一协议
 
 ```xml

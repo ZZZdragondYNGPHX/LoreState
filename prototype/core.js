@@ -269,11 +269,43 @@ ${purpose==='narration'?'仅输出剧情正文，不输出状态标签。':'输�
 }
 export function playPrompt(rules,schema,result,text=''){return preparePrompt(rules,schema,result,text).content;}
 export function authorPrompt(rules){
-  const parsed=parseModules(rules);if(!parsed)throw new Error('请使用以【LoreState模块 v1】开头的模块条目，不转换旧条目');checkSchema(moduleShape(parsed));
-  return `请根据以下状态栏条目制作 LoreState 的完整静态 HTML，只返回 HTML。
-公共栏目直接用 data-lore-field="栏目名"。需要逐个实体展示时，使用一个 data-lore-entity 容器（覆盖人物、国家、组织、地点、物品、事件等所有类别），容器内的 data-lore-field 属于实体栏目；脚本按在场实体自动复制容器，不需要写循环。公共和实体可以只选其一，也可以并用，无需选择脚本模式。
-实体容器内可用独立文字节点 data-lore-name、data-lore-id、data-lore-identity、data-lore-type、data-lore-confirmed 展示名称、编号、识别信息、类别、最后确认时间。每个绑定节点只放文字，不包含标题或其他绑定节点。实体容器只能有一个，不能嵌套。栏目名以文字或下划线开头，其后仅文字、数字、下划线或连字符，每类最多 32 个；栏目值为普通文字。
-示例：<section><h3>地点</h3><p data-lore-field="地点"></p></section><article data-lore-entity><h3 data-lore-name></h3><p data-lore-field="近况"></p></article>
-使用 CSS 和 details/summary，适应窄屏和长文字。CSS 放 style 中，不使用 JavaScript、事件属性、外部资源、表单、iframe、SVG 或网络请求。不使用双花括号占位符，也不要求 AI 每轮重写 HTML。内容由脚本以 textContent 填入。
-模块条目存在时，栏目以声明为准，必须展示所有公共与各类栏目。在唯一实体容器内用 <section data-lore-module="人物"> 包住人物专用栏目，其他模块同理；这些分区不可嵌套。脚本只保留当前类别分区。不可增删或改名声明栏目。\n状态栏条目：\n${rules}`;
+  const parsed=parseModules(rules);
+  if(!parsed)throw new Error('请使用以【LoreState模块 v1】开头的模块条目，不转换旧条目');
+  const schema=moduleShape(parsed);checkSchema(schema);
+  const modules=Object.entries(schema.modules),firstType=modules[0][0],fence=String.fromCharCode(96).repeat(3);
+  const sections=modules.slice(0,2).map(([type,fields])=>[
+    '<section><h2>'+type+' · <span data-lore-count="'+type+'"></span></h2>',
+    '<p data-lore-empty="'+type+'">暂无记录</p>',
+    '<article data-lore-each="'+type+'"><h3 data-lore-name></h3><p data-lore-field="'+fields[0]+'"></p></article></section>'
+  ].join('\n')).join('\n');
+  const example=['<!doctype html>','<html lang="zh-CN" data-lore-template="2">','<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">',
+    '<style>body{margin:0;padding:16px;font:1rem/1.6 system-ui;background:#162129;color:#eef1eb}main{display:grid;gap:12px;grid-template-columns:minmax(0,1fr)}section{min-width:0}p{overflow-wrap:anywhere}@media(min-width:640px){main{grid-template-columns:repeat(2,minmax(0,1fr))}}</style></head>',
+    '<body><header><h1>旅途状态</h1>'+(schema.shared.length?'<p data-lore-shared="'+schema.shared[0]+'"></p>':'')+'</header>',
+    '<main>',sections,'</main>',
+    '<details><summary>封存档案 · <span data-lore-count="'+firstType+'" data-lore-presence="cold"></span></summary><p>最多显示 5 项；完整档案请看历史与诊断。</p><article data-lore-each="'+firstType+'" data-lore-presence="cold" data-lore-limit="5"><b data-lore-name></b><p data-lore-identity></p></article></details>',
+    '</body></html>'
+  ].join('\n');
+  return [
+    '请根据下列数据 schema 制作 LoreState Template API v2 的完整静态 HTML，只返回 HTML。',
+    '目标是分区清晰的游戏 HUD：人物、物品、事件、世界状态各有布局；可使用 CSS Grid/Flex、渐变、伪元素、静态 CSS 变量和原生 details/summary。',
+    '数据 schema 由模块条目决定，HTML 只读展示，不决定存储字段。可以省略整类、只显示部分字段、重复同一字段、让同类型在多个区域出现。',
+    '公共字段：'+(schema.shared.join('、')||'无'),
+    '分类型实体字段：\n'+modules.map(([type,fields])=>type+'：'+fields.join('、')).join('\n'),
+    '必须使用 <html data-lore-template="2">。这是 Template API v2，不是 XML version 4；XML 仍为 version="3"，config.version 仍为 4。旧模板属性不接受，也不自动转换。',
+    '查询：data-lore-each="精确模块名" 复制本节点；多个区域独立渲染，each/count/empty 不得嵌套。data-lore-presence="active|cold|all" 默认 active，不推断未知在场状态。',
+    '可选 data-lore-select-id="作者已知的精确实体编号" 同时适用于 each/count/empty；不靠名称或第一项猜玩家。data-lore-limit="5" 仅用于 each，值为 1–100 的十进制整数，不带前导零。保持输入遍历顺序，不排序；limit 不表示最近任务。',
+    '字段：each 内用 data-lore-field="该类型已声明字段"；公共值始终用 data-lore-shared="公共字段"，可放在 each 内外。同名公共/实体字段互不替代。未知模块和字段报错，省略字段合法。',
+    '元数据：each 内使用 data-lore-name、data-lore-id、data-lore-type、data-lore-identity、data-lore-confirmed；属性值必须为空，分别显示名称、编号、类别、识别信息、最后确认时间。',
+    '全局：data-lore-count="模块名" 和 data-lore-empty="模块名" 只在 each 外；count 显示完整查询数量，不受其他 each 的 limit 影响；empty 是仅在同条件查询为空时显示的静态容器，内部不放查询或绑定。',
+    '每个输出绑定是正文中的独立文字节点：无子元素，不同时放多个输出属性，不与 each/empty 同节点。标题、装饰和布局放在绑定外围。不要使用双花括号或未定义的 data-lore-* 属性。',
+    '所有动态值由 textContent 填入。缺失/null 显示“尚未记录”，空字符串保留；有限数字和布尔值显示文字；对象、数组和非有限数字显示“数据格式异常”。',
+    'HTML 只制作一次，状态模型每轮仍只产 XML v3，不生成或重写 HTML。模板与存档分离，换肤不修改 full/delta、快照、回档或聊天数据。',
+    '只用静态 HTML/CSS。禁止 JavaScript、事件属性、外链/网络资源、图片、字体下载、SVG、iframe、表单、contenteditable 和作者 http-equiv。META 仅用 UTF-8 charset 与标准 viewport。',
+    'CSS 使用浏览器 CSSOM 校验；只开放常见排版/颜色/渐变/变换函数与 media/supports/keyframes/container/layer。禁止 @import、url()、image-set()、attr()、CSS 转义和未知函数；图案/符号用字面 Unicode。空 sandbox 和固定 CSP 由 renderer 管理。',
+    '重复区域禁止 id 以及 for/ARIA IDREF 引用，改用 class 和静态 aria-label；静态区域 id 唯一、引用目标必须存在。',
+    '模板最多 100000 字符、5000 源元素、32 个 each；总克隆最多 500，最终最多 30000 元素/2000000 字符。冷档建议分类型 limit，并显示 count 与完整档案入口说明。',
+    '320px 单列，宽屏再分栏；网格子项 min-width:0，长 CJK/无空格文字可折行。支持 200% 字体缩放、可见焦点、44px 折叠热区和 reduced-motion。内容在 iframe 内滚动，另有宿主展开窗口；本期不做数值条、任意属性绑定、tabs 或自动测高。',
+    '以下可运行示例只选择部分字段，允许按风格重新布局：',fence+'html',example,fence,'状态栏条目：',rules
+  ].join('\n');
+
 }

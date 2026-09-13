@@ -19,7 +19,7 @@ const script={type:'script',enabled:true,name:'LoreState · 文字状态原型',
 await mkdir(new URL(out,root),{recursive:true});
 await mkdir(new URL('artifact/',root),{recursive:true});
 await writeFile(new URL('artifact/bundle.js',root),content+'\n');
-const remoteScript={...script,content:`import '${remoteUrl}';`,info:script.info+(stable?'':' 远程入口跟随 main；刷新脚本后获取 main 最新 bundle。')};
+const remoteScript={...script,content:`import '${remoteUrl}';`,info:script.info+' Template API v2：多区域声明式 HUD；旧 HTML 需重制，原文与现有状态/schema/快照保留。未完成本版真实宿主与人工验收。'+(stable?'':' 远程入口跟随 main；刷新脚本后获取 main 最新 bundle。')};
 await writeFile(new URL(out+'lorestate-script.json',root),JSON.stringify(remoteScript,null,2)+'\n');
 await writeFile(new URL(out+'receipt.json',root),JSON.stringify({version:ref,mode:'remote-only',realHostVerified:false,scriptId:script.id,sha256:createHash('sha256').update(content+'\n').digest('hex'),runtime:{sillytavern:'1.18.0',tavernHelper:'4.9.5'},runtimeDependencies:['Tavern Helper'],remoteLoaders:[{url:remoteUrl,ref}],remoteEntry:'lorestate-script.json'},null,2)+'\n');
 console.log(`Built ${ref} remote loader and artifact/bundle.js`);

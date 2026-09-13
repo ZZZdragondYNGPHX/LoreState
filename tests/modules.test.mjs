@@ -91,5 +91,5 @@ test('预算撤下可选完整档案时，同步撤下专用规则和冷档权�
 });
 test('作者入口要求明确模块格式，不尝试转换旧条目',()=>{
   assert.throws(()=>authorPrompt('记录人物身体状况'),/不转换旧条目/);
-  assert.ok(authorPrompt(rules).includes('data-lore-module="人物"'));
+  const prompt=authorPrompt(rules);assert.ok(prompt.includes('LoreState Template API v2'));assert.ok(prompt.includes('data-lore-each="人物"'));assert.ok(prompt.includes('data-lore-shared'));assert.ok(prompt.includes('只显示部分字段'));assert.ok(prompt.includes('XML v3'));
 });

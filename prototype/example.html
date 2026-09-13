@@ -1,12 +1,125 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><style>
-body{background:#f4eedf;color:#36372c;font-family:system-ui;padding:18px}
-header{border-bottom:1px solid #b9ad8b;padding-bottom:8px;margin-bottom:14px}
-small{letter-spacing:.14em;color:#72785e}h2{margin:3px 0;font-size:20px}
-main{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
-section{border-left:3px solid #9caa82;padding-left:10px}h3{margin:0;font-size:12px;color:#70765c}p{margin:4px 0}
-</style></head><body><header><small>TRAVEL NOTES</small><h2>旅途手记</h2></header><main>
-<section><h3>当前位置</h3><p data-lore-field="地点"></p></section>
-<section><h3>当前时间</h3><p data-lore-field="时间"></p></section>
-<article data-lore-entity><h3 data-lore-name></h3><small data-lore-type></small><small data-lore-confirmed></small><section><h3>概况</h3><p data-lore-field="概况"></p></section>
-<section><h3>当前状态</h3><p data-lore-field="当前状态"></p></section>
-</article></main></body></html>
+<!doctype html>
+<html lang="zh-CN" data-lore-template="2">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LoreState · 旅途档案</title>
+<style>
+:root{
+  --ls-bg:#11191f;--ls-surface:#1a252d;--ls-card:#202e37;--ls-line:#34444e;
+  --ls-text:#eaf0ef;--ls-muted:#b1c0c8;--ls-accent:#e1c185;--ls-mint:#a6d9c0;
+  --ls-radius:14px;--ls-gap:16px;
+}
+body{margin:0;padding:clamp(12px,2.5vw,24px);background:var(--ls-bg);color:var(--ls-text);font-family:system-ui,sans-serif;font-size:.875rem;line-height:1.6}
+h1,h2,h3,p,dl,dd{margin:0}h1{font-size:1.5rem;font-weight:650;letter-spacing:.08em}
+h2{font-size:1rem;font-weight:650}h3{font-size:1rem;font-weight:600}
+p,dd,span,b,small,h1,h2,h3{overflow-wrap:anywhere}small{font-size:.75rem}
+.brand{display:flex;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:20px}
+.brand-mark{display:grid;place-items:center;flex:0 0 42px;height:42px;border:1px solid var(--ls-accent);border-radius:12px;color:var(--ls-accent);font-weight:700;letter-spacing:.06em}
+.eyebrow{color:var(--ls-accent);font-size:.6875rem;letter-spacing:.2em;font-weight:600}
+.edition{margin-left:auto;padding:4px 10px;border:1px solid var(--ls-line);border-radius:999px;color:var(--ls-muted);font-size:.75rem}
+.context{display:grid;grid-template-columns:minmax(0,1fr);gap:12px;padding:16px 18px;border:1px solid var(--ls-line);border-radius:var(--ls-radius);background:linear-gradient(115deg,#283740,#1a252d);margin-bottom:var(--ls-gap)}
+.context dt{font-size:.75rem;color:var(--ls-muted);margin-bottom:3px}.context dd{font-size:1rem;color:var(--ls-text)}
+.context .place dd{font-size:1.125rem;font-weight:600}
+.dashboard{display:grid;grid-template-columns:minmax(0,1fr);gap:var(--ls-gap)}
+.panel{padding:16px;border:1px solid var(--ls-line);border-radius:var(--ls-radius);background:var(--ls-surface);min-width:0}
+.panel-heading{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:14px;flex-wrap:wrap}
+.panel-heading h2{display:flex;align-items:baseline;gap:9px}.section-index{color:var(--ls-accent);font-size:.6875rem;letter-spacing:.1em;font-weight:500}
+.count{color:var(--ls-muted);font-size:.75rem}.count b{color:var(--ls-text);font-weight:500}
+.empty{padding:14px;border:1px dashed var(--ls-line);border-radius:9px;color:var(--ls-muted);font-size:.8125rem}
+.character{padding:14px;border:1px solid #3c4d57;border-radius:11px;background:var(--ls-card)}
+.character+.character{margin-top:10px}.character-top{display:flex;align-items:flex-start;gap:10px}
+.portrait{flex:0 0 32px;display:grid;place-items:center;min-height:36px;border-radius:9px;background:#30433f;color:var(--ls-mint);font-size:1.125rem}
+.identity{color:var(--ls-muted);font-size:.75rem}.character-title{flex:1}
+.badge{display:inline-block;padding:2px 8px;border:1px solid #496258;border-radius:6px;color:var(--ls-mint);font-size:.75rem;margin-top:8px}
+.goal{margin-top:12px;padding-top:10px;border-top:1px solid var(--ls-line)}.label{display:block;margin-bottom:3px;color:var(--ls-muted);font-size:.75rem}
+details.record{margin-top:10px;color:var(--ls-muted);font-size:.75rem}.record p{margin:6px 0}.record b{font-weight:500;color:var(--ls-text)}
+summary{cursor:pointer;min-height:44px;padding:10px 0;overflow-wrap:anywhere}summary::marker{color:var(--ls-accent)}summary:focus,summary:focus-visible{outline:2px solid var(--ls-accent);outline-offset:3px;border-radius:4px}
+.inventory-item{display:flex;align-items:flex-start;gap:10px;padding:11px 0;border-top:1px solid var(--ls-line)}
+.item-mark{flex:0 0 28px;display:grid;place-items:center;width:28px;min-height:32px;color:var(--ls-accent);border:1px solid var(--ls-line);border-radius:7px}.item-copy{flex:1}
+.inventory-item p{font-size:.75rem;color:var(--ls-muted);margin-top:3px}.inventory-item b{font-weight:500;color:var(--ls-text)}
+.event{padding:0 0 0 12px;border-left:2px solid var(--ls-accent)}.event+.event{margin-top:18px}.event>p{margin-top:6px;font-size:.8125rem}
+.event details{margin-top:6px;color:var(--ls-muted);font-size:.75rem}
+.world-item+.world-item{border-top:1px solid var(--ls-line);margin-top:12px;padding-top:12px}
+.world-fields{display:grid;grid-template-columns:minmax(0,1fr);gap:10px;margin-top:10px}.world-fields dt{font-size:.75rem;color:var(--ls-muted)}.world-fields dd{font-size:.8125rem}
+.archive{margin-top:var(--ls-gap);border:1px solid var(--ls-line);border-radius:var(--ls-radius);padding:2px 16px;background:var(--ls-surface)}
+.archive>summary{font-size:.875rem;color:var(--ls-muted)}.archive-note{font-size:.75rem;color:var(--ls-muted);margin:2px 0 14px}
+.archive-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:16px;padding-bottom:16px}.archive-grid h3{font-size:.8125rem;color:var(--ls-accent);margin-bottom:6px}
+.archive-item{padding:7px 0;border-top:1px solid var(--ls-line)}.archive-item b{font-size:.8125rem;font-weight:500}.archive-item p{font-size:.75rem;color:var(--ls-muted)}
+.archive-grid .empty{padding:6px 0;border:0;font-size:.75rem}
+.footnote{margin-top:12px;font-size:.6875rem;letter-spacing:.04em;color:var(--ls-muted);text-align:right}
+@media(min-width:420px){.context{grid-template-columns:minmax(0,1.2fr) minmax(0,1fr)}.archive-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(min-width:640px){.dashboard{grid-template-columns:minmax(0,1.3fr) minmax(0,1fr)}.party{grid-row:span 2}.world{grid-column:1 / -1}.world-fields{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+</style>
+</head>
+<body>
+<header class="brand">
+  <span class="brand-mark" aria-hidden="true">LS</span>
+  <div><p class="eyebrow">LORESTATE / FIELD JOURNAL</p><h1>旅途档案</h1></div>
+  <span class="edition">状态总览</span>
+</header>
+<dl class="context">
+  <div class="place"><dt>当前位置</dt><dd data-lore-shared="地点"></dd></div>
+  <div><dt>剧情时间</dt><dd data-lore-shared="时间"></dd></div>
+</dl>
+<main class="dashboard">
+  <section class="panel party" aria-label="在场人物">
+    <header class="panel-heading"><h2><span class="section-index">01</span>在场人物</h2><span class="count"><b data-lore-count="人物"></b> 位</span></header>
+    <p class="empty" data-lore-empty="人物">此刻没有在场人物。</p>
+    <article class="character" data-lore-each="人物">
+      <div class="character-top"><span class="portrait" aria-hidden="true">◇</span><div class="character-title"><h3 data-lore-name></h3><p class="identity" data-lore-identity></p><span class="badge" data-lore-field="身体状况"></span></div></div>
+      <div class="goal"><span class="label">眼下目标</span><p data-lore-field="当前目标"></p></div>
+      <details class="record"><summary>档案信息</summary><p>编号 · <b data-lore-id></b></p><p>最后确认 · <b data-lore-confirmed></b></p></details>
+    </article>
+  </section>
+
+  <section class="panel inventory" aria-label="随行物品">
+    <header class="panel-heading"><h2><span class="section-index">02</span>随行物品</h2><span class="count"><b data-lore-count="物品"></b> 项</span></header>
+    <p class="empty" data-lore-empty="物品">暂无物品记录。</p>
+    <article class="inventory-item" data-lore-each="物品">
+      <span class="item-mark" aria-hidden="true">▱</span>
+      <div class="item-copy"><h3 data-lore-name></h3><p>持有者 · <b data-lore-field="持有者"></b></p><p>状态 · <b data-lore-field="完好状况"></b></p></div>
+    </article>
+  </section>
+  <section class="panel quests" aria-label="当前事件">
+    <header class="panel-heading"><h2><span class="section-index">03</span>当前事件</h2><span class="count"><b data-lore-count="事件"></b> 件</span></header>
+    <p class="empty" data-lore-empty="事件">暂时没有需要追踪的事件。</p>
+    <article class="event" data-lore-each="事件">
+      <h3 data-lore-name></h3><p data-lore-field="进展"></p>
+      <details><summary>事项与触发条件</summary><p data-lore-field="事项"></p></details>
+    </article>
+  </section>
+  <section class="panel world" aria-label="世界动向">
+    <header class="panel-heading"><h2><span class="section-index">04</span>世界动向</h2><span class="count"><b data-lore-count="国家"></b> 个国家</span></header>
+    <p class="empty" data-lore-empty="国家">世界局势尚待记录。</p>
+    <article class="world-item" data-lore-each="国家">
+      <h3 data-lore-name></h3><dl class="world-fields"><div><dt>政局</dt><dd data-lore-field="政局"></dd></div><div><dt>外交</dt><dd data-lore-field="外交"></dd></div></dl>
+    </article>
+  </section>
+</main>
+<details class="archive">
+  <summary>封存档案 · 按类别查看</summary>
+  <p class="archive-note">每类最多显示 5 项，数量为完整冷档总数。完整档案请看历史与诊断。</p>
+  <div class="archive-grid">
+    <section><h3>人物 · <span data-lore-count="人物" data-lore-presence="cold"></span></h3>
+      <p class="empty" data-lore-empty="人物" data-lore-presence="cold">暂无封存记录</p>
+      <article class="archive-item" data-lore-each="人物" data-lore-presence="cold" data-lore-limit="5"><b data-lore-name></b><p data-lore-identity></p></article>
+    </section>
+    <section><h3>物品 · <span data-lore-count="物品" data-lore-presence="cold"></span></h3>
+      <p class="empty" data-lore-empty="物品" data-lore-presence="cold">暂无封存记录</p>
+      <article class="archive-item" data-lore-each="物品" data-lore-presence="cold" data-lore-limit="5"><b data-lore-name></b><p data-lore-identity></p></article>
+    </section>
+    <section><h3>事件 · <span data-lore-count="事件" data-lore-presence="cold"></span></h3>
+      <p class="empty" data-lore-empty="事件" data-lore-presence="cold">暂无封存记录</p>
+      <article class="archive-item" data-lore-each="事件" data-lore-presence="cold" data-lore-limit="5"><b data-lore-name></b><p data-lore-identity></p></article>
+    </section>
+    <section><h3>国家 · <span data-lore-count="国家" data-lore-presence="cold"></span></h3>
+      <p class="empty" data-lore-empty="国家" data-lore-presence="cold">暂无封存记录</p>
+      <article class="archive-item" data-lore-each="国家" data-lore-presence="cold" data-lore-limit="5"><b data-lore-name></b><p data-lore-identity></p></article>
+    </section>
+  </div>
+</details>
+<footer class="footnote">LORESTATE · 只记录已确认的状态</footer>
+</body>
+</html>

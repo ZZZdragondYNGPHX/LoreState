@@ -1,9 +1,9 @@
-import { entityFields } from './modules.js';
+import { parseModules, moduleShape } from './modules.js';
 import { historyIdentity, historyMatches, snapshotSchema, collectSnapshots, replaySnapshots, planRestore } from './snapshots.js';
 import { emptySnapshotStore, readSnapshots, packSnapshots, addReadReceipt, readReceipt, snapshotStorageInfo } from './snapshot-store.js';
 import { createStateFrame, createStateWindow } from './state-frame.js';
 import { PROTO_KEY, TAG_PATTERN, replayState, playPrompt, preparePrompt, authorPrompt, authorPolicy, initialResult, inspectFloor } from './core.js';
-import { renderTemplate, templateSchema, validateTemplateSchema } from './template.js';
+import { renderTemplateV2, validateTemplateV2 } from './template.js';
 import { createControlCenter } from './control-center.js';
 import { listPresets, sameSchema, savePreset, deletePreset } from './presets.js';
 import { API_PROFILE_KEY, boundApiProfile, extraModelRequest, normalizeUpdateSettings } from './api-profiles.js';
@@ -282,17 +282,25 @@ export function startPrototype(defaultHtml) {
     try{await navigator.clipboard.writeText(maker.value);report('制作提示词已复制。交给网页 AI 后，将 HTML 粘贴到下方。');}
     catch{report('制作提示词已生成，请从文本框手动复制。');}
   });
-  const htmlLabel=node('label','粘贴网页 AI 生成的 HTML',panel),html=node('textarea',undefined,htmlLabel);html.setAttribute('aria-label','HTML 模板');html.rows=9;html.value=settings().html||defaultHtml;
+  const htmlLabel=node('label','粘贴网页 AI 生成的 HTML',panel),html=node('textarea',undefined,htmlLabel);html.setAttribute('aria-label','HTML 模板');html.rows=9;html.value=settings().html??defaultHtml;
   const presetLabel=node('label','HTML 预设（随卡保存）',panel),presetSelect=node('select',undefined,presetLabel);presetSelect.setAttribute('aria-label','HTML 预设');
   const nameLabel=node('label','预设名称',panel),presetName=node('input',undefined,nameLabel);presetName.maxLength=40;presetName.setAttribute('aria-label','预设名称');
+  const presetSourceDisclosure=node('details',undefined,panel);node('summary','查看所选预设原文（含旧模板，可复制备份）',presetSourceDisclosure);
+  const presetSource=node('textarea',undefined,presetSourceDisclosure);presetSource.readOnly=true;presetSource.setAttribute('aria-label','所选预设 HTML 原文');
+  function syncPresetSource(){const preset=listPresets(settings()).find(p=>p.id===presetSelect.value);presetName.value=preset?.name??'我的样式';presetSource.value=preset?.html??'';}
   function syncPresets(id=settings().activePresetId??'default'){
     presetSelect.replaceChildren();for(const p of listPresets(settings())){const option=node('option',p.name,presetSelect);option.value=p.id;}
     if(listPresets(settings()).some(p=>p.id===id))presetSelect.value=id;
-    presetName.value=listPresets(settings()).find(p=>p.id===presetSelect.value)?.name??'我的样式';
+    syncPresetSource();
   }
   function writeConfig(config){updateVariablesWith(v=>({...v,[PROTO_KEY]:config}),{type:'script'});}
-  function validateSkin(source){const config=settings(),parsed={schema:validateTemplateSchema(source,config.schema??null)};if(config.ready&&schemaFor(config)&&!sameSchema(parsed.schema,schemaFor(config)))throw new Error('预设的栏目必须与当前配置一致；可以调整顺序和外观，不能增删栏目');return parsed;}
-  presetSelect.onchange=()=>{presetName.value=listPresets(settings()).find(p=>p.id===presetSelect.value)?.name??'';};
+  function dataSchemaFromEntry(entry=selectedEntry()){
+    const parsed=parseModules(entry?.content??'');
+    if(!parsed)throw new Error('请使用以【LoreState模块 v1】开头的模块条目，不转换旧条目');
+    return moduleShape(parsed);
+  }
+  function validateSkin(source){return validateTemplateV2(source,settings().schema??dataSchemaFromEntry());}
+  presetSelect.onchange=syncPresetSource;
   button('另存为新预设',panel,()=>{validateSkin(html.value);const id=crypto.randomUUID();writeConfig(savePreset(settings(),presetName.value,html.value,id));syncPresets(id);report('已保存新预设。点击“应用所选预设”才会切换当前样式。');});
   button('覆盖所选预设',panel,async()=>{validateSkin(html.value);const config=settings(),id=presetSelect.value;if(!id)throw new Error('请先保存一份预设');let next=savePreset(config,presetName.value,html.value,id);if(id===(config.activePresetId??'default'))next={...next,html:html.value};writeConfig(next);syncPresets(id);renderKey='';await refresh();report('预设已更新，聊天状态保留。');});
   button('应用所选预设',panel,async()=>{const config=settings(),preset=listPresets(config).find(p=>p.id===presetSelect.value);if(!preset)throw new Error('请先保存一份预设');validateSkin(preset.html);if(!config.ready)throw new Error('请先点击“保存 HTML 并启用本聊天”完成初始配置');writeConfig({...config,presets:listPresets(config),html:preset.html,activePresetId:preset.id});html.value=preset.html;renderKey='';await refresh();report(`已应用“${preset.name}”，聊天状态保留。`);});
@@ -304,12 +312,25 @@ export function startPrototype(defaultHtml) {
     if(pending&&list.some(m=>m.message_id===pending.floor&&m.message!==pending.original))throw new Error('续写尚未整理完成，请重新读取当前聊天状态；原分支变化时需先恢复原分支');
     return replaySnapshots(list,schemaFor(config),chatSettings().start??1,chatSettings().checkpoint);
   };
+  function templatePreviewState(schema){
+    const example=fields=>Object.fromEntries(fields.map(f=>[f,f+'的示例文字'])),entities={},modules=Object.entries(schema.modules??{});
+    modules.forEach(([type,fields],index)=>{
+      const activeCount=modules.length>1&&index===modules.length-1?0:index===0?2:1;
+      for(let n=0;n<=activeCount;n++){
+        const id='X'+index+'_'+n,presence=n===activeCount?'cold':'active';
+        entities[id]={id,type,name:type+'示例 '+(n+1),identity:'合成预览 · 非聊天档案',presence,confirmed:null,fields:example(fields)};
+      }
+    });
+    return {shared:example(schema.shared),entities};
+  }
   button('预览 HTML（不保存）',panel,()=>{
-    const schema=templateSchema(html.value,selectedEntry()?.content??''),config=settings();
-    const example=fields=>Object.fromEntries(fields.map(f=>[f,`${f}的示例文字`]));
-    const state=schemaFor(config)&&sameSchema(schema,schemaFor(config))?getResult(config).state:null;
-    preview.srcdoc=renderTemplate(html.value,state??{shared:example(schema.shared),entities:schema.modules?Object.fromEntries(Object.entries(schema.modules).map(([type,fields],i)=>['X'+i,{id:'X'+i,name:type+'示例',identity:'实体识别信息',type,confirmed:null,presence:'active',fields:example(fields)}])):schema.entity.length?{P01:{id:'P01',name:'示例实体',identity:'实体识别信息',type:'通用',confirmed:null,presence:'active',fields:example(schema.entity)}}:{}});
-    report(`公共栏目：${schema.shared.join('、')||'无'}；实体栏目：${schema.entity.join('、')||'无'}。预览未保存。`);
+    const schema=dataSchemaFromEntry(),config=settings();
+    const current=schemaFor(config)&&sameSchema(schema,schemaFor(config))?getResult(config).state:null;
+    const diagnostics=[];
+    try{preview.srcdoc=renderTemplateV2(html.value,current??templatePreviewState(schema),schema,DOMParser,diagnostics);}
+    catch(error){preview.removeAttribute('srcdoc');throw error;}
+    preview.title=current?'LoreState 当前聊天状态预览':'LoreState 合成预览（非聊天状态）';
+    report((current?'当前聊天状态预览':'合成预览（非聊天状态；含冷热档与空区）')+'；模板仅选择展示字段，完整数据 schema 保留。预览未保存。'+(diagnostics.length?' 数据格式异常：'+diagnostics.length+' 处。':''));
   });
   const regexId='lorestate-text-prototype-tags-v1';
   async function installRegex(){
@@ -323,7 +344,7 @@ export function startPrototype(defaultHtml) {
     if(!entry?.content?.trim())throw new Error('请先选中状态栏条目');
     if(!ctx().getCurrentChatId()||!messages().length)throw new Error('请先打开角色聊天');
     if(ctx().chatMetadata?.wishnote_v1?.enabled||ctx().chatMetadata?.lorestate_v1?.enabled)throw new Error('本聊天启用了旧扩展状态，请先停用旧版或使用新测试聊天');
-    const schema=templateSchema(html.value,entry.content),previous=settings();
+    const schema=dataSchemaFromEntry(entry),previous=settings();validateTemplateV2(html.value,schema);
     if(previous.ready&&previous.schema&&!sameSchema(schema,previous.schema))throw new Error('已有配置不支持改变栏目，以免影响其他聊天。新栏目请使用独立角色脚本。');
     const activePresetId=previous.activePresetId??'default';
     const activeName=listPresets(previous).find(p=>p.id===activePresetId)?.name??'默认样式';
@@ -390,7 +411,7 @@ export function startPrototype(defaultHtml) {
   const center=createControlCenter({doc,manager,panel,summary,status,floorSelect,details,diagnostics,repairBox,tailPreview,snapshotPanel,apiPanel:apiUi.panel,loadApi:apiUi.sync,actions,loadSettings,settingsGroups:[
     {title:'世界书与规则',hint:'选择随卡世界书里的状态栏条目；它决定 LoreState 记录哪些栏目。',items:[bookLabel,entryLabel,[a('刷新世界书列表')],ruleDisclosure]},
     {title:'外观模板',hint:'粘贴网页 AI 生成的 HTML，预览确认后保存并启用本聊天。',items:[htmlLabel,[a('预览 HTML（不保存）'),a('保存 HTML 并启用本聊天')],preview,makerDisclosure]},
-    {title:'外观预设',hint:'同一套栏目可以保存多份外观，随角色卡保存，随时切换。',items:[presetLabel,nameLabel,[a('应用所选预设'),a('另存为新预设'),a('覆盖所选预设'),a('删除所选预设')]]},
+    {title:'外观预设',hint:'同一数据 schema 可自由分区、隐藏或重复展示字段；换肤保留存档。',items:[presetLabel,nameLabel,[a('应用所选预设'),a('另存为新预设'),a('覆盖所选预设'),a('删除所选预设')],presetSourceDisclosure]},
     {title:'初始档案与字段约束',hint:'可选：给新聊天一份确定的初始状态，并用文字规则约束字段。',items:[authorHelp,initialLabel,[a('生成初始档案模板')],constraintLabel,[a('预览作者配置')],policyPreview,[a('保存为新聊天默认配置'),a('应用到尚未开始的本聊天')]]},
     {title:'聊天维护',hint:'重新计算本聊天状态，或暂停本聊天的状态更新。',items:[[a('重新读取当前聊天状态'),a('暂停本聊天')]]},
   ]});
@@ -406,6 +427,7 @@ export function startPrototype(defaultHtml) {
   function viewIsIntact(last,result){
     if(!view?.isConnected||view.parentElement!==expectedViewParent(last))return false;
     if(!result.state)return true;
+    if(view.dataset.templateState==='error'&&view.querySelector('.lorestate-template-error'))return true;
     const frame=view.querySelector('iframe.lorestate-state-frame');
     return !!frame?.isConnected;
   }
@@ -429,22 +451,26 @@ export function startPrototype(defaultHtml) {
   function paint(result,list){
     const last=list.findLast(m=>m.role==='assistant');if(!last)return;
     const message=doc.querySelector(`#chat .mes[mesid="${last.message_id}"]`);if(!message)return;
-    const config=settings(),key=JSON.stringify([last.message_id,result.state,result.errors,config.html,chatSettings().checkpoint?.id]);
+    const config=settings(),key=JSON.stringify([last.message_id,result.state,result.errors,config.html,schemaFor(config),chatSettings().checkpoint?.id]);
     if(viewIsIntact(last,result)&&renderKey===key)return;
     view?.remove();view=node('section',undefined,message.querySelector('.mes_block')||message);view.className='lorestate-prototype-view';view.style.cssText='display:block;position:relative;width:100%;max-width:100%;min-width:0;box-sizing:border-box;flex:1 0 100%;grid-column:1 / -1;clear:both;margin:12px 0;padding:12px 0;border-top:1px solid #778063';
     node('small',result.errors.length?`状态存在缺口：${result.errors.length} 轮失败，最早第 ${result.errors[0].floor} 楼；最后连续正常楼层 ${result.lastGoodFloor??'尚无'}。后续有效更新已应用，需核对剧情。`:result.state?'LoreState · 当前状态':'LoreState · 等待首次完整状态',view);
     if(chatSettings().checkpoint)node('p',`状态已回档至第 ${chatSettings().checkpoint.floor} 楼快照；旧正文保留。`,view);
     button('查看历史与诊断',view,()=>openManager(result.errors[0]?.floor));
-    if(result.state){
-      const source=renderTemplate(config.html,result.state);
-      const expand=button('展开状态窗口',view,()=>stateWindow.open(source));expand.style.cssText='display:inline-block;min-height:44px;margin:8px 8px 12px 0;padding:8px 12px;cursor:pointer';
-      const frame=createStateFrame(doc,'LoreState 当前状态');frame.srcdoc=source;view.append(frame);stateWindow.update(source);
-      const cold=Object.values(result.state.entities).filter(p=>p.presence==='cold');
-      if(cold.length){const archive=node('details',undefined,view);node('summary',`本地冷档 · ${cold.length} 个实体`,archive);
-        for(const p of cold){const item=node('details',undefined,archive);node('summary',`${p.type} · ${p.name} · ${p.id} · ${p.identity} · 最后确认：${p.confirmed??'剧情时间未知'} · 更新楼层：${p.confirmedFloor??'未知'}`,item);
-          let loaded=false;item.ontoggle=()=>{if(item.open&&!loaded){for(const f of entityFields(schemaFor(config),p.type)){node('h4',f,item);const text=node('p',p.fields[f]??'尚未记录',item);text.style.cssText='white-space:pre-wrap;overflow-wrap:anywhere';}loaded=true;}};
-        }
-      }
+    const logTemplate=message=>{runtimeLogs.push({time:new Date().toISOString(),stage:'模板渲染',message});runtimeLogs=runtimeLogs.slice(-30);};
+    try{
+      if(result.state){
+        const diagnostics=[],source=renderTemplateV2(config.html,result.state,schemaFor(config),DOMParser,diagnostics);
+        const expand=button('展开状态窗口',view,()=>stateWindow.open(source));expand.style.cssText='display:inline-block;min-height:44px;margin:8px 8px 12px 0;padding:8px 12px;cursor:pointer';
+        const frame=createStateFrame(doc,'LoreState 当前状态');frame.srcdoc=source;view.append(frame);stateWindow.update(source);
+        if(diagnostics.length){const text='模板发现 '+diagnostics.length+' 处数据格式异常，已显示文字提示；存档保持原样。';node('p',text,view).setAttribute('role','status');logTemplate(text);}
+      }else validateTemplateV2(config.html,schemaFor(config));
+    }catch(error){
+      stateWindow.close();view.dataset.templateState='error';
+      const message='状态栏模板待修正：'+String(error?.message??error);
+      const warning=node('p',message,view);warning.className='lorestate-template-error';warning.setAttribute('role','alert');warning.style.overflowWrap='anywhere';
+      button('打开模板设置',view,()=>center.open('settings'));
+      logTemplate(message);report(message+' 状态更新与历史记录继续运行。');
     }
     if(result.errors.length)button('重新读取状态',view,()=>refresh());renderKey=key;
   }
