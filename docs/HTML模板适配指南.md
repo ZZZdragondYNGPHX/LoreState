@@ -1,6 +1,6 @@
 # LoreState Template API v2：作者接口
 
-> 本文对应 `0.11.0` 与后续 `main` 的 Template API v2。旧 `0.10.6` 标签保留原有模板行为；本次完整 UI 的真实 SillyTavern、真实模型及人工验收仍待完成。
+> 基础接口从 `0.11.0` 引入；本文新增的条件显隐、class 映射与外观制作台仅适用于 `0.11.1` 与后续 `main`。已有 v2 模板仍兼容。旧 `0.10.6` 标签保留原有模板行为；本次完整 UI 的真实 SillyTavern、真实模型及人工验收仍待完成。
 
 Template API v2 将「存什么」和「怎么显示」分开：**模块条目定义 DataSchema，HTML 只选择展示字段和布局**。人物、物品、事件、国家可各自排版；字段可以省略、重复，整类也可以不显示。
 
@@ -13,7 +13,7 @@ Template API v2 将「存什么」和「怎么显示」分开：**模块条目�
 - [旅途档案 HUD](../prototype/example.html)：深色多区域界面，人物卡、紧凑物品、事件与世界动向分开。
 - [紧凑日志](../prototype/module-example.html)：浅色日志布局，展示同一份状态，适合偏文字的卡。
 
-在设置选择模块条目 → 生成并复制 HTML 制作提示词 → 粘贴 HTML → 预览 → 保存。已有配置可另存、覆盖或应用样式预设；仅换布局不会触发数据 schema 变更保护。预览明确区分当前聊天状态与合成数据，不写配置、不安装正则、不请求模型。
+首次在设置选择模块条目，再打开“外观制作”生成/粘贴 HTML，预览后回设置完成绑定。已有配置在外观制作台直接改稿与应用，继续使用已保存的数据 schema。命名预设保存/覆盖不自动应用；应用草稿也不覆盖命名预设。预览区分当前聊天状态与合成数据，不写配置、不安装正则、不请求模型。详见[外观制作台](外观制作台.md)。
 
 ## 可直接运行的最小多区域模板
 
@@ -90,6 +90,39 @@ summary:focus,summary:focus-visible{outline:2px solid var(--accent);outline-offs
 - 查询依次按类型、presence、可选 ID 过滤，维持 `state.entities` 的输入遍历顺序，each 最后应用 limit。count/empty 不受其他 each 的 limit 影响。
 - `limit="1"` 不识别玩家，`limit="5"` 不表示最近任务。本期不排序、不推断身份、不执行表达式。
 - 缺失/null 显示“尚未记录”；空串保留；有限数字/布尔显示文字；数组、对象、非有限数字显示“数据格式异常”，并生成不含原值的诊断。
+
+## 0.11.1 新增：受控显隐与状态样式
+
+不更改 HTML 根版本，仍使用 data-lore-template="2"。这些属性由可信 renderer 解释，不是模板脚本接口；不会增加存储字段、修改状态或执行表达式。
+
+| 属性 | 含义 |
+| --- | --- |
+| data-lore-if-shared="地点" | 公共字段是有效非空标量时保留容器，否则删除容器与子内容 |
+| data-lore-if-field="目标" | each 内按当前实体的字段显隐；字段须属于此模块 |
+| data-lore-equals="危险" | 与上述显隐来源同节点；按显示文字精确相等，省略则判断非空 |
+| data-lore-class-shared="地点" | 根据公共字段值添加映射 class |
+| data-lore-class-field="身体状况" | each 内根据当前实体字段值添加映射 class |
+| data-lore-class-map='{"健康":"is-healthy","危险":"is-danger"}' | 必须与 class 字段来源同节点；JSON 对象，1～32 项；精确值匹配 |
+
+显隐可与 class 规则组合；同一种规则不可同时指定公共与实体来源。null/缺失或异常对象不匹配；0、false 是已记录值，不等于“空”；空字符串可用显式 equals="" 匹配。条件容器及其子孙禁止 id/IDREF，避免隐藏目标后留下无效引用。count 始终统计完整查询，显隐并不改变数据或查询数量。
+
+映射的键最长 200 字符；值只允许单个 1～64 字符的 class 名（字母、数字、下划线、横线，不能以数字开头）。未命中保留原 class。禁止把字段写入 style、URL、事件属性或任意表达式。
+
+示例：
+
+~~~html
+<article data-lore-each="人物"
+  data-lore-class-field="身体状况"
+  data-lore-class-map='{"危险":"is-danger","健康":"is-healthy"}'>
+  <h3 data-lore-name></h3>
+  <p data-lore-field="身体状况"></p>
+  <section data-lore-if-field="当前目标">
+    <h4>目标</h4><p data-lore-field="当前目标"></p>
+  </section>
+</article>
+~~~
+
+定义 .is-danger/.is-healthy 的静态 CSS 即可；模块需要声明对应字段。0.11.0 会拒绝这些新增属性，不要把新增模板倒装到旧固定版本。
 
 ## 样式、交互与预算
 

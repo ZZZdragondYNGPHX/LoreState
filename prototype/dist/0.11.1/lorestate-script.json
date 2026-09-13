@@ -1,0 +1,22 @@
+{
+  "type": "script",
+  "enabled": true,
+  "name": "LoreState · 文字状态原型",
+  "id": "0aa89d30-099d-4cf3-8cfb-d367490ec067",
+  "content": "import 'https://testingcf.jsdelivr.net/gh/ZZZdragondYNGPHX/LoreState@0.11.1/artifact/bundle.js';",
+  "info": "LoreState 0.11.1 固定版本；模块条目、分类栏目与按需规则注入；正文后统一更新。保留 v3 世界实体冷热档、有限关联召回与活动事件；目标酒馆助手 4.9.5 / SillyTavern 1.18.0。首次 full，后续 delta。此入口固定到 0.11.1 tag，不随 main 变化。 Template API v2：API 辅助外观制作、字段条件显隐与 class 映射；0.11.0 的 v2 HTML 保持兼容，更早的旧 HTML 需重制，原文与现有状态/schema/快照保留。未完成本版真实宿主与人工验收。",
+  "button": {
+    "enabled": true,
+    "buttons": [
+      {
+        "name": "LoreState 设置",
+        "visible": false
+      }
+    ]
+  },
+  "data": {},
+  "export_with": {
+    "data": true,
+    "button": true
+  }
+}

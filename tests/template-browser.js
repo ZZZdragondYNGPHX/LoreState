@@ -228,6 +228,39 @@ await check('reduced-motion 浏览器环境下两套模板没有运动效果', a
     finally { frame.remove(); }
   }
 });
+await check('受控显隐：精确字段、每实体作用域、嵌套容器与完整 count 分离',()=>{
+  const source=page('<header data-lore-if-shared="地点" data-lore-equals="白帆港"><p data-lore-shared="地点"></p></header><section data-lore-if-shared="时间" data-lore-equals="不存在"><p data-lore-count="人物"></p></section><p class="count" data-lore-count="人物"></p><article class="visible-person" data-lore-each="人物" data-lore-if-field="身体状况" data-lore-equals="健康"><b data-lore-name></b><div data-lore-if-field="目标"><span data-lore-field="目标"></span></div></article>');
+  const before=JSON.stringify(state),doc=renderDoc(source);
+  assert(doc.querySelector('header').textContent==='白帆港');assert(!doc.querySelector('section'));
+  assert(doc.querySelectorAll('.visible-person').length===1);assert(doc.querySelector('.visible-person').textContent.includes('返回书店'));
+  assert(doc.querySelector('.count').textContent==='3');assert(JSON.stringify(state)===before);
+  assert(validateTemplateV2(source,schema).displayBindings.length===4);
+});
+await check('class 映射只添加白名单 class，不改原 class 或状态、不依赖脚本',()=>{
+  const source=page('<main class="base" data-lore-class-shared="地点" data-lore-class-map=\'{"白帆港":"port"}\'><article class="person" data-lore-each="人物" data-lore-class-field="身体状况" data-lore-class-map=\'{"健康":"is-healthy","危险":"is-danger"}\'><b data-lore-name></b></article></main>');
+  const doc=renderDoc(source);assert(doc.querySelector('main').className==='base port');assert(doc.querySelectorAll('.is-healthy').length===1);assert(doc.querySelectorAll('.person').length===3);assert(!doc.querySelector('script'));
+  assert(doc.querySelector('meta[http-equiv]').content.includes("default-src 'none'"));
+});
+await check('显隐标量边界：零和 false 是记录值，缺失/对象隐藏，空串需显式 equals',()=>{
+  const source=page('<div class="present" data-lore-if-shared="地点">已记录</div><span class="empty" data-lore-if-shared="地点" data-lore-equals="">空值</span>');
+  for(const value of [0,false])assert(renderDoc(source,{shared:{地点:value}}).querySelector('.present'));
+  for(const value of [null,undefined,{},[],NaN])assert(!renderDoc(source,{shared:{地点:value}}).querySelector('.present'));
+  const doc=renderDoc(source,{shared:{地点:''}});assert(!doc.querySelector('.present'));assert(doc.querySelector('.empty'));
+});
+await check('展示接口拒绝未知字段、跨域、孤立修饰符、条件引用与不安全 class',()=>{
+  for(const body of [
+    '<p data-lore-if-field="身体状况">x</p>',
+    '<p data-lore-if-shared="未知字段">x</p>',
+    '<p data-lore-if-shared="地点" data-lore-if-field="身体状况">x</p>',
+    '<p data-lore-equals="危险">x</p>',
+    '<p data-lore-class-map=\'{"健康":"fine"}\'>x</p>',
+    '<p data-lore-class-shared="地点" data-lore-class-map=\'{"白帆港":"red blue"}\'>x</p>',
+    '<p data-lore-class-shared="地点" data-lore-class-map="[]">x</p>',
+    '<div data-lore-if-shared="地点"><p id="optional">x</p></div>',
+    '<article data-lore-each="物品" data-lore-class-field="身体状况" data-lore-class-map=\'{"健康":"fine"}\'></article>',
+  ])rejects(page(body));
+  rejects(page('<p data-lore-class-shared="地点" data-lore-class-map=\''+JSON.stringify(Object.fromEntries(Array.from({length:33},(_,i)=>[i,'c'])))+'\'>x</p>'));
+});
 const visual = new URLSearchParams(location.search).get('preview');
 if (['hud', 'compact'].includes(visual)) {
   const source = renderTemplateV2(visual === 'hud' ? hudTemplate : compactTemplate, moduleState, moduleSchema);

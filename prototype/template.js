@@ -1,4 +1,5 @@
 import { checkSchema } from './core.js';
+import { DISPLAY_ATTRIBUTES, inspectDisplayBindings, validateDisplayBindings, applyDisplayBindings } from './template-display.js';
 
 // Template API v2 is presentation only: never derive or persist a data schema here.
 export const TEMPLATE_V2_LIMITS = Object.freeze({
@@ -9,7 +10,7 @@ const V2_QUERY = ['data-lore-each', 'data-lore-count', 'data-lore-empty'];
 const V2_META = ['name', 'id', 'type', 'identity', 'confirmed'];
 const V2_OUTPUT = ['data-lore-field', 'data-lore-shared', 'data-lore-count', ...V2_META.map(k => 'data-lore-' + k)];
 const V2_MODIFIERS = ['data-lore-presence', 'data-lore-select-id', 'data-lore-limit'];
-const V2_KNOWN = new Set(['data-lore-template', ...V2_QUERY, ...V2_OUTPUT, ...V2_MODIFIERS]);
+const V2_KNOWN = new Set(['data-lore-template', ...V2_QUERY, ...V2_OUTPUT, ...V2_MODIFIERS, ...DISPLAY_ATTRIBUTES]);
 const V2_QUERY_SELECTOR = V2_QUERY.map(a => '[' + a + ']').join(',');
 const V2_OUTPUT_SELECTOR = V2_OUTPUT.map(a => '[' + a + ']').join(',');
 const V2_IDREFS = new Set('for headers aria-activedescendant aria-controls aria-describedby aria-details aria-errormessage aria-flowto aria-labelledby aria-owns'.split(' '));
@@ -109,11 +110,12 @@ function v2ReadQuery(node, attribute, region) {
   if (rawLimit !== null && (attribute !== 'data-lore-each' || !/^(?:[1-9]\d?|100)$/.test(rawLimit))) throw new Error('区域 ' + region + ' limit 仅用于 each，值为 1–100 的十进制整数');
   return {node, kind: attribute.slice(10), region, type, presence, selectId, limit: rawLimit === null ? undefined : Number(rawLimit)};
 }
-function v2PublicPlan(queries, bindings) {
+function v2PublicPlan(queries, bindings, displayBindings) {
   const freeze = items => Object.freeze(items.map(item => Object.freeze(item)));
   return Object.freeze({apiVersion: 2,
     queries: freeze(queries.map(({node, ...query}) => query)),
-    bindings: freeze(bindings.map(({node, ...binding}) => binding)), diagnostics: Object.freeze([])});
+    bindings: freeze(bindings.map(({node, ...binding}) => binding)),
+    displayBindings: freeze(displayBindings.map(({node, ...binding}) => binding)), diagnostics: Object.freeze([])});
 }
 export function inspectTemplateV2(html, Parser = DOMParser) {
   if (typeof html !== 'string' || !html.trim() || html.length > TEMPLATE_V2_LIMITS.sourceChars) throw new Error('HTML 必须为非空文字，最多 100000 字符');
@@ -160,7 +162,8 @@ export function inspectTemplateV2(html, Parser = DOMParser) {
     if (V2_META.some(key => attribute === 'data-lore-' + key) && field !== '') throw new Error('元数据绑定属性值必须为空：' + attribute);
     bindings.push({node: el, attribute, field, region: owner?.region ?? null, type: owner?.type ?? null});
   }
-  return {doc, queries, bindings, elementCount: elements.length, plan: v2PublicPlan(queries, bindings)};
+  const displayBindings = inspectDisplayBindings(doc, elements, eachByNode, V2_IDREFS);
+  return {doc, queries, bindings, displayBindings, elementCount: elements.length, plan: v2PublicPlan(queries, bindings, displayBindings)};
 }
 function v2ValidateInspection(inspection, dataSchema) {
   checkSchema(dataSchema);
@@ -171,6 +174,7 @@ function v2ValidateInspection(inspection, dataSchema) {
     if (binding.attribute === 'data-lore-field' && !dataSchema.modules[binding.type].includes(binding.field)) throw new Error('区域 ' + binding.region + ' / ' + binding.type + ' 未声明字段：' + binding.field);
     if (binding.attribute === 'data-lore-shared' && !dataSchema.shared.includes(binding.field)) throw new Error('区域 ' + (binding.region ?? '公共') + ' / shared 未声明字段：' + binding.field);
   }
+  validateDisplayBindings(inspection.displayBindings, dataSchema);
   return inspection;
 }
 export function validateTemplateV2(html, dataSchema, Parser = DOMParser) {
@@ -211,6 +215,7 @@ export function renderTemplateV2(html, state, dataSchema, Parser = DOMParser, di
   const base = doc.createElement('style');
   base.textContent = '*{box-sizing:border-box;min-width:0}html,body{margin:0;max-width:100%}body{padding:12px;color:#e5dfd3;background:#242421;font:14px/1.6 system-ui}p,span,dd,li,h1,h2,h3,h4,h5,h6{overflow-wrap:anywhere}' + V2_OUTPUT_SELECTOR + '{white-space:pre-wrap;overflow-wrap:anywhere}';
   doc.head.prepend(csp, base); // Author CSS follows the minimal readable baseline.
+  applyDisplayBindings(doc.body, state, null, diagnostics, {skipEach: true});
   let outputElements = elementCount + 2, outputChars = '<!doctype html>'.length + doc.documentElement.outerHTML.length, clones = 0;
   function setText(node, value, context) {
     const text = v2DisplayValue(value, diagnostics, context), previous = node.innerHTML.length;
@@ -223,8 +228,9 @@ export function renderTemplateV2(html, state, dataSchema, Parser = DOMParser, di
     setText(node, value, {region, field: field || attribute.slice(10), entityId: entity?.id ?? null});
   }
   // Use the scopes recorded before cloning; removing each attributes never reclassifies fields.
-  for (const binding of bindings) if (binding.region === null && binding.attribute === 'data-lore-shared') bind(binding.node, null, null);
+  for (const binding of bindings) if (doc.contains(binding.node) && binding.region === null && binding.attribute === 'data-lore-shared') bind(binding.node, null, null);
   for (const query of queries.filter(q => q.kind !== 'each')) {
+    if (!doc.contains(query.node)) continue;
     const matches = selectEntities(state, query);
     if (query.kind === 'count') setText(query.node, matches.length, {region: query.region, field: 'count'});
     else if (matches.length) {
@@ -233,6 +239,7 @@ export function renderTemplateV2(html, state, dataSchema, Parser = DOMParser, di
     }
   }
   for (const query of queries.filter(q => q.kind === 'each')) {
+    if (!doc.contains(query.node)) continue;
     const selected = selectEntities(state, query), source = query.node, size = source.querySelectorAll('*').length + 1;
     if (clones + selected.length > TEMPLATE_V2_LIMITS.clones) throw new Error('模板总克隆超过 500 预算，请缩小查询或设置 limit');
     outputChars -= source.outerHTML.length; outputElements -= size;
@@ -243,6 +250,7 @@ export function renderTemplateV2(html, state, dataSchema, Parser = DOMParser, di
       if (outputChars + sourceChars > TEMPLATE_V2_LIMITS.outputChars) throw new Error('模板输出超过 2000000 字符预算');
       outputElements += size; outputChars += sourceChars; clones++;
       const clone = source.cloneNode(true);
+      if (!applyDisplayBindings(clone, state, entity, diagnostics)) continue;
       for (const node of clone.querySelectorAll(V2_OUTPUT_SELECTOR)) bind(node, entity, query.region);
       fragment.append(clone);
     }

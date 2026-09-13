@@ -1,7 +1,7 @@
 import { uiCard, uiActions } from './ui-kit.js';
 
 // Presentation only: no host data writes or persisted navigation state.
-export function createControlCenter({doc,manager,panel,summary,status,floorSelect,details,diagnostics,repairBox,tailPreview,snapshotPanel,apiPanel,loadApi,actions,loadSettings,settingsGroups}) {
+export function createControlCenter({doc,manager,panel,summary,status,floorSelect,details,diagnostics,repairBox,tailPreview,snapshotPanel,apiPanel,loadApi,actions,loadSettings,settingsGroups,appearancePanel,loadAppearance}) {
   const make=(tag,text,parent)=>{const el=doc.createElement(tag);if(text)el.textContent=text;parent?.append(el);return el;};
   manager.replaceChildren();manager.removeAttribute('style');manager.setAttribute('aria-label','LoreState 控制中心');
   panel.removeAttribute('style');
@@ -62,6 +62,17 @@ export function createControlCenter({doc,manager,panel,summary,status,floorSelec
   #lorestate-state-manager pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px}
   #lorestate-state-manager .ls-fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(240px,100%),1fr));gap:16px;margin:16px 0}
   #lorestate-state-manager dt{font-size:13px;color:var(--ls-muted)}#lorestate-state-manager dd{margin:4px 0 0;overflow-wrap:anywhere}
+  #lorestate-state-manager .ls-appearance{container-type:inline-size}
+  #lorestate-state-manager .ls-appearance-work{display:grid;grid-template-columns:minmax(0,1fr);gap:16px;margin:20px 0}
+  #lorestate-state-manager .ls-appearance-code textarea{font:13px/1.6 ui-monospace,monospace;tab-size:2;min-height:300px;resize:vertical}
+  #lorestate-state-manager .ls-appearance-frame{margin-top:12px}
+  #lorestate-state-manager .ls-style-dialog{position:fixed;inset:0;margin:auto;width:min(640px,calc(100vw - 24px));max-width:none;max-height:calc(100dvh - 24px);padding:0;border:1px solid var(--ls-line);border-radius:14px;background:var(--ls-bg);color:inherit;font:inherit;overflow:auto}
+  #lorestate-state-manager .ls-style-dialog::backdrop{background:#080e0bd9}
+  #lorestate-state-manager .ls-style-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px;border-bottom:1px solid var(--ls-line)}
+  #lorestate-state-manager .ls-style-head h3{margin:0}
+  #lorestate-state-manager .ls-style-body{padding:16px}
+  #lorestate-state-manager .ls-style-footer{position:sticky;bottom:0;background:var(--ls-bg);padding:12px 16px;margin:0;border-top:1px solid var(--ls-line)}
+  @container(min-width:650px){#lorestate-state-manager .ls-appearance-work{grid-template-columns:minmax(0,1.15fr) minmax(0,1fr)}}
   @media(prefers-reduced-motion:reduce){#lorestate-state-manager .ls-chevron{transition:none}}
   @media(max-width:520px){#lorestate-state-manager .ls-header{padding:14px 14px 8px}#lorestate-state-manager .ls-tabs{margin:0 14px 10px}#lorestate-state-manager .ls-tabs button{padding:8px 4px;font-size:13px}#lorestate-state-manager .ls-toolbar{padding:12px 14px 0}#lorestate-state-manager .ls-body{padding:14px}#lorestate-state-manager .ls-toolbar label{width:100%;margin-right:0}#lorestate-state-manager .ls-toolbar select{flex:1}#lorestate-state-manager .ls-card>summary{padding:12px}#lorestate-state-manager .ls-card-body{padding:4px 12px 14px}#lorestate-state-manager .ls-actions button{flex:1 1 140px}}
   `;
@@ -92,13 +103,14 @@ export function createControlCenter({doc,manager,panel,summary,status,floorSelec
   });
   for(const title of ['保存 HTML 并启用本聊天','重新计算本层状态','确认边界并重算'])actions.get(title)?.classList.add('ls-primary');
   for(const title of ['删除所选预设','暂停本聊天'])actions.get(title)?.classList.add('ls-danger');
+  if(appearancePanel)body.append(appearancePanel);
   if(apiPanel)body.append(apiPanel);
-  const pages={state:statePage,diagnostics:repairPage,settings:panel,...(apiPanel?{api:apiPanel}:{})},tabs={};let active='state';
-  function select(id,focus=false){active=id;for(const [key,page] of Object.entries(pages)){page.hidden=key!==id;tabs[key].setAttribute('aria-selected',String(key===id));tabs[key].tabIndex=key===id?0:-1;}toolbar.hidden=['settings','api'].includes(id);summary.hidden=toolbar.hidden;if(focus)tabs[id].focus();}
-  for(const [id,title] of [['state','状态历史'],['diagnostics','诊断修复'],['settings','设置'],...(apiPanel?[['api','API 预设']]:[])]){
+  const pages={state:statePage,diagnostics:repairPage,settings:panel,...(appearancePanel?{appearance:appearancePanel}:{}),...(apiPanel?{api:apiPanel}:{})},tabs={};let active='state';
+  function select(id,focus=false){active=id;for(const [key,page] of Object.entries(pages)){page.hidden=key!==id;tabs[key].setAttribute('aria-selected',String(key===id));tabs[key].tabIndex=key===id?0:-1;}toolbar.hidden=['settings','appearance','api'].includes(id);summary.hidden=toolbar.hidden;if(focus)tabs[id].focus();}
+  for(const [id,title] of [['state','状态历史'],['diagnostics','诊断修复'],['settings','设置'],...(appearancePanel?[['appearance','外观制作']]:[]),...(apiPanel?[['api','API 预设']]:[])]){
     const tab=make('button',title,nav);tab.type='button';tab.id='ls-tab-'+id;tab.setAttribute('role','tab');tab.setAttribute('aria-controls','ls-page-'+id);tabs[id]=tab;
     pages[id].id=id==='settings'?'lorestate-prototype-settings':'ls-page-'+id;tab.setAttribute('aria-controls',pages[id].id);pages[id].setAttribute('role','tabpanel');pages[id].setAttribute('aria-labelledby',tab.id);
-    tab.onclick=()=>{select(id);if(id==='settings')void loadSettings();if(id==='api')loadApi?.();};
+    tab.onclick=()=>{select(id);if(id==='settings')void loadSettings();if(id==='appearance')void loadAppearance?.();if(id==='api')loadApi?.();};
     tab.onkeydown=e=>{const keys=Object.keys(pages),i=keys.indexOf(active);let next;if(e.key==='ArrowRight')next=keys[(i+1)%keys.length];if(e.key==='ArrowLeft')next=keys[(i+keys.length-1)%keys.length];if(e.key==='Home')next=keys[0];if(e.key==='End')next=keys.at(-1);if(next){e.preventDefault();tabs[next].click();tabs[next].focus();}};
   }
   let returnFocus;

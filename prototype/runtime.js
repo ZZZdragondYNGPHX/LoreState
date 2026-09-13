@@ -8,6 +8,8 @@ import { createControlCenter } from './control-center.js';
 import { listPresets, sameSchema, savePreset, deletePreset } from './presets.js';
 import { API_PROFILE_KEY, boundApiProfile, extraModelRequest, normalizeUpdateSettings } from './api-profiles.js';
 import { createApiPanel } from './api-panel.js';
+import { appearancePrompt, createAppearanceJob } from './appearance-authoring.js';
+import { createAppearancePanel } from './appearance-panel.js';
 import { variableStory, validateExtraUpdate, settleContinuedMessage, splitTruncatedUpdate } from './extra-update.js';
 
 export function shouldReloadForChatChange(loadedChatId,nextChatId){
@@ -53,6 +55,7 @@ export function startPrototype(defaultHtml) {
   const identity=()=>[ctx().chat,ctx().getCurrentChatId()];
   const matches=([chat,id])=>!closed&&ctx().chat===chat&&ctx().getCurrentChatId()===id;
   let closed=false,queue=Promise.resolve(),pending=false,uninject=null,view=null,renderKey='',menuObserver,chatObserver,chatRepairTimer=null;
+  let appearanceUi=null,appearanceJob=null;
   let extraJob=null,autoUpdate=null,autoTimer=null,chatEpoch=0,continuationWork=null;
   const node=(tag,text,parent)=>{const el=doc.createElement(tag);if(text!==undefined)el.textContent=text;parent?.append(el);return el;};
   const stateWindow=createStateWindow(doc);
@@ -62,7 +65,7 @@ export function startPrototype(defaultHtml) {
   floorLayout.id='lorestate-floor-layout';
   const panel=node('section',undefined,doc.body);panel.id='lorestate-prototype-settings';panel.setAttribute('aria-label','LoreState 原型设置');
   const status=node('p','选择状态栏条目，再粘贴 HTML。保存后在下一次 AI 回复建立状态。',panel);status.setAttribute('role','status');
-  const report=text=>{status.textContent=text;};
+  const report=text=>{status.textContent=text;appearanceUi?.report(text);};
   const actions=new Map();
   const button=(title,parent,fn)=>{const el=node('button',title,parent);el.type='button';actions.set(title,el);el.onclick=async()=>{el.disabled=true;try{await fn();}catch(e){fault(e,'操作失败');}finally{el.disabled=false;}};return el;};
   const notice=node('aside',undefined,doc.body);notice.hidden=true;notice.setAttribute('role','alert');
@@ -293,7 +296,7 @@ export function startPrototype(defaultHtml) {
     if(listPresets(settings()).some(p=>p.id===id))presetSelect.value=id;
     syncPresetSource();
   }
-  function writeConfig(config){updateVariablesWith(v=>({...v,[PROTO_KEY]:config}),{type:'script'});}
+  function writeConfig(config){updateVariablesWith(v=>({...v,[PROTO_KEY]:config}),{type:'script'});appearanceUi?.sync();}
   function dataSchemaFromEntry(entry=selectedEntry()){
     const parsed=parseModules(entry?.content??'');
     if(!parsed)throw new Error('请使用以【LoreState模块 v1】开头的模块条目，不转换旧条目');
@@ -302,8 +305,8 @@ export function startPrototype(defaultHtml) {
   function validateSkin(source){return validateTemplateV2(source,settings().schema??dataSchemaFromEntry());}
   presetSelect.onchange=syncPresetSource;
   button('另存为新预设',panel,()=>{validateSkin(html.value);const id=crypto.randomUUID();writeConfig(savePreset(settings(),presetName.value,html.value,id));syncPresets(id);report('已保存新预设。点击“应用所选预设”才会切换当前样式。');});
-  button('覆盖所选预设',panel,async()=>{validateSkin(html.value);const config=settings(),id=presetSelect.value;if(!id)throw new Error('请先保存一份预设');let next=savePreset(config,presetName.value,html.value,id);if(id===(config.activePresetId??'default'))next={...next,html:html.value};writeConfig(next);syncPresets(id);renderKey='';await refresh();report('预设已更新，聊天状态保留。');});
-  button('应用所选预设',panel,async()=>{const config=settings(),preset=listPresets(config).find(p=>p.id===presetSelect.value);if(!preset)throw new Error('请先保存一份预设');validateSkin(preset.html);if(!config.ready)throw new Error('请先点击“保存 HTML 并启用本聊天”完成初始配置');writeConfig({...config,presets:listPresets(config),html:preset.html,activePresetId:preset.id});html.value=preset.html;renderKey='';await refresh();report(`已应用“${preset.name}”，聊天状态保留。`);});
+  button('覆盖所选预设',panel,async()=>{validateSkin(html.value);const config=settings(),id=presetSelect.value;if(!id)throw new Error('请先保存一份预设');const next=savePreset(config,presetName.value,html.value,id);writeConfig(next);syncPresets(id);report('预设已保存；当前外观不变，点击“应用所选预设”才会切换。');});
+  button('应用所选预设',panel,async()=>{const config=settings(),preset=listPresets(config).find(p=>p.id===presetSelect.value);if(!preset)throw new Error('请先保存一份预设');validateSkin(preset.html);if(!config.ready)throw new Error('请先点击“保存 HTML 并启用本聊天”完成初始配置');writeConfig({...config,presets:listPresets(config),html:preset.html,activePresetId:preset.id});html.value=preset.html;appearanceUi?.draftChanged();renderKey='';await refresh();report(`已应用“${preset.name}”，聊天状态保留。`);});
   button('删除所选预设',panel,()=>{writeConfig(deletePreset(settings(),presetSelect.value));syncPresets();report('已删除所选预设，当前展示保留。');});
   syncPresets();
   const preview=createStateFrame(doc,'LoreState HTML 预览');panel.append(preview);
@@ -324,12 +327,13 @@ export function startPrototype(defaultHtml) {
     return {shared:example(schema.shared),entities};
   }
   button('预览 HTML（不保存）',panel,()=>{
-    const schema=dataSchemaFromEntry(),config=settings();
+    const config=settings(),schema=config.schema??dataSchemaFromEntry();
     const current=schemaFor(config)&&sameSchema(schema,schemaFor(config))?getResult(config).state:null;
     const diagnostics=[];
     try{preview.srcdoc=renderTemplateV2(html.value,current??templatePreviewState(schema),schema,DOMParser,diagnostics);}
-    catch(error){preview.removeAttribute('srcdoc');throw error;}
+    catch(error){preview.removeAttribute('srcdoc');appearanceUi?.sync();throw error;}
     preview.title=current?'LoreState 当前聊天状态预览':'LoreState 合成预览（非聊天状态）';
+    appearanceUi?.sync();
     report((current?'当前聊天状态预览':'合成预览（非聊天状态；含冷热档与空区）')+'；模板仅选择展示字段，完整数据 schema 保留。预览未保存。'+(diagnostics.length?' 数据格式异常：'+diagnostics.length+' 处。':''));
   });
   const regexId='lorestate-text-prototype-tags-v1';
@@ -402,17 +406,51 @@ export function startPrototype(defaultHtml) {
   }
   const apiUi=createApiPanel({doc,read:apiSettings,
     listRequestPresets:requestPresets,fetchModels:params=>{if(typeof getModelList!=='function')throw new Error('当前酒馆助手缺少模型列表接口');return getModelList(params);},
-    write:config=>{cancelExtraUpdate();updateVariablesWith(v=>({...v,[API_PROFILE_KEY]:config}),{type:'global'});},
-    binding:updateBinding,setBinding:value=>{if(!active(settings()))throw new Error('请先配置并启用本聊天');cancelExtraUpdate();updateVariablesWith(v=>({...v,[PROTO_KEY]:{...v[PROTO_KEY],variableUpdate:value}}),{type:'chat'});},
+    write:config=>{appearanceJob?.cancel('API 预设已变化，外观草稿保留');cancelExtraUpdate();updateVariablesWith(v=>({...v,[API_PROFILE_KEY]:config}),{type:'global'});},
+    binding:updateBinding,setBinding:value=>{if(!ctx().getCurrentChatId())throw new Error('请先打开角色聊天');appearanceJob?.cancel('API 绑定已变化，外观草稿保留');cancelExtraUpdate();updateVariablesWith(v=>({...v,[PROTO_KEY]:{...v[PROTO_KEY],variableUpdate:value}}),{type:'chat'});},
     run:()=>{if(updateBinding().mode==='inline'&&splitTruncatedUpdate(messages().at(-1)?.message)){return previewTruncatedTail(messages().at(-1)?.message_id);}return runExtraUpdate();},cancel:()=>{const committed=extraJob?.committed;cancelExtraUpdate();apiUi.report(committed?'状态已经写入，如需恢复请撤销最近一次更新。':'状态更新已取消，原消息保留。');},undo:undoExtraUpdate,onError:e=>fault(e,'状态更新操作失败'),
     readDiagnostics:()=>extraDiagnostics,clearDiagnostics:()=>{extraDiagnostics=[];}});
   const ruleDisclosure=node('details');node('summary','查看条目原文',ruleDisclosure);ruleDisclosure.append(rules);
   const makerDisclosure=node('details');node('summary','制作提示词与下一轮提示预览',makerDisclosure);makerDisclosure.append(a('生成并复制 HTML 制作提示词'),a('查看下一轮状态提示'),maker);
-  const center=createControlCenter({doc,manager,panel,summary,status,floorSelect,details,diagnostics,repairBox,tailPreview,snapshotPanel,apiPanel:apiUi.panel,loadApi:apiUi.sync,actions,loadSettings,settingsGroups:[
-    {title:'世界书与规则',hint:'选择随卡世界书里的状态栏条目；它决定 LoreState 记录哪些栏目。',items:[bookLabel,entryLabel,[a('刷新世界书列表')],ruleDisclosure]},
-    {title:'外观模板',hint:'粘贴网页 AI 生成的 HTML，预览确认后保存并启用本聊天。',items:[htmlLabel,[a('预览 HTML（不保存）'),a('保存 HTML 并启用本聊天')],preview,makerDisclosure]},
-    {title:'外观预设',hint:'同一数据 schema 可自由分区、隐藏或重复展示字段；换肤保留存档。',items:[presetLabel,nameLabel,[a('应用所选预设'),a('另存为新预设'),a('覆盖所选预设'),a('删除所选预设')],presetSourceDisclosure]},
-    {title:'初始档案与字段约束',hint:'可选：给新聊天一份确定的初始状态，并用文字规则约束字段。',items:[authorHelp,initialLabel,[a('生成初始档案模板')],constraintLabel,[a('预览作者配置')],policyPreview,[a('保存为新聊天默认配置'),a('应用到尚未开始的本聊天')]]},
+  const appearanceSchema=()=>settings().schema??dataSchemaFromEntry();
+  const appearanceInput=options=>({...options,schema:appearanceSchema(),html:options.mode==='new'?'':html.value});
+  function appearanceSummary(){
+    const config=settings(),preset=listPresets(config).find(p=>p.id===config.activePresetId);
+    let api='生成 API：尚未绑定，请到 API 预设页保存模型来源';
+    try{const binding=updateBinding(),profile=selectedStateModel(binding);api='生成 API：'+(profile?profile.name+' / '+profile.model:'跟随酒馆当前连接')+'（使用已保存设置）';}catch{}
+    return {active:config.ready?'当前生效：'+(preset?.name??'随卡外观')+(preset&&preset.html!==config.html?'（已修改）':''):'尚未初始化栏目配置',html:config.html??defaultHtml,api};
+  }
+  function appearanceContext(){
+    const binding=updateBinding();
+    return JSON.stringify([settings(),books.value,entries.value,selectedEntry()?.content,html.value,binding,selectedStateModel(binding),binding.source==='current'?[ctx().mainApi,ctx().chatCompletionSettings]:null]);
+  }
+  async function runAppearance(options,notify){
+    if(appearanceJob?.busy||extraJob||autoTimer||autoUpdate||hostGenerating())throw new Error('请先等待正文、状态更新或外观生成结束');
+    if(!ctx().getCurrentChatId())throw new Error('请先打开角色聊天');
+    if(typeof generateRaw!=='function'||typeof stopGenerationById!=='function')throw new Error('当前酒馆助手缺少独立生成或取消接口');
+    const binding=updateBinding();
+    if(binding.source==='current'&&ctx().mainApi!=='openai')throw new Error('跟随当前连接需要 Chat Completion；请改为绑定 API 预设');
+    const profile=selectedStateModel(binding),input=appearanceInput(options),id=identity(),epoch=chatEpoch,key=appearanceContext();
+    appearancePrompt(input);
+    generating=false;uninject?.();uninject=null;
+    const job=createAppearanceJob({generate:request=>generateRaw(request),stop:id=>stopGenerationById(id),
+      validate:source=>{renderTemplateV2(source,templatePreviewState(input.schema),input.schema);},report:notify,
+      assertCurrent:()=>{if(!matches(id)||epoch!==chatEpoch||hostGenerating()||key!==appearanceContext())throw new Error('聊天、栏目、草稿或 API 配置已变化，生成结果未写入');},
+    });
+    appearanceJob=job;
+    try{return await job.run(input,profile,binding);}finally{if(appearanceJob===job)appearanceJob=null;}
+  }
+  appearanceUi=createAppearancePanel({doc,manager,htmlLabel,html,preview,presetLabel,nameLabel,presetSourceDisclosure,makerDisclosure,actions,
+    readSummary:appearanceSummary,run:runAppearance,cancel:()=>appearanceJob?.cancel(),prompt:options=>appearancePrompt(appearanceInput(options)),
+    readPreset:()=>{const preset=listPresets(settings()).find(p=>p.id===presetSelect.value);if(!preset)throw new Error('请先选择预设');return preset.html;},
+    goApi:()=>{center.select('api');apiUi.sync();},
+    applyDraft:async()=>{const config=settings();if(!config.ready)throw new Error('请先在“设置”完成首次栏目绑定并启用本聊天；将使用这份 HTML 草稿');validateTemplateV2(html.value,config.schema);writeConfig({...config,html:html.value});renderKey='';await refresh();},
+  });
+  const openAppearance=button('打开外观制作台',panel,async()=>{center.select('appearance');await loadSettings();appearanceUi.sync();});
+  const center=createControlCenter({doc,manager,panel,summary,status,floorSelect,details,diagnostics,repairBox,tailPreview,snapshotPanel,apiPanel:apiUi.panel,loadApi:apiUi.sync,actions,loadSettings,
+    appearancePanel:appearanceUi.panel,loadAppearance:async()=>{await loadSettings();appearanceUi.sync();},settingsGroups:[
+    {title:'世界书与规则',hint:'选择状态栏目；首次启用使用外观制作台里的 HTML 草稿。初始化与日常换肤分开。',items:[bookLabel,entryLabel,[a('刷新世界书列表'),openAppearance],ruleDisclosure,[a('保存 HTML 并启用本聊天')]]},
+    {title:'初始档案与字段约束',hint:'可选：给新聊天一份确定的初始状态，并用文字规则约束字段。保存的默认值用于新聊天，已有聊天保留自己的配置。',items:[authorHelp,initialLabel,[a('生成初始档案模板')],constraintLabel,[a('预览作者配置')],policyPreview,[a('保存为新聊天默认配置'),a('应用到尚未开始的本聊天')]]},
     {title:'聊天维护',hint:'重新计算本聊天状态，或暂停本聊天的状态更新。',items:[[a('重新读取当前聊天状态'),a('暂停本聊天')]]},
   ]});
   const menu=node('div');menu.className='extension_container';
@@ -469,13 +507,13 @@ export function startPrototype(defaultHtml) {
       stateWindow.close();view.dataset.templateState='error';
       const message='状态栏模板待修正：'+String(error?.message??error);
       const warning=node('p',message,view);warning.className='lorestate-template-error';warning.setAttribute('role','alert');warning.style.overflowWrap='anywhere';
-      button('打开模板设置',view,()=>center.open('settings'));
+      button('打开模板设置',view,()=>{center.open('appearance');appearanceUi.sync();});
       logTemplate(message);report(message+' 状态更新与历史记录继续运行。');
     }
     if(result.errors.length)button('重新读取状态',view,()=>refresh());renderKey=key;
   }
   async function refresh(){
-    if(hostGenerating()||autoUpdate||autoTimer||(extraJob&&!extraJob.committed))return;
+    if(hostGenerating()||autoUpdate||autoTimer||appearanceJob?.busy||(extraJob&&!extraJob.committed))return;
     await settleContinuation();
     const config=settings();if(!active(config)){view?.remove();return;}freezePolicy();
     const id=identity(),list=messages(),schema=schemaFor(config),result=getResult(config,list);
@@ -527,11 +565,11 @@ export function startPrototype(defaultHtml) {
   }
   async function runExtraUpdate({repair=updateBinding().mode==='inline',floor,tailPlan}={}){
     if(tailPlan&&(!repair||!tailCurrent(tailPlan)))throw new Error('截断预览已失效，请重新预览');
-    if(extraJob)throw new Error('状态更新正在进行，请等待或取消');
+    if(extraJob||appearanceJob?.busy)throw new Error('已有状态更新或外观生成，请等待或取消');
     if(hostGenerating())throw new Error('请等待正文生成结束');
     generating=false; // Live helper readiness supersedes a stale core preview event.
     if(!repair)await settleContinuation();
-    if(extraJob||hostGenerating())throw new Error('已有生成或状态更新正在进行，请稍后重试');
+    if(extraJob||appearanceJob?.busy||hostGenerating())throw new Error('已有生成或状态更新正在进行，请稍后重试');
     const config=settings(),saved=chatSettings(),binding=updateBinding();
     if(!active(config))throw new Error('请先配置并启用本聊天');
     if(binding.mode!==(repair?'inline':'extra'))throw new Error('状态更新方式已变化，请重新打开对应入口');
@@ -644,12 +682,12 @@ export function startPrototype(defaultHtml) {
     if(closed)return;
     // Core generation emits GENERATION_STARTED first; silent Helper generation does not.
     // Do not recursively prepare narration or stop the core controller for our own request.
-    if(extraJob&&!generating&&!hostGenerating())return;
+    if((extraJob||appearanceJob?.busy)&&!generating&&!hostGenerating())return;
     const config=settings(),id=identity(),prepare=!dryRun&&active(config)&&!['quiet','impersonate'].includes(type);
     try{
       const cleanup=uninject;uninject=null;cleanup?.();
       if(!prepare)return;
-      if(extraJob||autoTimer)throw new Error('状态更新正在进行，请等待完成或取消后再生成正文');
+      if(extraJob||appearanceJob?.busy||autoTimer)throw new Error('状态更新或外观生成正在进行，请等待完成或取消后再生成正文');
       autoUpdate=null;
       if(chatSettings().continuationPending)throw new Error('上次续写尚未整理完成，请先重新读取当前聊天状态');
       const continuing=type==='continue',target=messages().at(-1);
@@ -703,13 +741,13 @@ export function startPrototype(defaultHtml) {
   runtimeRegistration={dispose};window.parent[runtimeSlot]=runtimeRegistration;startChatObserver();
   eventOn(tavern_events.CHAT_CHANGED,newChatId=>{
     if(shouldReloadForChatChange(loadedChatId,newChatId)){dispose();window.location.reload();return;}
-    chatEpoch++;clearTailPreview();cancelExtraUpdate();extraDiagnostics=[];apiUi.clear();uninject?.();uninject=null;stateWindow.close();view?.remove();renderKey='';noticeKey='';notice.hidden=true;runtimeLogs=[];restoreDraft=null;capturedKey='';snapshotPreview.textContent='';report('设置随角色保存；修改后请预览并保存。');manager.close();generating=false;schedule();
+    chatEpoch++;appearanceUi?.close();clearTailPreview();cancelExtraUpdate();extraDiagnostics=[];apiUi.clear();uninject?.();uninject=null;stateWindow.close();view?.remove();renderKey='';noticeKey='';notice.hidden=true;runtimeLogs=[];restoreDraft=null;capturedKey='';snapshotPreview.textContent='';report('设置随角色保存；修改后请预览并保存。');manager.close();generating=false;schedule();
   });
   eventOn(tavern_events.GENERATION_AFTER_COMMANDS,beforeGenerate);
   eventOn(getButtonEvent('LoreState 设置'),()=>open().catch(e=>fault(e,'设置打开失败')));
   function dispose(){
     if(closed)return;
-    closed=true;cancelExtraUpdate();apiUi.clear();menuObserver?.disconnect();chatObserver?.disconnect();chatObserver=null;if(chatRepairTimer){clearTimeout(chatRepairTimer);chatRepairTimer=null;}floorLayout.remove();stateWindow.dispose();menu.remove();panel.remove();manager.remove();notice.remove();view?.remove();
+    closed=true;appearanceUi?.dispose();cancelExtraUpdate();apiUi.clear();menuObserver?.disconnect();chatObserver?.disconnect();chatObserver=null;if(chatRepairTimer){clearTimeout(chatRepairTimer);chatRepairTimer=null;}floorLayout.remove();stateWindow.dispose();menu.remove();panel.remove();manager.remove();notice.remove();view?.remove();
     const cleanup=uninject;uninject=null;cleanup?.();
     if(runtimeRegistration&&window.parent[runtimeSlot]===runtimeRegistration)delete window.parent[runtimeSlot];
   }

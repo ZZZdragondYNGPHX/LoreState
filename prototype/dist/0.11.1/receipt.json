@@ -1,5 +1,5 @@
 {
-  "version": "main",
+  "version": "0.11.1",
   "mode": "remote-only",
   "realHostVerified": false,
   "scriptId": "0aa89d30-099d-4cf3-8cfb-d367490ec067",
@@ -13,8 +13,8 @@
   ],
   "remoteLoaders": [
     {
-      "url": "https://cdn.jsdelivr.net/gh/ZZZdragondYNGPHX/LoreState@main/artifact/bundle.js",
-      "ref": "main"
+      "url": "https://testingcf.jsdelivr.net/gh/ZZZdragondYNGPHX/LoreState@0.11.1/artifact/bundle.js",
+      "ref": "0.11.1"
     }
   ],
   "remoteEntry": "lorestate-script.json"

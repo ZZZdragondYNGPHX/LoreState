@@ -1,6 +1,6 @@
 # LoreState 文档
 
-当前稳定版是不可移动标签 `0.11.0`，固定入口不随 `main` 变化；`main` 远程组件用于持续开发。历史 `0.10.3` 只作冻结 RC/兼容引用。版本规则统一见[版本管理](版本管理.md)。
+当前稳定版是不可移动标签 `0.11.1`，固定入口不随 `main` 变化；`main` 远程组件用于持续开发。历史 `0.10.3` 只作冻结 RC/兼容引用。版本规则统一见[版本管理](版本管理.md)。
 
 0.11.0 使用 Template API v2；新 HTML 作者接口和两套同 schema 皮肤见 [HTML 模板适配指南](HTML模板适配指南.md)。旧模板原文保留，需重制为 v2；状态与快照不迁移。旧固定标签行为保持原样。详情见 [0.11.0 发布说明](发布材料/0.11.0-Template-API-v2.md)。
 
@@ -10,6 +10,7 @@
 | --- | --- |
 | 创建新卡 | [0.9.0 模块条目与试卡](0.9.0模块条目与试卡.md) |
 | 从零配置状态栏 | [作者入门](作者入门.md) → [条目创作指南](状态栏条目创作指南.md) |
+| 用 API 生成/修改外观，填写风格 | [外观制作台](外观制作台.md) · [0.11.1 发布说明](发布材料/0.11.1-外观制作台.md) |
 | 修改 HTML 外观 | [HTML 模板适配指南](HTML模板适配指南.md) |
 | 使用其他 API 整理状态、切换请求提示词 | [额外模型与 API 预设](额外模型与API预设.md) |
 | 已有聊天出现隐藏楼层或 full/delta 报错 | [隐藏助手兼容与更新](隐藏助手兼容与更新.md) |
@@ -24,6 +25,6 @@
 
 ## 当前交付
 
-[0.11.0 固定远程组件](../prototype/dist/0.11.0/lorestate-script.json) · [main 远程组件](../prototype/dist/main/lorestate-script.json) · [main 脚本代码](../artifact/bundle.js) · [版本管理](版本管理.md) · [协议参考](../prototype/world-memory.md) · [当前验证记录](../prototype/verification.md)
+[0.11.1 固定远程组件](../prototype/dist/0.11.1/lorestate-script.json) · [main 远程组件](../prototype/dist/main/lorestate-script.json) · [main 脚本代码](../artifact/bundle.js) · [版本管理](版本管理.md) · [协议参考](../prototype/world-memory.md) · [当前验证记录](../prototype/verification.md)
 
 历史迁移、旧扩展和旧验证说明集中在[历史归档](archive/README.md)，不再混入活动文档入口。

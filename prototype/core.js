@@ -271,7 +271,10 @@ export function playPrompt(rules,schema,result,text=''){return preparePrompt(rul
 export function authorPrompt(rules){
   const parsed=parseModules(rules);
   if(!parsed)throw new Error('请使用以【LoreState模块 v1】开头的模块条目，不转换旧条目');
-  const schema=moduleShape(parsed);checkSchema(schema);
+  return templateAuthorPrompt(moduleShape(parsed))+'\n状态栏条目：'+rules;
+}
+export function templateAuthorPrompt(schema){
+  checkSchema(schema);
   const modules=Object.entries(schema.modules),firstType=modules[0][0],fence=String.fromCharCode(96).repeat(3);
   const sections=modules.slice(0,2).map(([type,fields])=>[
     '<section><h2>'+type+' · <span data-lore-count="'+type+'"></span></h2>',
@@ -298,6 +301,9 @@ export function authorPrompt(rules){
     '元数据：each 内使用 data-lore-name、data-lore-id、data-lore-type、data-lore-identity、data-lore-confirmed；属性值必须为空，分别显示名称、编号、类别、识别信息、最后确认时间。',
     '全局：data-lore-count="模块名" 和 data-lore-empty="模块名" 只在 each 外；count 显示完整查询数量，不受其他 each 的 limit 影响；empty 是仅在同条件查询为空时显示的静态容器，内部不放查询或绑定。',
     '每个输出绑定是正文中的独立文字节点：无子元素，不同时放多个输出属性，不与 each/empty 同节点。标题、装饰和布局放在绑定外围。不要使用双花括号或未定义的 data-lore-* 属性。',
+    '可用 data-lore-if-shared 或 data-lore-if-field 指定字段；有有效非空标量时保留容器，可用 data-lore-equals 做精确文字相等判断。字段作用域与输出绑定一致；不接受表达式。',
+    '可用 data-lore-class-shared 或 data-lore-class-field 指定字段，并附 data-lore-class-map JSON 对象，将精确字段值映射成一个静态 CSS class。例如 {"危险":"is-danger"}；最多 32 项，不修改原 class，不接受代码、style 或 URL。',
+    '条件容器及其子孙不放 id 或 IDREF；查询数量仍统计完整匹配，显隐只影响展示。',
     '所有动态值由 textContent 填入。缺失/null 显示“尚未记录”，空字符串保留；有限数字和布尔值显示文字；对象、数组和非有限数字显示“数据格式异常”。',
     'HTML 只制作一次，状态模型每轮仍只产 XML v3，不生成或重写 HTML。模板与存档分离，换肤不修改 full/delta、快照、回档或聊天数据。',
     '只用静态 HTML/CSS。禁止 JavaScript、事件属性、外链/网络资源、图片、字体下载、SVG、iframe、表单、contenteditable 和作者 http-equiv。META 仅用 UTF-8 charset 与标准 viewport。',
@@ -305,7 +311,7 @@ export function authorPrompt(rules){
     '重复区域禁止 id 以及 for/ARIA IDREF 引用，改用 class 和静态 aria-label；静态区域 id 唯一、引用目标必须存在。',
     '模板最多 100000 字符、5000 源元素、32 个 each；总克隆最多 500，最终最多 30000 元素/2000000 字符。冷档建议分类型 limit，并显示 count 与完整档案入口说明。',
     '320px 单列，宽屏再分栏；网格子项 min-width:0，长 CJK/无空格文字可折行。支持 200% 字体缩放、可见焦点、44px 折叠热区和 reduced-motion。内容在 iframe 内滚动，另有宿主展开窗口；本期不做数值条、任意属性绑定、tabs 或自动测高。',
-    '以下可运行示例只选择部分字段，允许按风格重新布局：',fence+'html',example,fence,'状态栏条目：',rules
+    '以下可运行示例只选择部分字段，允许按风格重新布局：',fence+'html',example,fence
   ].join('\n');
 
 }

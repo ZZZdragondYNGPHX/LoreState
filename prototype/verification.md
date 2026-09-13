@@ -1,3 +1,15 @@
+# 0.11.1 · API 辅助外观制作 · 2026-09-13
+
+基底 main / 8e28baa070841e281fa3b3113069e6d4210227eb。用户授权功能实装，后追加推送 main 与新固定标签 0.11.1。
+
+npm run build、npm run build -- 0.11.1、npm run check、118 项 Node 测试、29 项模板浏览器检查与 93 项最终 bundle 模拟宿主检查通过；固定版组件格式校验无错误。
+
+生成 main 与 0.11.1 loader/receipt 及 artifact/bundle.js，SHA-256 ec69ff5bb0aca708d98c243907d6aeadbe37d6b5f1a8ad20321dce778f31eeba。桌面/窄屏截图为合成测试页面，真实酒馆、实际模型和人工验收未执行，realHostVerified=false。固定 Git tag 与远程入口/ref 不移动旧版本。
+
+范围、升级步骤和未测边界见 [0.11.1 发布说明](../docs/发布材料/0.11.1-外观制作台.md)。角色切换问题延期、原栏目保护保留。以下均为历史记录。
+
+---
+
 # 0.10.6 · 柏宝书与 Grid 主题布局修复 · 2026-09-12
 
 基底 `main / 74139f78b3e6a1636370d43e5c678e03d613f1fb`。用户授权验证后推送 main 与新固定标签 0.10.6。维护源、合成回归和完整 bundle 的真实宿主定向布局检查通过；消息重载前后内容相同。生成 main 与 0.10.6 的 loader/receipt 及 artifact/bundle.js，SHA-256 `ddab7eb115baae9879ed1830a750ce764eb822d53f71be6fd2f25a53021cc00c`。

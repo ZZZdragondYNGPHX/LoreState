@@ -47,12 +47,15 @@ export function boundApiProfile(config,id){
   if(!profile)throw new Error('状态更新绑定的 API 预设不存在，请重新绑定');
   return normalizeApiProfile(profile);
 }
+export function customApiSettings(profile){
+  const p=normalizeApiProfile(profile);
+  return {apiurl:p.url,key:p.key,model:p.model,source:'openai',max_tokens:p.maxTokens||'unset',temperature:p.temperature,top_p:p.topP,top_k:p.topK,frequency_penalty:p.frequencyPenalty,presence_penalty:p.presencePenalty};
+}
 export function extraModelRequest(profile,content,story,generationId,options={}){
   const settings=normalizeUpdateSettings(options),retryHint=extraUpdateRetryHint(content),task=content+'\n本次只整理已发生剧情的文字状态，不续写剧情。只返回唯一 LoreState 更新块，不附解释、思考或代码围栏。下一条消息是已发生的剧情资料。'+(retryHint?'\n\n'+retryHint:'');
   const request={generation_id:generationId,should_stream:settings.stream,should_silence:true,max_chat_history:0,tools:[]};
   if(settings.source==='custom'){
-    const p=normalizeApiProfile(profile);
-    request.custom_api={apiurl:p.url,key:p.key,model:p.model,source:'openai',max_tokens:p.maxTokens||'unset',temperature:p.temperature,top_p:p.topP,top_k:p.topK,frequency_penalty:p.frequencyPenalty,presence_penalty:p.presencePenalty};
+    request.custom_api=customApiSettings(profile);
   }
   if(settings.presetMode==='builtin')Object.assign(request,{user_input:story,ordered_prompts:builtinOrderedPrompts(task)});
   // A preset may omit chat_history, in which case Helper skips in-chat injections.

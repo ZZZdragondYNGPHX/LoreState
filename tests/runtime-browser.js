@@ -41,19 +41,19 @@ await check('魔法棒管理器查看旧楼层，不显示未来状态',async()=
   await click('LoreState');assert(manager.open);
   await click('上一 AI 层',manager);assert(manager.textContent.includes('车站'));assert(manager.textContent.includes('本层更新成功'));
 });
-await check('单入口、四页签、设置草稿和键盘导航',async()=>{
+await check('单入口、五页签、独立外观草稿和键盘导航',async()=>{
   assert(document.querySelectorAll('#extensionsMenu button').length===1);
-  const tabs=[...manager.querySelectorAll('[role="tab"]')];assert(tabs.length===4);
+  const tabs=[...manager.querySelectorAll('[role="tab"]')];assert(tabs.length===5);
   assert(tabs.every(tab=>tab.getBoundingClientRect().height>=44),'页签触控热区不足 44px');
   tabs[2].click();await tick();assert(!document.getElementById('lorestate-prototype-settings').hidden);assert(document.getElementById('ls-page-state').hidden);
   const settingCards=[...document.querySelectorAll('#lorestate-prototype-settings>.ls-card')];
-  assert(settingCards.length===5,'设置页必须保持五步卡片结构');assert(settingCards.filter(card=>card.open).length===1,'设置页默认只展开第一步');
+  assert(settingCards.length===3,'设置页保留初始化、作者配置与聊天维护，外观独立');assert(settingCards.filter(card=>card.open).length===1,'设置页默认只展开第一步');
   const editor=manager.querySelector('[aria-label="HTML 模板"]');const original=editor.value;editor.value='未保存草稿';
   tabs[0].click();tabs[2].click();await tick();assert(editor.value==='未保存草稿');editor.value=original;
   tabs[2].dispatchEvent(new KeyboardEvent('keydown',{key:'Home',bubbles:true}));assert(tabs[0].getAttribute('aria-selected')==='true');
   tabs[1].click();assert(!document.getElementById('ls-page-diagnostics').hidden);
 });
-await check('336px 窄容器四个页面均无横向溢出',async()=>{
+await check('336px 窄容器五个页面均无横向溢出',async()=>{
   manager.style.width='336px';
   for(const tab of manager.querySelectorAll('[role="tab"]')){tab.click();await tick();assert(manager.scrollWidth<=manager.clientWidth+1,'页面横向溢出：'+tab.textContent);}
   manager.style.width='';manager.querySelector('#ls-tab-diagnostics').click();
@@ -779,7 +779,7 @@ await check('旧模板启动原文与存档保留，错误态不触发 MutationO
   const view=document.querySelector('.lorestate-prototype-view');assert(view.querySelector('.lorestate-template-error'));assert(!view.querySelector('iframe'));
   assert(v2Editor().value===legacyTemplate);assert(variables.script[PROTO_KEY].html===legacyTemplate);assert(JSON.stringify(variables.chat[PROTO_KEY].current.state)===before);
   await new Promise(resolve=>setTimeout(resolve,180));assert(document.querySelector('.lorestate-prototype-view')===view,'模板错误态应保留同一挂载节点');
-  await click('打开模板设置',view);assert(document.getElementById('ls-tab-settings').getAttribute('aria-selected')==='true');
+  await click('打开模板设置',view);assert(document.getElementById('ls-tab-appearance').getAttribute('aria-selected')==='true');
 });
 await check('模板错误不阻断状态更新、快照和宿主可信缺口提示',async()=>{
   list[1].message=list[1].message.replace('白帆港','雨后码头');await emit('MESSAGE_EDITED');
@@ -805,6 +805,122 @@ await check('真实模块 schema 变更仍受保护；隐藏字段并不等于�
   finally{window.getWorldbook=worldbook;await click('刷新世界书列表');}
 });
 
+// Synthetic-only HTML authoring: no external API calls or production chat data.
+const aiHtml=compactHtml.replace('COMPACT JOURNAL','AI DRAFT').trim();
+async function appearanceFixture(fn){
+  const saved={variables:structuredClone(variables),list:structuredClone(list),html:v2Editor().value,model:window.generateRaw,stop:window.stopGenerationById,helper:window.TavernHelper,context:window.SillyTavern.getContext};
+  const calls=[],stops=[];let response=async()=>aiHtml;
+  manager.close();await tick();
+  variables.global={...(variables.global??{}),lorestate_api_profiles_v1:{profiles:[{id:'appearance',name:'外观测试连接',url:'https://example.invalid/v1',key:'SYNTHETIC_APPEARANCE_KEY',model:'html-model',maxTokens:8192,temperature:0.6}]}};
+  variables.chat[PROTO_KEY].variableUpdate={mode:'inline',source:'custom',profileId:'appearance',presetMode:'current',attempts:1,timeoutSeconds:15};
+  window.TavernHelper={builtin:{duringGenerating:()=>false}};
+  window.stopGenerationById=id=>{stops.push(id);return true;};
+  window.generateRaw=async request=>{calls.push(structuredClone(request));for(const fn of handlers.get('GENERATION_AFTER_COMMANDS')??[])await fn('normal',{},false);return response(request);};
+  v2Editor().value=variables.script[PROTO_KEY].html;await emit('GENERATION_ENDED');await click('LoreState');await click('外观制作');
+  const open=async()=>{await click('描述风格 / AI 改稿');const field=document.querySelector('[aria-label="想要的外观风格"]');field.value='低饱和纸张风格，保留当前栏目';return field;};
+  try{await fn({calls,stops,open,respond:fn=>{response=fn;}});}
+  finally{
+    manager.close();await tick();variables=saved.variables;list=saved.list;v2Editor().value=saved.html;
+    window.generateRaw=saved.model;window.stopGenerationById=saved.stop;window.TavernHelper=saved.helper;window.SillyTavern.getContext=saved.context;
+    await emit('GENERATION_ENDED');await click('LoreState');await click('外观制作');
+  }
+}
+await check('外观工作区集中草稿/预设；风格窗口聚焦、关闭返回与请求预览不调用 API',()=>appearanceFixture(async({calls,open})=>{
+  const area=document.getElementById('ls-page-appearance');assert(area.contains(v2Editor()));assert(area.contains(v2Select()));
+  const field=await open(),dialog=document.querySelector('.ls-style-dialog');assert(dialog.open&&document.activeElement===field);
+  const disclosure=dialog.querySelector('details');disclosure.open=true;await tick();
+  const text=dialog.querySelector('[aria-label="外观制作请求预览"]').value;
+  assert(text.includes('低饱和'));assert(!text.includes('SYNTHETIC_APPEARANCE_KEY'));assert(!text.includes('合成正文。'));assert(calls.length===0);
+  await click('返回外观制作台');assert(!dialog.open);assert(document.activeElement===button('描述风格 / AI 改稿'));
+}));
+await check('绑定 API 生成只进入校验草稿；独立生成事件不注入状态或修改存档',()=>appearanceFixture(async({calls,open})=>{
+  await open();const before=JSON.stringify({variables,list});await click('生成 HTML 草稿');
+  assert(calls.length===1,'请求次数 '+calls.length+' / '+document.querySelector('.ls-style-dialog').textContent);assert(calls[0].custom_api.model==='html-model');assert(!calls[0].preset_name);assert(calls[0].max_chat_history===0);
+  assert(JSON.stringify({variables,list})===before,'外观生成不得写脚本或聊天变量');assert(v2Editor().value===aiHtml,'未收到草稿 / '+document.querySelector('.ls-style-dialog').textContent);
+  const frame=document.querySelector('.ls-appearance-preview iframe');assert(frame.srcdoc.includes('AI DRAFT'),'生成预览没有草稿标记');assert(frame.getAttribute('sandbox')==='');
+  assert(document.querySelector('[aria-label="外观草稿状态"]').textContent.includes('未应用'));
+}));
+await check('连续改稿使用最新草稿，撤回只恢复草稿，显式应用不覆盖命名预设',()=>appearanceFixture(async({calls,open,respond})=>{
+  const before=v2Protected(),presets=JSON.stringify(variables.script[PROTO_KEY].presets);
+  await open();await click('生成 HTML 草稿');await open();respond(async()=>aiHtml.replace('AI DRAFT','SECOND DRAFT'));await click('生成 HTML 草稿');
+  assert(JSON.stringify(calls[1]?.ordered_prompts).includes('AI DRAFT'),'第二次请求没有当前草稿 / '+document.querySelector('.ls-style-dialog').textContent);assert(v2Editor().value.includes('SECOND DRAFT'),'第二次未产生草稿 / '+document.querySelector('.ls-style-dialog').textContent);
+  await click('撤回最近草稿替换');assert(v2Editor().value===aiHtml);assert(v2Protected()===before);
+  await click('应用 HTML 草稿');assert(variables.script[PROTO_KEY].html===aiHtml);assert(JSON.stringify(variables.script[PROTO_KEY].presets)===presets);assert(v2Protected()===before);
+}));
+await check('脚本/非法 HTML 生成失败保留编辑器、外观和存档，校验错误在窗口可见',()=>appearanceFixture(async({open,respond})=>{
+  await open();const before=JSON.stringify(variables),draft=v2Editor().value;respond(async()=>aiHtml.replace('</body>','<script>alert(1)</scr'+'ipt></body>'));
+  await click('生成 HTML 草稿');assert(v2Editor().value===draft);assert(JSON.stringify(variables)===before);
+  const dialog=document.querySelector('.ls-style-dialog');assert(dialog.open&&dialog.textContent.includes('未通过校验'));assert(!button('生成 HTML 草稿').disabled);
+}));
+await check('取消与迟到结果不覆盖草稿，取消仅停止本次 generation_id',()=>appearanceFixture(async({calls,stops,open,respond})=>{
+  let reply;respond(()=>new Promise(resolve=>{reply=resolve;}));await open();const draft=v2Editor().value;
+  const running=button('生成 HTML 草稿').onclick();await tick();await click('取消外观生成');await running;reply(aiHtml);await tick();
+  assert(v2Editor().value===draft);assert(stops.length===1&&stops[0]===calls[0].generation_id);assert(!button('生成 HTML 草稿').disabled);
+}));
+await check('请求期间草稿/API/栏目变更，迟到 HTML 均被拒收',()=>appearanceFixture(async({open,respond})=>{
+  for(const target of ['draft','api','schema']){
+    let reply;respond(()=>new Promise(resolve=>{reply=resolve;}));await open();const original=v2Editor().value,config=structuredClone(variables.script[PROTO_KEY]),profiles=structuredClone(variables.global);
+    const running=button('生成 HTML 草稿').onclick();await tick();
+    if(target==='draft')v2Editor().value=original+'<!--本地新编辑-->';
+    if(target==='api')variables.global.lorestate_api_profiles_v1.profiles[0].model='changed-model';
+    if(target==='schema')variables.script[PROTO_KEY].schema={...config.schema,shared:[...config.schema.shared,'新字段']};
+    const draft=v2Editor().value;reply(aiHtml);await running;assert(v2Editor().value===draft);assert(document.querySelector('.ls-style-dialog').textContent.includes('已变化'));
+    await click('返回外观制作台');variables.script[PROTO_KEY]=config;variables.global=profiles;v2Editor().value=original;
+  }
+}));
+await check('API 页面保存新绑定会取消外观请求，不使用未保存的编辑值',()=>appearanceFixture(async({open,respond,stops})=>{
+  let reply;respond(()=>new Promise(resolve=>{reply=resolve;}));await open();const original=v2Editor().value;
+  const running=button('生成 HTML 草稿').onclick();await tick();
+  // Programmatic simulation of another UI changing the saved binding.
+  await click('API 预设');input('状态模型来源','current');await click('保存状态更新绑定');await running;reply(aiHtml);await tick();
+  assert(v2Editor().value===original);assert(stops.length===1);assert(variables.chat[PROTO_KEY].variableUpdate.source==='current');
+}));
+await check('跟随当前连接使用独立提示词，非 Chat Completion 不发送外观请求',()=>appearanceFixture(async({calls,open})=>{
+  variables.chat[PROTO_KEY].variableUpdate={mode:'inline',source:'current'};await open();await click('生成 HTML 草稿');assert(calls.length===1&&!calls[0].custom_api);
+  const context=window.SillyTavern.getContext;window.SillyTavern.getContext=()=>({...context(),mainApi:'textgenerationwebui'});
+  await open();await click('生成 HTML 草稿');assert(calls.length===1);assert(document.querySelector('.ls-style-dialog').textContent.includes('Chat Completion'));
+}));
+await check('首次启用前可以保存 API 绑定并制作草稿，应用仍要求正常初始化',()=>appearanceFixture(async({calls,open})=>{
+  variables.script[PROTO_KEY]={};await click('API 预设');input('状态模型来源','current');await click('保存状态更新绑定');
+  assert(variables.chat[PROTO_KEY].variableUpdate.source==='current');await click('外观制作');await open();await click('生成 HTML 草稿');assert(calls.length===1);assert(!variables.script[PROTO_KEY].ready);
+  await click('应用 HTML 草稿');assert(!variables.script[PROTO_KEY].ready);assert(document.getElementById('ls-page-appearance').textContent.includes('首次栏目绑定'));
+}));
+await check('正文生成与外观请求互斥，原生停止路径只阻止冲突正文',()=>appearanceFixture(async({open,respond})=>{
+  let reply,stopped=0;respond(()=>new Promise(resolve=>{reply=resolve;}));await open();
+  const context=window.SillyTavern.getContext;window.SillyTavern.getContext=()=>({...context(),stopGeneration:()=>{stopped++;return true;}});
+  const running=button('生成 HTML 草稿').onclick();await tick();await emit('GENERATION_STARTED');
+  for(const fn of handlers.get('GENERATION_AFTER_COMMANDS')??[])await fn('normal',{},false);
+  assert(stopped===1);await click('取消外观生成');await running;reply(aiHtml);await emit('GENERATION_ENDED');
+}));
+await check('关闭控制中心及聊天生命周期切换都会取消外观生成',()=>appearanceFixture(async({open,respond,stops})=>{
+  for(const kind of ['close','chat']){
+    let reply;respond(()=>new Promise(resolve=>{reply=resolve;}));await open();const original=v2Editor().value;
+    const running=button('生成 HTML 草稿').onclick();await tick();
+    if(kind==='close'){manager.close();await tick();}else await emit('CHAT_CHANGED');
+    await running;reply(aiHtml);await tick();assert(v2Editor().value===original);
+    await click('LoreState');await click('外观制作');
+  }
+  assert(stops.length===2);
+}));
+await check('320px、200% 字体与短视口下风格窗口及操作区无横向溢出',()=>appearanceFixture(async({open})=>{
+  manager.style.width='320px';manager.style.fontSize='30px';await open();
+  const dialog=document.querySelector('.ls-style-dialog');dialog.style.width='296px';dialog.style.maxHeight='320px';await tick();
+  try{
+    assert(manager.scrollWidth<=manager.clientWidth+1);assert(dialog.scrollWidth<=dialog.clientWidth+1);assert(dialog.getBoundingClientRect().height<=321);
+    for(const b of dialog.querySelectorAll('button'))assert(b.getBoundingClientRect().height>=44,'触控热区不足');
+    dialog.dispatchEvent(new Event('cancel',{cancelable:true}));await click('返回外观制作台');
+  }finally{manager.style.width='';manager.style.fontSize='';dialog.style.width='';dialog.style.maxHeight='';}
+}));
+await check('无绑定不发送请求；手动编辑清除旧预览且空 iframe 不占位',()=>appearanceFixture(async({calls,open})=>{
+  await click('预览 HTML（不保存）');const frame=document.querySelector('.ls-appearance-frame');assert(frame.getBoundingClientRect().height>=360);
+  v2Editor().value+='<!--未预览草稿-->';v2Editor().dispatchEvent(new Event('input'));assert(frame.hidden&&frame.getBoundingClientRect().height===0);
+  variables.chat[PROTO_KEY].variableUpdate.profileId='missing';await open();await click('生成 HTML 草稿');assert(calls.length===0);assert(document.querySelector('.ls-style-dialog').textContent.includes('不存在'));
+}));
+await check('保存命名预设与应用分开；非法手工草稿不能应用',()=>appearanceFixture(async()=>{
+  const original=variables.script[PROTO_KEY].html,presets=JSON.stringify(variables.script[PROTO_KEY].presets),before=v2Protected();
+  v2Editor().value=aiHtml;await click('覆盖所选预设');assert(variables.script[PROTO_KEY].html===original);assert(JSON.stringify(variables.script[PROTO_KEY].presets)!==presets);
+  const saved=JSON.stringify(variables);v2Editor().value='<script>bad</scr'+'ipt>';await click('应用 HTML 草稿');assert(JSON.stringify(variables)===saved);assert(v2Protected()===before);
+}));
 output.textContent=results.join('\n');
 // ?preview[=state|diagnostics|settings|api] leaves the control center open for a visual check.
 const preview=new URLSearchParams(location.search).get('preview');
