@@ -2,7 +2,9 @@
 
 LoreState 为 SillyTavern 文字角色卡保存持续状态。AI 在正文后输出状态更新，脚本负责校验、合并、历史回放与状态栏展示。人物、国家、组织、地点、物品和事件可以使用各自的栏目；冷档按需读取。
 
-当前维护线是 **Tavern Helper 文字状态脚本的 `main` 开发分支**，当前稳定版为不可移动标签 **`0.11.1`**。历史 `0.10.3` RC 已从误建的版本号 branch 原样固化为同名兼容 tag；它不再接受提交。
+当前维护线是 **Tavern Helper 文字状态脚本的 `main` 开发分支**，当前稳定版为不可移动标签 **`0.12.0`**。历史 `0.10.3` RC 已从误建的版本号 branch 原样固化为同名兼容 tag；它不再接受提交。
+
+**0.12.0 新增 EJS 动态世界书桥接**：可选接入 ST-Prompt-Template，从 LoreState 回放读取冻结快照，通过区间与阶段条件输出当前适用的世界书内容。不内置 EJS、不另建状态、不修改存档；现有 v3 状态和 v2 外观保持兼容。见 [0.12.0 发布说明](docs/发布材料/0.12.0-EJS动态世界书.md)。
 
 **0.11.1 新增外观制作台**：复用 API 绑定，从风格描述生成/修改 HTML 草稿，校验预览后手动应用；支持字段条件显隐与样式 class 映射。已有 v2 模板与聊天存档保持兼容。见 [0.11.1 发布说明](docs/发布材料/0.11.1-外观制作台.md)。
 
@@ -14,6 +16,7 @@ LoreState 为 SillyTavern 文字角色卡保存持续状态。AI 在正文后输
 - **[版本管理](docs/版本管理.md)**：`main`、正式 tag、构建产物与调试分支的唯一规则。
 - [0.9.0 模块条目与试卡](docs/0.9.0模块条目与试卡.md)：新卡配置和可复制示例。
 - [额外模型与 API 预设](docs/额外模型与API预设.md)：独立更新、重试、取消与撤销；真实酒馆及实际模型仍需单独验收。
+- **[EJS / 动态世界书](docs/EJS动态世界书.md)**：只读桥接、真实字段路径、渐进关系示例与验收边界（0.12.0 起提供）。
 - **[隐藏助手兼容与更新](docs/隐藏助手兼容与更新.md)**：已有聊天恢复、脚本更新和验收。
 - [当前脚本代码](artifact/bundle.js)：`main` 的生成运行代码。
 - [常见问题与试卡清单](docs/常见问题与试卡清单.md)。
@@ -23,22 +26,28 @@ LoreState 为 SillyTavern 文字角色卡保存持续状态。AI 在正文后输
 
 | 入口 | 性质 | 说明 |
 | --- | --- | --- |
-| [0.11.1 固定远程组件](prototype/dist/0.11.1/lorestate-script.json) | 当前稳定版 | 固定引用 `@0.11.1/artifact/bundle.js`；不随 `main` 变化 |
+| [0.12.0 固定远程组件](prototype/dist/0.12.0/lorestate-script.json) | 当前稳定版 | 固定引用 `@0.12.0/artifact/bundle.js`；不随 `main` 变化 |
 | [main 远程组件](prototype/dist/main/lorestate-script.json) | 开发版 | 固定引用 `@main/artifact/bundle.js`；会随 `main` 更新 |
 | [main 脚本代码](artifact/bundle.js) | 开发版生成物 | 由 `prototype/` 源码构建，不手工维护 |
 | `0.10.0`～`0.10.2` Git tags | 历史正式版 | 不可移动；固定源码与 bundle，尚无新制式版本目录 |
 | `0.10.3` Git tag | 历史兼容快照 | 由原 RC branch 同 SHA 固化；不可移动，不再继续开发 |
 | `prototype-v0.x` tags / `prototype/dist/v0.x` | 历史 | 仅用于旧版本复现 |
 
-固定安装使用 `0.11.1`；需要跟随开发时才使用 `@main`。固定版本入口不得引用 `@main`。
+固定安装使用 `0.12.0`；需要跟随开发时才使用 `@main`。固定版本入口不得引用 `@main`。
 
 ```js
-import 'https://testingcf.jsdelivr.net/gh/ZZZdragondYNGPHX/LoreState@0.11.1/artifact/bundle.js';
+import 'https://testingcf.jsdelivr.net/gh/ZZZdragondYNGPHX/LoreState@0.12.0/artifact/bundle.js';
 ```
 
-从 **0.11.0 → 0.11.1** 无需重制模板或迁移状态；已有模块配置、聊天与快照可以保留。从更早版本升级时需重新制作并应用 Template API v2 HTML；旧模板原文保留，未换模板时显示升级提示，状态引擎继续运行。跨更旧版本升级到模块结构仍按 0.9.0 指南处理；本版不新增旧数据协议迁移。
+从 **0.11.0 / 0.11.1 → 0.12.0** 无需重制 v2 模板或迁移状态；已有模块配置、聊天与快照可以保留。从更早版本升级时需重新制作并应用 Template API v2 HTML；旧模板原文保留，未换模板时显示升级提示，状态引擎继续运行。跨更旧版本升级到模块结构仍按 0.9.0 指南处理；本版不新增旧数据协议迁移。
 
 目标环境沿用 SillyTavern 1.18.0 / 酒馆助手 4.9.5。自动化验证范围见[验证记录](prototype/verification.md)；自动测试不等于真实 SillyTavern、真实模型与人工游玩验收。
+
+## EJS / 动态世界书（0.12.0）
+
+可选兼容 ST-Prompt-Template：在世界书 EJS 中使用 `lorestate`、`ls`、`lsHas`、`lsRange`、`lsStage` 或 `LoreState.*`，读取本次回放的只读快照。真实路径例如 `entities.P1.fields.好感度`；数字文本可用于区间/阶段判断，不按姓名另建状态。
+
+不内置 EJS、不写状态、不自动改世界书；生成前态、旧楼层、切聊天、回档与历史缺口都有独立边界。**0.12.0 首次提供本功能；旧 0.11.1 标签不包含桥接且不会被改写。真实酒馆与实际模型仍须单独验收。** 安装条件、可复制示例与固定上游证据见 [EJS 指南](docs/EJS动态世界书.md)。
 
 ## 开发
 
@@ -55,7 +64,7 @@ npm test
 `npm run build` 生成 `main` 开发入口。准备新的固定版本时，在创建 tag **之前**传入新的版本号，例如：
 
 ```sh
-npm run build -- 0.11.2
+npm run build -- 0.12.1
 ```
 
 它会生成对应的 `prototype/dist/<version>/`，其中 loader 固定引用同名 tag 的 `artifact/bundle.js`。正式版本只能用不可移动 tag 表示；禁止再创建裸版本号 branch 或 `release-*` 长期分支。

@@ -1,3 +1,41 @@
+# 0.12.0 · EJS 动态世界书固定发布 · 2026-09-13
+
+基底 `main / b138ffa2c454a942c48d490217f227c002c4aa80`。用户追加明确授权：完成后推送远端 main，并创建不可移动标签 0.12.0。发布前已 fetch，origin/main 与本地基底一致，无分歧；本地和远端均不存在 0.12.0 标签。
+
+- **源代码**：沿用下节已完成的 EJS 只读桥接，不再扩展实现；同步 README、作者入口、版本制度与 0.12.0 发布材料。提交门清理新增文件末尾多余空行并重建，不改变功能。
+- **自动化**：main / 0.12.0 构建、main / tag 环境 check、132 项 Node 测试通过；本机使用 npm.cmd，未修改系统配置。
+- **浏览器**：29 项模板 + 93 项既有 bundle 模拟宿主 + 13 项 EJS bundle 模拟宿主通过；固定上游 EJS 3.1.9 的 20 项作者示例 smoke 通过。以上均不代表实际酒馆。
+- **生成物**：artifact/bundle.js，main 与 0.12.0 各自的 loader/receipt；bundle SHA-256 `78002ce641269d5b9e9f5e8acdad6f23eea297a6cc0d0778761873cf6dc2b13a`。两份 receipt 与 bundle hash 一致，realHostVerified=false；main 只引用 @main，固定入口只引用 @0.12.0。
+- **发布门**：维护源与五个生成文件先提交，再以同一提交的干净临时检出复验可重复构建、版本守卫及全部回归；通过后才建立 0.12.0 tag。main 与 tag 的推送采取 atomic、非 force；最终发布证据以远端 refs 和内容核验为准。
+- **Git 范围**：不提交任务开始前已有的根交接文档本地删除，不恢复该文件；旧标签与历史固定目录不改动。不创建语义版本分支或 GitHub Release 页面。
+- **真实酒馆 / 人工验收**：未执行，未改用户宿主配置；真实插件版本、实际模型、手机及完整沙盒/worker/预加载组合仍是下一验收门。
+
+对外入口与升级说明见 [0.12.0 发布说明](../docs/发布材料/0.12.0-EJS动态世界书.md)和 [EJS 作者指南](../docs/EJS动态世界书.md)。以下为发布前的本地实装记录，不代表本次发布授权或当前 refs。
+
+---
+
+# EJS / 动态世界书只读桥接 · 本地开发候选 · 2026-09-13
+
+基底 `main / b138ffa2c454a942c48d490217f227c002c4aa80`（与不可移动 `0.11.1` tag 同提交）。用户授权按参考方案实装，并允许纠正方案；未授权安装到真实酒馆、提交推送或发布。短期工作分支 `feat/ejs-worldbook-bridge` 完工后回到 main 并删除，修改保持本地未提交。
+
+| 证据层 | 本轮结果 |
+| --- | --- |
+| 源代码 | 新增 `prototype/ejs-bridge.js`；runtime 复用 getResult/replaySnapshots，区分生成前态、旧楼层、聊天身份与空态；不改 v3/schema/持久化。build 加入 bridge 和可选依赖元数据。 |
+| 自动化 | `npm.cmd run build`、`npm.cmd run check`、`npm.cmd test` 通过；132 项 Node 测试（新增 14 项）。本机 npm.ps1 包装器报错，实际执行采用 npm.cmd，未修改系统配置。 |
+| 浏览器 | `node scripts/test-browser.mjs` 通过：29 项模板、93 项既有最终 bundle 模拟宿主、13 项新增 EJS 最终 bundle 模拟宿主；覆盖正常/原地生成、删楼时序、编辑/swipe/隐藏、回档、旧楼层、空态、冲突、聊天切换与清理。 |
+| EJS 引擎 | `node scripts/test-ejs.mjs` 通过 20 项：固定上游 EJS 3.1.9、默认 with / strict 解包两种模式、本文渐进示例、别名、空态、非法数字、只读写入和上游 identity escaper。只在内存执行，未安装或打包引擎。 |
+| 生成物 | 原三个 main 文件重新构建；bundle SHA-256 `43c19ebb2e0b4ec5516e0e6a940b58701c41756fb8df88cbfa7b129069fab79e`，receipt hash 与文件核对一致，realHostVerified=false。 |
+| 远程入口 | 仍只有 `https://cdn.jsdelivr.net/gh/ZZZdragondYNGPHX/LoreState@main/artifact/bundle.js`。未推送/部署，未实取线上本次候选；不串联诊断 loader、不生成离线版。 |
+| 真实酒馆 | 未执行；用户实际安装的 Prompt Template 版本尚未检测。源码基准为 1.17.9 / d6f520d149aba146305b0b781ddd691d449c28d2，不是已安装版本证据。 |
+| 人工验收 | 未执行；实际模型、手机、完整沙盒/worker/预加载组合与其他扩展顺序仍待测试。未设置人工通过状态。 |
+| Git / 发布 | 未提交、未推送、未创建或移动 tag；固定 0.11.1 与所有历史固定目录不变。保留任务开始前已存在的根 `交接文档.md` 删除，不恢复。 |
+
+原方案修正：真实路径为 `entities.<ID>.fields.<栏目>` / `shared.<栏目>`，保留文本字段；range/stage 严格接受纯数字文本，不按姓名另建状态。新增 ready/reason，让历史缺口不再假冒旧好状态。优先事件只记生成目标楼层，避免 Prompt Template 早于 LoreState 运行、以及 regenerate 后重复跳过一层。
+
+作者合同、固定上游来源、指南路由回执、可复制范例与真实宿主下一验收门见 [EJS / 动态世界书](../docs/EJS动态世界书.md)。下一步需用户确认真实宿主版本与候选加载方式，再在合成聊天检查最终提示词的 -30/-60/-80/-95 条件输出及生命周期；本轮不把本地测试记作在线接通。
+
+---
+
 # 0.11.1 · API 辅助外观制作 · 2026-09-13
 
 基底 main / 8e28baa070841e281fa3b3113069e6d4210227eb。用户授权功能实装，后追加推送 main 与新固定标签 0.11.1。

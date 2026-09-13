@@ -71,5 +71,5 @@ async function runBrowserPage(page){
 }
 
 try{
-  for(const page of ['template-browser.html','runtime-browser.html?bundle=1'])await runBrowserPage(page);
+  for(const page of ['template-browser.html','runtime-browser.html?bundle=1','ejs-runtime-browser.html'])await runBrowserPage(page);
 }finally{server.close();}

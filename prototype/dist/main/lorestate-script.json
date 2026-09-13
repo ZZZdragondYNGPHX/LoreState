@@ -4,7 +4,7 @@
   "name": "LoreState · 文字状态原型",
   "id": "0aa89d30-099d-4cf3-8cfb-d367490ec067",
   "content": "import 'https://cdn.jsdelivr.net/gh/ZZZdragondYNGPHX/LoreState@main/artifact/bundle.js';",
-  "info": "LoreState main 远程开发版；模块条目、分类栏目与按需规则注入；正文后统一更新。保留 v3 世界实体冷热档、有限关联召回与活动事件；本版待真实酒馆验收，目标酒馆助手 4.9.5 / SillyTavern 1.18.0。首次 full，后续 delta。不迁移旧状态；模块结构请用新配置与新聊天，不提供旧数据迁移。 Template API v2：API 辅助外观制作、字段条件显隐与 class 映射；0.11.0 的 v2 HTML 保持兼容，更早的旧 HTML 需重制，原文与现有状态/schema/快照保留。未完成本版真实宿主与人工验收。 远程入口跟随 main；刷新脚本后获取 main 最新 bundle。",
+  "info": "LoreState main 远程开发版；模块条目、分类栏目与按需规则注入；正文后统一更新。保留 v3 世界实体冷热档、有限关联召回与活动事件；本版待真实酒馆验收，目标酒馆助手 4.9.5 / SillyTavern 1.18.0。首次 full，后续 delta。不迁移旧状态；模块结构请用新配置与新聊天，不提供旧数据迁移。 可选 EJS 只读桥接：启用 ST-Prompt-Template 后可在动态世界书读取 LoreState；不内置 EJS、不写回状态。 Template API v2：API 辅助外观制作、字段条件显隐与 class 映射；0.11.0 的 v2 HTML 保持兼容，更早的旧 HTML 需重制，原文与现有状态/schema/快照保留。未完成本版真实宿主与人工验收。 远程入口跟随 main；刷新脚本后获取 main 最新 bundle。",
   "button": {
     "enabled": true,
     "buttons": [

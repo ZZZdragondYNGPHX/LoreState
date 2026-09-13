@@ -1528,6 +1528,162 @@ function snapshotStorageInfo(saved){
   return {count:store?.snapshots.length??saved.snapshots?.length??0,bodies:store?Object.keys(store.states).length:saved.snapshots?.length??0,bytes:new TextEncoder().encode(JSON.stringify(store??saved.snapshots??[])).length};
 }
 
+// Optional, read-only Prompt Template integration; no EJS engine or state persistence.
+// Upstream contract and pinned revisions: docs/EJS动态世界书.md
+const EJS_PREPARE_EVENT = 'prompt_template_prepare';
+
+const EJS_BLOCKED_KEYS = new Set(['__proto__', 'prototype', 'constructor']);
+
+function ejsPathParts(path) {
+  const parts = Array.isArray(path) ? path : typeof path === 'string' ? path.split('.') : [];
+  if (!parts.length) return null;
+  const keys = [];
+  for (const part of parts) {
+    if (typeof part !== 'string' && !(Number.isSafeInteger(part) && part >= 0)) return null;
+    const key = String(part);
+    if (!key || EJS_BLOCKED_KEYS.has(key)) return null;
+    keys.push(key);
+  }
+  return keys;
+}
+
+function ejsLookup(state, path) {
+  const keys = ejsPathParts(path);
+  if (!keys) return { found: false };
+  let value = state;
+  for (const key of keys) {
+    if (!value || typeof value !== 'object' || !Object.hasOwn(value, key)) return { found: false };
+    value = value[key];
+  }
+  return { found: true, value };
+}
+
+function ejsFreeze(value, seen = new WeakSet()) {
+  if (!value || typeof value !== 'object' || seen.has(value)) return value;
+  seen.add(value);
+  for (const child of Object.values(value)) ejsFreeze(child, seen);
+  return Object.freeze(value);
+}
+
+function ejsNumber(value) {
+  // LoreState fields are text. Accept finite decimal text, not JS coercion of null/bools/hex.
+  if (typeof value === 'string') {
+    const text = value.trim();
+    if (!/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(text)) return NaN;
+    value = Number(text);
+  }
+  return typeof value === 'number' && Number.isFinite(value) ? value : NaN;
+}
+
+function ejsInRange(value, min, max, options) {
+  return Number.isFinite(value) && Number.isFinite(min) && Number.isFinite(max) && min <= max
+    && value >= min && (options?.includeMax === true ? value <= max : value < max);
+}
+
+function createEjsApi(reading = {}) {
+  const reason = reading.reason ?? (reading.tainted || reading.errors?.length ? 'history-gap'
+    : reading.state ? 'ready' : 'uninitialized');
+  const state = ejsFreeze(reason === 'ready' ? structuredClone(reading.state) : {});
+  const get = (path, fallback) => {
+    const result = ejsLookup(state, path);
+    return result.found && result.value !== undefined ? result.value : fallback;
+  };
+  const has = path => ejsLookup(state, path).found;
+  const range = (path, min, max, options) => ejsInRange(ejsNumber(get(path)), min, max, options);
+  const stage = (path, stages, fallback) => {
+    const value = ejsNumber(get(path));
+    if (!Number.isFinite(value) || !Array.isArray(stages)) return fallback;
+    for (const item of stages) {
+      if (item && typeof item.name === 'string' && ejsInRange(value, item.min, item.max, item)) return item.name;
+    }
+    return fallback;
+  };
+  return Object.freeze({ state, ready: reason === 'ready', reason, get, has, range, stage });
+}
+
+// Each prepare gets one detached snapshot. Helpers never re-read chat variables or replay history.
+function installEjsBridge({ eventOn, eventRemoveListener, read, warn = message => console.warn(message) }) {
+  const warned = new Set(), owned = new WeakMap();
+  const warnOnce = (key, message) => {
+    if (warned.has(key)) return;
+    warned.add(key);
+    warn('[LoreState/EJS] ' + message);
+  };
+  if (typeof eventOn !== 'function' || typeof eventRemoveListener !== 'function') {
+    warnOnce('capability', '缺少可清理的事件接口；只读桥接未启用，其他 LoreState 功能不变。');
+    return () => {};
+  }
+  let active = true, reading = false;
+
+  function prepare(context) {
+    if (!active || !context || typeof context !== 'object' || Array.isArray(context)) return;
+    if (!Object.isExtensible(context)) {
+      warnOnce('context', 'EJS context 不可扩展；未改写已有内容。');
+      return;
+    }
+    let api;
+    if (reading) {
+      api = createEjsApi({ reason: 'busy' });
+    } else {
+      reading = true;
+      try {
+        api = createEjsApi(read(context));
+      } catch {
+        // Never log a thrown parser error: it can contain private message/field text.
+        api = createEjsApi({ reason: 'read-error' });
+        warnOnce('read-error', '无法读取可靠状态；本次 EJS 使用空快照，不回退到旧聊天缓存。');
+      } finally {
+        reading = false;
+      }
+    }
+    const values = {
+      LoreState: api,
+      lorestate: api.state,
+      ls: api.get,
+      lsHas: api.has,
+      lsRange: api.range,
+      lsStage: api.stage,
+    };
+    const previous = owned.get(context), installed = {};
+    for (const [key, value] of Object.entries(values)) {
+      const descriptor = Object.getOwnPropertyDescriptor(context, key);
+      const ours = previous && Object.hasOwn(previous, key) && descriptor
+        && Object.hasOwn(descriptor, 'value') && descriptor.value === previous[key];
+      if (key in context && !ours) {
+        warnOnce('conflict:' + key, 'EJS 名称冲突：' + key + '；保留原值，请使用未冲突的 LoreState 命名空间/别名。');
+        continue;
+      }
+      try {
+        Object.defineProperty(context, key, { value, enumerable: true, configurable: true, writable: true });
+        installed[key] = value;
+      } catch {
+        warnOnce('property:' + key, 'EJS 属性不可写：' + key + '；保留原值。');
+      }
+    }
+    // Only our own, still-unmodified bindings may be refreshed if a caller reuses a context.
+    // Weak ownership avoids retaining completed templates or their chat snapshots.
+    owned.set(context, installed);
+  }
+
+  function dispose() {
+    if (!active) return;
+    active = false;
+    try {
+      // Use the original callback, not EventOnReturn.stop(): 4.9.5 returns a wrapped callback.
+      eventRemoveListener(EJS_PREPARE_EVENT, prepare);
+    } catch {
+      warnOnce('dispose', '桥接监听清理失败；旧回调已停用，脚本关闭后由酒馆助手回收。');
+    }
+  }
+  try {
+    eventOn(EJS_PREPARE_EVENT, prepare);
+  } catch {
+    dispose();
+    warnOnce('subscribe', '桥接事件注册失败；其他 LoreState 功能不变。');
+  }
+  return dispose;
+}
+
 
 function shouldReloadForChatChange(loadedChatId,nextChatId){
   return nextChatId!==undefined&&nextChatId!==loadedChatId;
@@ -1540,7 +1696,7 @@ function startPrototype(defaultHtml) {
   const previousRuntime=window.parent[runtimeSlot];
   if(typeof previousRuntime?.dispose==='function')previousRuntime.dispose();
   else if(doc.getElementById('lorestate-prototype-settings'))throw new Error('已有 LoreState 原型脚本运行，请勿重复启用');
-  const loadedChatId=ctx().getCurrentChatId();
+  const loadedChatId=ctx().getCurrentChatId(),loadedChatRef=ctx().chat;
   let runtimeRegistration=null;
   const settings=()=>getVariables({type:'script'})[PROTO_KEY]??{};
   const chatSettings=()=>getVariables({type:'chat'})[PROTO_KEY]??{};
@@ -1832,6 +1988,44 @@ function startPrototype(defaultHtml) {
     if(pending&&list.some(m=>m.message_id===pending.floor&&m.message!==pending.original))throw new Error('续写尚未整理完成，请重新读取当前聊天状态；原分支变化时需先恢复原分支');
     return replaySnapshots(list,schemaFor(config),chatSettings().start??1,chatSettings().checkpoint);
   };
+  let ejsGeneration = null;
+  function captureEjsGeneration(type, _options, dryRun) {
+    ejsGeneration = null;
+    if (closed || dryRun || ctx().getCurrentChatId() !== loadedChatId || ctx().chat !== loadedChatRef || !active(settings())) return;
+    const id = identity();
+    try {
+      const last = messages().at(-1);
+      const cutoff = ['swipe', 'regenerate', 'continue'].includes(type) && last?.role === 'assistant' ? last.message_id : null;
+      ejsGeneration = { id, type, cutoff };
+    } catch {
+      ejsGeneration = { id, type, invalid: true };
+    }
+  }
+  function readEjsResult(context) {
+    if (closed || ctx().getCurrentChatId() !== loadedChatId || ctx().chat !== loadedChatRef) return { reason: 'chat-changed' };
+    if (context.chatId != null && context.chatId !== ctx().getCurrentChatId()) return { reason: 'chat-changed' };
+    const config = settings();
+    if (!active(config)) return { reason: 'inactive' };
+    if (extraJob || appearanceJob?.busy) return { reason: 'busy' };
+    let list = messages();
+    if (context.runType === 'generate') {
+      if (['append', 'appendFinal'].includes(context.generateType)) return { reason: 'generation-untracked' };
+      const boundary = ejsGeneration;
+      if (boundary && matches(boundary.id) && (!context.generateType || context.generateType === boundary.type)) {
+        if (boundary.invalid) return { reason: 'generation-untracked' };
+        // ST removes a regenerate target between prepare passes. A fixed floor cutoff cannot double-pop.
+        if (boundary.cutoff !== null) list = list.filter(m => m.message_id < boundary.cutoff);
+      } else if (['swipe', 'regenerate', 'continue'].includes(context.generateType)) {
+        return { reason: 'generation-untracked' };
+      }
+    } else if (context.runType === 'render') {
+      const floor = context.message_id, target = list.find(m => m.message_id === floor);
+      if (!Number.isInteger(floor) || floor < 0 || !target) return { reason: 'floor-unavailable' };
+      if (context.swipe_id != null && context.swipe_id !== target.swipe_id) return { reason: 'branch-mismatch' };
+      list = list.filter(m => m.message_id <= floor);
+    }
+    return getResult(config, list);
+  }
   function templatePreviewState(schema){
     const example=fields=>Object.fromEntries(fields.map(f=>[f,f+'的示例文字'])),entities={},modules=Object.entries(schema.modules??{});
     modules.forEach(([type,fields],index)=>{
@@ -2253,17 +2447,28 @@ function startPrototype(defaultHtml) {
     }
   }
   for(const event of ['MESSAGE_RECEIVED','CHARACTER_MESSAGE_RENDERED','MESSAGE_UPDATED','MESSAGE_EDITED','MESSAGE_DELETED','MESSAGE_SWIPED','GENERATION_ENDED','MORE_MESSAGES_LOADED'])if(tavern_events[event])eventOn(tavern_events[event],schedule);
-  if(tavern_events.GENERATION_STARTED)eventOn(tavern_events.GENERATION_STARTED,()=>{generating=true;});
-  for(const event of ['GENERATION_ENDED','GENERATION_STOPPED'])if(tavern_events[event])eventOn(tavern_events[event],()=>{generating=false;if(event==='GENERATION_ENDED')finishAutoUpdate();else{autoUpdate=null;clearTimeout(autoTimer);autoTimer=null;}schedule();});
+  if(tavern_events.GENERATION_STARTED)eventOn(tavern_events.GENERATION_STARTED,()=>{ejsGeneration=null;generating=true;});
+  for(const event of ['GENERATION_ENDED','GENERATION_STOPPED'])if(tavern_events[event])eventOn(tavern_events[event],()=>{ejsGeneration=null;generating=false;if(event==='GENERATION_ENDED')finishAutoUpdate();else{autoUpdate=null;clearTimeout(autoTimer);autoTimer=null;}schedule();});
+  const disposeEjsBridge = installEjsBridge({ eventOn, eventRemoveListener: typeof eventRemoveListener === 'function' ? eventRemoveListener : undefined, read: readEjsResult });
+  let ejsEarlyEvent = null;
+  if (typeof eventMakeFirst === 'function' && typeof eventRemoveListener === 'function' && tavern_events.GENERATION_AFTER_COMMANDS) {
+    try {
+      // Prompt Template may prepare its first context before beforeGenerate runs.
+      eventMakeFirst(tavern_events.GENERATION_AFTER_COMMANDS, captureEjsGeneration);
+      ejsEarlyEvent = tavern_events.GENERATION_AFTER_COMMANDS;
+    } catch { console.warn('[LoreState/EJS] 无法跟踪生成前态；重生成上下文将使用空快照。'); }
+  }
   runtimeRegistration={dispose};window.parent[runtimeSlot]=runtimeRegistration;startChatObserver();
   eventOn(tavern_events.CHAT_CHANGED,newChatId=>{
     if(shouldReloadForChatChange(loadedChatId,newChatId)){dispose();window.location.reload();return;}
-    chatEpoch++;appearanceUi?.close();clearTailPreview();cancelExtraUpdate();extraDiagnostics=[];apiUi.clear();uninject?.();uninject=null;stateWindow.close();view?.remove();renderKey='';noticeKey='';notice.hidden=true;runtimeLogs=[];restoreDraft=null;capturedKey='';snapshotPreview.textContent='';report('设置随角色保存；修改后请预览并保存。');manager.close();generating=false;schedule();
+    ejsGeneration=null;chatEpoch++;appearanceUi?.close();clearTailPreview();cancelExtraUpdate();extraDiagnostics=[];apiUi.clear();uninject?.();uninject=null;stateWindow.close();view?.remove();renderKey='';noticeKey='';notice.hidden=true;runtimeLogs=[];restoreDraft=null;capturedKey='';snapshotPreview.textContent='';report('设置随角色保存；修改后请预览并保存。');manager.close();generating=false;schedule();
   });
   eventOn(tavern_events.GENERATION_AFTER_COMMANDS,beforeGenerate);
   eventOn(getButtonEvent('LoreState 设置'),()=>open().catch(e=>fault(e,'设置打开失败')));
   function dispose(){
     if(closed)return;
+    disposeEjsBridge();ejsGeneration=null;
+    if(ejsEarlyEvent)try{eventRemoveListener(ejsEarlyEvent,captureEjsGeneration);}catch{console.warn('[LoreState/EJS] 生成前态监听清理失败；旧回调已停用。');}
     closed=true;appearanceUi?.dispose();cancelExtraUpdate();apiUi.clear();menuObserver?.disconnect();chatObserver?.disconnect();chatObserver=null;if(chatRepairTimer){clearTimeout(chatRepairTimer);chatRepairTimer=null;}floorLayout.remove();stateWindow.dispose();menu.remove();panel.remove();manager.remove();notice.remove();view?.remove();
     const cleanup=uninject;uninject=null;cleanup?.();
     if(runtimeRegistration&&window.parent[runtimeSlot]===runtimeRegistration)delete window.parent[runtimeSlot];
