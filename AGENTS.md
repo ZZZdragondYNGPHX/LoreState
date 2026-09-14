@@ -1,6 +1,6 @@
 # LoreState Agent Guide
 
-- 这是 LoreState 的主仓库；当前维护线是 `prototype/` 的 Tavern Helper 远程脚本，`artifact/bundle.js` 是 `main` 分支运行代码；当前固定稳定版是不可移动标签 **`0.12.1`**。
+- 这是 LoreState 的主仓库；当前维护线是 `prototype/` 的 Tavern Helper 远程脚本，`artifact/bundle.js` 是 `main` 分支运行代码；当前固定稳定版是不可移动标签 **`0.12.2`**。
 - 默认用中文沟通。开始工作前先读本文件、`docs/版本管理.md`、`docs/开发说明.md` 和 `交接文档.md`，再确认目标、基底 ref、红线和验收；不要把历史交接记录当成当前指令。
 - `examples/` 与 `examples/wishnote` 分支已退休，不得重新创建或把 WishNote 专用代码接回主构建。
 - 根目录 `src/`、`index.js`、`manifest.json` 与 `package.json` 的 `0.2.1` 属于旧原生扩展；不得拿它当当前 Tavern Helper 脚本版本。
@@ -8,7 +8,7 @@
 ## 版本与分支：强制规则
 
 - `main` 是唯一长期开发分支，也是唯一活动开发远程入口。
-- 正式版本只能用不可移动的语义版本 Git tag 表示，例如当前 `0.12.1` 和未来新的 patch tag。**禁止创建裸版本号 branch**，禁止移动或覆盖已发布 tag。
+- 正式版本只能用不可移动的语义版本 Git tag 表示，例如当前 `0.12.2` 和未来新的 patch tag。**禁止创建裸版本号 branch**，禁止移动或覆盖已发布 tag。
 - 普通工作分支只允许短期使用 `fix/*`、`feat/*`、`chore/*`；针对固定版本的临时诊断只能用 `debug/<version>-<slug>`。完成后必须删除短期分支。
 - 不再创建 `release-*`、`source-port*`、版本号 branch 或长期 hotfix branch。
 - 历史上误建的 `0.10.3` branch 已删除，其原 SHA `08a0df5` 固化为不可移动的同名 RC/兼容 tag；不得移动该 tag，也不得用它推导今后的版本流程。`0.10.4` 已成为第一版完整采用“固定入口 + receipt + bundle + tag 同提交”规则的正式版本。
@@ -55,10 +55,10 @@ npm run build
 npm run build -- <version>
 ```
 
-当前 `0.12.1` 已发布；下一 patch 的示例：
+当前 `0.12.2` 已发布；下一 patch 的示例：
 
 ```sh
-npm run build -- 0.12.2
+npm run build -- 0.12.3
 ```
 
 固定版本的 `prototype/dist/<version>/lorestate-script.json` 必须且只能引用 `@<version>/artifact/bundle.js`。提交生成物并通过检查后，tag 再指向这个完全一致的提交。已经发布的 tag 永远不移动。

@@ -2,20 +2,21 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile,access} from 'node:fs/promises';
 import {applyState,playPrompt,authorPolicy,initialResult} from '../prototype/core.js';
+import {parseModules,moduleShape} from '../prototype/modules.js';
 const read=name=>readFile(new URL('../docs/'+name,import.meta.url),'utf8');
 
-test('作者教程的最小与旅行示例按顺序通过真实解析器且保留预期事实',async()=>{
+test('作者教程的公共与跨模块示例按顺序通过真实解析器且保留预期事实',async()=>{
   const source=await read('状态栏条目与对话示例.md');
-  for(const [heading,schema,count] of [
-    ['示例一：只有地点与时间',{shared:['地点','时间'],entity:[]},3],
-    ['示例二：旅行中的人物、国家、物品与承诺',{shared:['地点','时间'],entity:['概况','当前状态']},6],
+  for(const [heading,count] of [
+    ['示例一：只有公共地点与时间',3],
+    ['示例二：人物与物品使用不同栏目',2],
   ]){
     const section=source.split('## '+heading)[1].split('\n## ')[0];
     const xml=[...section.matchAll(/```xml\s*\n([\s\S]*?)```/g)].map(m=>m[1]);assert.equal(xml.length,count);
-    const rules=section.match(/```text\s*\n([\s\S]*?)```/)[1];let state=null;
+    const rules=section.match(/```text\s*\n([\s\S]*?)```/)[1],schema=moduleShape(parseModules(rules));let state=null;
     for(const [i,block] of xml.entries()){state=applyState(state,block,schema,i+1);assert.ok(playPrompt(rules,schema,{state,errors:[]}).length<24000);}
-    if(schema.entity.length){assert.equal(state.entities.E01.pending,false);assert.equal(state.entities.E01.presence,'cold');assert.equal(state.entities.N01.fields.当前状态,'停战延期七日，边境仍戒备');assert.equal(state.entities.I01.fields.当前状态,'由林舟保管，完好');}
-    else assert.equal(state.shared.地点,'河港码头');
+    if(state.entities.I1){assert.equal(state.entities.I1.fields.持有者,'{{user}}');assert.equal(state.entities.I1.fields.完好状况,'完好。');assert.equal(state.entities.P1.fields.身体状况,'健康，无明显外伤。');assert.equal(state.entities.P1.fields.当前目标,'把{{user}}带到内城区。');}
+    else {assert.equal(state.shared.地点,'河港东码头');assert.equal(state.shared.时间,'第三天清晨');}
   }
 });
 

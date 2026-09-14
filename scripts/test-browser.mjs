@@ -1,5 +1,5 @@
 import {createServer} from 'node:http';
-import {readFile,mkdtemp} from 'node:fs/promises';
+import {readFile,mkdtemp,mkdir,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {resolve,sep,join} from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -54,7 +54,8 @@ async function runBrowserPage(page){
     await client.call('Page.enable');
     await client.call('Emulation.setFocusEmulationEnabled',{enabled:true});
     await client.call('Page.bringToFront');
-    await client.call('Page.navigate',{url:'http://127.0.0.1:'+server.address().port+'/tests/'+page});
+    const preview=process.env.LORESTATE_SCREENSHOTS&&page.startsWith('runtime-browser')?'&preview=state':'';
+    await client.call('Page.navigate',{url:'http://127.0.0.1:'+server.address().port+'/tests/'+page+preview});
     // Use wall-clock completion: virtual-time timers can outrun an opaque srcdoc's load event.
     let result='';const deadline=Date.now()+25000;
     while(Date.now()<deadline){
@@ -64,6 +65,20 @@ async function runBrowserPage(page){
     }
     console.log(page+'\n'+result);
     if(!result.includes('PASS ')||result.includes('FAIL ')||result.includes('正在运行'))throw new Error('Browser regression failed or timed out');
+    if(process.env.LORESTATE_SCREENSHOTS&&page.startsWith('runtime-browser')){
+      const directory=resolve(process.env.LORESTATE_SCREENSHOTS);await mkdir(directory,{recursive:true});
+      for(const [width,height] of [[1360,960],[390,844],[320,640]]){
+        await client.call('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:1,mobile:false});
+        for(const tab of ['state','diagnostics','settings','appearance','api']){
+          await client.call('Runtime.evaluate',{expression:`document.getElementById('lorestate-state-manager').showModal();document.getElementById('ls-tab-${tab}').click();document.getElementById('ls-tab-${tab}').focus();document.querySelector('.ls-appearance-code').open=${width>=720};document.querySelector('.ls-content').scrollTop=0;`});
+          await sleep(100);
+          const geometry=await client.call('Runtime.evaluate',{expression:`(()=>{const r=document.getElementById('lorestate-state-manager').getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,scale:1};})()`,returnByValue:true});
+          const shot=await client.call('Page.captureScreenshot',{format:'png',clip:geometry.result.value});
+          await writeFile(join(directory,`${width}-${tab}.png`),Buffer.from(shot.data,'base64'));
+        }
+      }
+      console.log('Synthetic UI screenshots: '+directory);
+    }
   }finally{
     if(client){await client.call('Browser.close').catch(()=>{});client.close();}
     if(browser.exitCode===null){await new Promise(resolve=>{const timer=setTimeout(()=>{browser.kill();resolve();},1500);browser.once('exit',()=>{clearTimeout(timer);resolve();});});}

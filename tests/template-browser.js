@@ -168,8 +168,9 @@ await check('作者文档与动态 authorPrompt 中的完整 HTML 通过同一 v
   const prompt = authorPrompt(moduleRules), fence = String.fromCharCode(96).repeat(3);
   const pattern = new RegExp(fence + 'html\\s*\n([\\s\\S]*?)' + fence, 'g');
   for (const material of [prose, prompt]) {
-    const examples = [...material.matchAll(pattern)]; assert(examples.length > 0, '缺少完整 HTML 示例');
-    for (const match of examples) { validateTemplateV2(match[1], moduleSchema); assert(renderDoc(match[1], moduleState, moduleSchema).body.textContent.includes('林舟')); }
+    // The guide also contains attribute fragments; only complete documents are importable templates.
+    const examples = [...material.matchAll(pattern)].filter(match=>/<!doctype html>/i.test(match[1])); assert(examples.length > 0, '缺少完整 HTML 示例');
+    for (const match of examples) { validateTemplateV2(match[1], moduleSchema); const rendered=renderDoc(match[1], moduleState, moduleSchema);assert(rendered.documentElement.dataset.loreTemplate==='2');if(material===prompt)assert(rendered.body.textContent.includes('林舟')); }
   }
   const withoutShared = moduleRules.replace(/【公共栏目】[\s\S]*?(?=【模块：)/, '');
   const shape = moduleShape(parseModules(withoutShared));

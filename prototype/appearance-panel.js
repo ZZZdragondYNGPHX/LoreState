@@ -29,7 +29,7 @@ export function createAppearancePanel({doc,manager,htmlLabel,html,preview,preset
   const previewTools=uiActions(doc,canvas,[actions.get('预览 HTML（不保存）')]);
   const apply=action('应用 HTML 草稿',async()=>{await applyDraft();report('HTML 草稿已应用到随卡外观；聊天状态保留，命名预设未被覆盖。');},previewTools);apply.className='ls-primary';
   const frameSlot=uiNode(doc,'div',null,canvas,'ls-appearance-frame');frameSlot.append(preview);
-  uiNote(doc,canvas,'外观仍随卡保存，同卡各聊天共用。第一次使用请到“设置”完成栏目绑定与启用。');
+  uiNote(doc,canvas,'外观仍随卡保存，同卡各聊天共用。第一次使用请到“规则配置”完成栏目绑定与启用。');
   const code=uiNode(doc,'details',null,work,'ls-card ls-appearance-code');
   uiNode(doc,'summary','HTML 源码 · 手工编辑 / 粘贴',code);code.open=doc.defaultView.innerWidth>=760;
   const codeBody=uiNode(doc,'div',null,code,'ls-card-body');codeBody.append(htmlLabel);htmlLabel.firstChild.textContent='HTML 源码（可编辑 / 粘贴）';html.rows=18;
@@ -57,9 +57,9 @@ export function createAppearancePanel({doc,manager,htmlLabel,html,preview,preset
   for(const [value,text] of [['revise','修改当前 HTML 草稿'],['new','从零生成新外观']])uiNode(doc,'option',text,mode).value=value;
   const styleLabel=uiNode(doc,'label','想要的风格与修改要求',body),style=uiNode(doc,'textarea',null,styleLabel);
   style.setAttribute('aria-label','想要的外观风格');style.rows=6;style.maxLength=4000;
-  style.placeholder='例如：深色纸张风格，顶部显示世界信息，人物用紧凑卡片；危险状态用暖色强调，冷档默认折叠，手机单列。';
+  style.placeholder='例如：浅色纸张风格，顶部显示世界信息，人物用紧凑卡片；危险状态用暖色强调，冷档默认折叠，手机单列。';
   uiNote(doc,body,'只发送栏目结构、风格要求，以及改稿时的 HTML。不会附带聊天正文、真实状态值或世界书原文。请勿在风格/HTML 中粘贴密钥或私人资料。');
-  uiNote(doc,body,'复用 API 页已保存的模型来源、采样和请求策略；HTML 使用独立制作提示词，不使用状态更新或酒馆请求预设。');
+  uiNote(doc,body,'复用模型连接页已保存的模型来源、采样和请求策略；HTML 使用独立制作提示词，不使用状态更新或酒馆请求预设。');
   const requestDetails=uiNode(doc,'details',null,body);uiNode(doc,'summary','查看将发送的制作提示词（不含连接密钥）',requestDetails);
   const requestText=uiNode(doc,'textarea',null,requestDetails);requestText.readOnly=true;requestText.rows=8;requestText.setAttribute('aria-label','外观制作请求预览');
   const progress=uiNode(doc,'p','生成结果只进入草稿，确认应用前不改变当前外观。',body,'ls-health');progress.setAttribute('role','status');

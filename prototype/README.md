@@ -1,6 +1,6 @@
-# 当前入口：0.12.1 固定版与 main 开发版
+# 当前入口：0.12.2 固定版与 main 开发版
 
-当前固定安装使用 [0.12.1 远程组件](dist/0.12.1/lorestate-script.json)；持续开发使用 [main 远程组件](dist/main/lorestate-script.json) 和 [main 脚本代码](../artifact/bundle.js)。旧固定标签保持不可移动。
+当前固定安装使用 [0.12.2 远程组件](dist/0.12.2/lorestate-script.json)；持续开发使用 [main 远程组件](dist/main/lorestate-script.json) 和 [main 脚本代码](../artifact/bundle.js)。旧固定标签保持不可移动。
 
 作者请从 [文档目录](../docs/README.md) 和 [作者入门](../docs/作者入门.md) 开始。
 
@@ -14,7 +14,9 @@
 - 0.12.0 起：可选 ST-Prompt-Template / EJS 只读桥接。
 - **0.12.1：修复首次设置时条目选择在刷新/切页后丢失；新增独立“确认绑定状态栏条目”。**
 
-## 0.12.1 首次配置
+本版控制中心使用浅色界面；更新/取消/撤销集中在“更新与恢复”，API 配置位于“模型连接”。详见 [0.12.2 发布说明](../docs/发布材料/0.12.2-浅色控制中心.md)。
+
+## 首次配置（0.12.1 起保留明确绑定）
 
 1. 导入固定组件，只启用一份 LoreState。
 2. 在角色/聊天世界书建立模块条目，可直接使用 [module-example.txt](module-example.txt)。
@@ -51,7 +53,7 @@ Template API v2 根节点：
 
 DataSchema 来自模块条目，HTML 只负责展示。完整 API 见 [HTML 模板适配指南](../docs/HTML模板适配指南.md)。
 
-旧 `0.10.6` 及更早 HTML 属于 Template API v1，当前不会自动转换；旧原文保留，但需要重制 v2 外观。已有 `0.11.0+` 合法 v2 模板升级到 0.12.1 无需重制。
+旧 `0.10.6` 及更早 HTML 属于 Template API v1，当前不会自动转换；旧原文保留，但需要重制 v2 外观。已有 `0.11.0+` 合法 v2 模板升级到 0.12.2 无需重制。
 
 ## 外观制作
 
@@ -69,11 +71,11 @@ DataSchema 来自模块条目，HTML 只负责展示。完整 API 见 [HTML 模�
 - `lsRange` / `LoreState.range`
 - `lsStage` / `LoreState.stage`
 
-桥接不内置 EJS、不写状态、不创建第二套变量、不绕过冷档读取校验。当前固定版仍是 `0.12.1`；0.12.0 只表示本功能的首发版本。详见 [EJS 指南](../docs/EJS动态世界书.md)。
+桥接不内置 EJS、不写状态、不创建第二套变量、不绕过冷档读取校验。当前固定版仍是 `0.12.2`；0.12.0 只表示本功能的首发版本。详见 [EJS 指南](../docs/EJS动态世界书.md)。
 
 ## 隐藏楼层
 
-隐藏助手只改变旧正文是否进入模型上下文；属于当前回复分支的隐藏 AI 楼层仍参与 LoreState 本地状态回放。当前 0.12.1 已包含该修复。详见 [隐藏助手兼容与更新](../docs/隐藏助手兼容与更新.md)。
+隐藏助手只改变旧正文是否进入模型上下文；属于当前回复分支的隐藏 AI 楼层仍参与 LoreState 本地状态回放。当前 0.12.2 已包含该修复。详见 [隐藏助手兼容与更新](../docs/隐藏助手兼容与更新.md)。
 
 ## 构建
 
@@ -100,7 +102,7 @@ node scripts/test-ejs.mjs
 `npm run build` 只生成 main 开发入口。准备新的固定 tag 时，在打 tag 前使用版本参数，例如下一 patch：
 
 ```sh
-npm run build -- 0.12.2
+npm run build -- 0.12.3
 ```
 
 正式固定版本的 loader 只能引用自己的 `@<version>`，不能引用 `@main`。

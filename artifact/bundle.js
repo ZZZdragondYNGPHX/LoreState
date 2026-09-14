@@ -1019,7 +1019,7 @@ function createAppearancePanel({doc,manager,htmlLabel,html,preview,presetLabel,n
   const previewTools=uiActions(doc,canvas,[actions.get('预览 HTML（不保存）')]);
   const apply=action('应用 HTML 草稿',async()=>{await applyDraft();report('HTML 草稿已应用到随卡外观；聊天状态保留，命名预设未被覆盖。');},previewTools);apply.className='ls-primary';
   const frameSlot=uiNode(doc,'div',null,canvas,'ls-appearance-frame');frameSlot.append(preview);
-  uiNote(doc,canvas,'外观仍随卡保存，同卡各聊天共用。第一次使用请到“设置”完成栏目绑定与启用。');
+  uiNote(doc,canvas,'外观仍随卡保存，同卡各聊天共用。第一次使用请到“规则配置”完成栏目绑定与启用。');
   const code=uiNode(doc,'details',null,work,'ls-card ls-appearance-code');
   uiNode(doc,'summary','HTML 源码 · 手工编辑 / 粘贴',code);code.open=doc.defaultView.innerWidth>=760;
   const codeBody=uiNode(doc,'div',null,code,'ls-card-body');codeBody.append(htmlLabel);htmlLabel.firstChild.textContent='HTML 源码（可编辑 / 粘贴）';html.rows=18;
@@ -1047,9 +1047,9 @@ function createAppearancePanel({doc,manager,htmlLabel,html,preview,presetLabel,n
   for(const [value,text] of [['revise','修改当前 HTML 草稿'],['new','从零生成新外观']])uiNode(doc,'option',text,mode).value=value;
   const styleLabel=uiNode(doc,'label','想要的风格与修改要求',body),style=uiNode(doc,'textarea',null,styleLabel);
   style.setAttribute('aria-label','想要的外观风格');style.rows=6;style.maxLength=4000;
-  style.placeholder='例如：深色纸张风格，顶部显示世界信息，人物用紧凑卡片；危险状态用暖色强调，冷档默认折叠，手机单列。';
+  style.placeholder='例如：浅色纸张风格，顶部显示世界信息，人物用紧凑卡片；危险状态用暖色强调，冷档默认折叠，手机单列。';
   uiNote(doc,body,'只发送栏目结构、风格要求，以及改稿时的 HTML。不会附带聊天正文、真实状态值或世界书原文。请勿在风格/HTML 中粘贴密钥或私人资料。');
-  uiNote(doc,body,'复用 API 页已保存的模型来源、采样和请求策略；HTML 使用独立制作提示词，不使用状态更新或酒馆请求预设。');
+  uiNote(doc,body,'复用模型连接页已保存的模型来源、采样和请求策略；HTML 使用独立制作提示词，不使用状态更新或酒馆请求预设。');
   const requestDetails=uiNode(doc,'details',null,body);uiNode(doc,'summary','查看将发送的制作提示词（不含连接密钥）',requestDetails);
   const requestText=uiNode(doc,'textarea',null,requestDetails);requestText.readOnly=true;requestText.rows=8;requestText.setAttribute('aria-label','外观制作请求预览');
   const progress=uiNode(doc,'p','生成结果只进入草稿，确认应用前不改变当前外观。',body,'ls-health');progress.setAttribute('role','status');
@@ -1087,12 +1087,14 @@ function createAppearancePanel({doc,manager,htmlLabel,html,preview,presetLabel,n
 function createApiPanel({doc,read,write,binding,setBinding,run,cancel,undo,onError,listRequestPresets=()=>[],fetchModels,readDiagnostics=()=>[],clearDiagnostics=()=>{}}){
   const make=(tag,text,parent)=>{const el=doc.createElement(tag);if(text)el.textContent=text;parent?.append(el);return el;};
   const panel=make('section');
-  make('h3','API 预设与状态更新',panel);
+  const heading=make('header',null,panel);heading.className='ls-page-header';make('h3','模型连接',heading);make('p','保存模型连接，再选择本聊天的状态更新方式。',heading);
   const status=make('p','',panel);status.className='ls-health';status.setAttribute('role','status');
+  const updatePanel=make('section');updatePanel.setAttribute('aria-label','最新回复更新');
+  const updateStatus=make('p','',updatePanel);updateStatus.className='ls-health';updateStatus.setAttribute('role','status');
   const card=(title,hint,open=false)=>uiCard(doc,panel,{title,hint,open});
   const note=(parent,text)=>uiNote(doc,parent,text);
   const field=(title,type='text',parent=panel)=>{const label=make('label',title,parent),input=make(type==='select'?'select':'input',null,label);input.setAttribute('aria-label',title);if(type!=='select')input.type=type;if(type==='checkbox')label.className='ls-check';return input;};
-  const action=(title,fn,parent=panel)=>{const button=make('button',title,parent);button.type='button';button.onclick=async()=>{button.disabled=true;try{await fn();}catch(e){status.textContent=e.message;onError(e);}finally{button.disabled=false;}};return button;};
+  const action=(title,fn,parent=panel)=>{const button=make('button',title,parent);button.type='button';button.onclick=async()=>{button.disabled=true;try{await fn();}catch(e){(updatePanel.contains(button)?updateStatus:status).textContent=e.message;onError(e);}finally{button.disabled=false;}};return button;};
   const choices=(select,items)=>{select.replaceChildren();for(const [value,title] of items)make('option',title,select).value=value;};
   // One card per decision, and every card ends with the button that saves it.
   const bindingGroup=card('状态更新绑定','决定谁来整理状态、用哪套请求设置；改动需要保存后生效。',true);
@@ -1114,10 +1116,16 @@ function createApiPanel({doc,read,write,binding,setBinding,run,cancel,undo,onErr
   attempts.min='1';attempts.max='5';attempts.step='1';timeout.min='15';timeout.max='600';timeout.step='1';
   note(bindingGroup,'依次请求，失败后重试；次数包含首次请求。返回完整状态块但格式、协议、栏目或读取凭据校验失败时，下一次请求会带上本地校验原因；道歉、拒答、空响应等没有完整状态块的回复直接重试，不附带原因，也不沿用此前的纠错理由；总超时覆盖全部尝试，取消或聊天变化不会重试。流式只用于接收响应，完整校验前不写入状态。');
   note(bindingGroup,'以上请求设置和绑定需保存后生效；可在首次制作 HTML 前保存绑定。外观制作复用模型连接与请求策略，使用独立 HTML 提示词，不使用这里的请求预设。自动更新只用于额外模型模式。随正文模式下，这里的模型与请求设置用于手动重算最新失败回复，无需切换模式。重试与撤销保留剧情正文。');
+  const bindingHelp=make('details',null,bindingGroup);make('summary','请求规则与使用说明',bindingHelp);
+  for(const explanation of [...bindingGroup.querySelectorAll(':scope > .ls-note')])bindingHelp.append(explanation);
   const bindingActions=uiActions(doc,bindingGroup);
-  const runGroup=card('手动更新与撤销','额外模式可整理最新回复；随正文模式仅重算最新失败回复。会重新判断状态内容，支持取消与撤销。',true);
+  const runGroup=uiCard(doc,updatePanel,{title:'更新最新回复',hint:'始终处理最新 AI 回复，不受上方查看楼层影响。保留剧情正文，支持取消和撤销。',open:true});
+  runGroup.dataset.lsUpdateActions='';
+  const updateScope=make('p','',runGroup);updateScope.className='ls-note';
   const runActions=uiActions(doc,runGroup);
+  const connectionAction=make('button','配置模型连接',uiActions(doc,runGroup));connectionAction.type='button';connectionAction.onclick=()=>doc.getElementById('ls-tab-api')?.click();
   const profileGroup=card('管理 API 预设','填写状态模型的地址、密钥和模型名称；一份预设可供状态更新、外观制作及多张卡使用。',true);
+  profileGroup.parentElement.open=false;panel.insertBefore(profileGroup.parentElement,bindingGroup.parentElement);
   note(profileGroup,'密钥保存在当前酒馆用户的本地设置中，不写入角色卡或聊天记录；完整设置备份仍包含密钥。');
   const select=field('编辑 API 预设','select',profileGroup);
   const profileRow=uiGrid(doc,profileGroup);
@@ -1147,7 +1155,7 @@ function createApiPanel({doc,read,write,binding,setBinding,run,cancel,undo,onErr
   const maxTokens=field('最大回复 tokens','number',advancedRow),temperature=field('更新温度','number',advancedRow),topP=field('Top P','number',advancedRow),topK=field('Top K','number',advancedRow),frequency=field('频率惩罚','number',advancedRow),presence=field('存在惩罚','number',advancedRow);
   for(const [el,min,max,step] of [[maxTokens,0,65536,1],[temperature,0,2,0.1],[topP,0,1,0.05],[topK,0,1000,1],[frequency,-2,2,0.1],[presence,-2,2,0.1]]){el.min=min;el.max=max;el.step=step;}
   const profileActions=uiActions(doc,profileGroup);
-  const updateGroup=card('最近一次 LoreState 更新块','查看最新 AI 回复里实际存在的完整状态块。'),updateMeta=make('p','',updateGroup),updateBox=make('textarea',null,updateGroup);
+  const updateGroup=uiCard(doc,updatePanel,{title:'最近一次 LoreState 更新块',hint:'查看最新 AI 回复里实际存在的完整状态块。'}),updateMeta=make('p','',updateGroup),updateBox=make('textarea',null,updateGroup);
   updateBox.readOnly=true;updateBox.spellcheck=false;updateBox.setAttribute('aria-label','最近一次 LoreState 更新块');updateBox.style.cssText='width:100%;min-height:180px;box-sizing:border-box;white-space:pre;overflow:auto';
   note(updateGroup,'这里显示当前最新 AI 回复中实际存在的完整 LoreState 块。额外模型更新成功后会自动刷新；若自动更新发生在面板关闭期间，重新打开面板或点击刷新即可。');
   function latestUpdateBlock(){
@@ -1164,10 +1172,10 @@ function createApiPanel({doc,read,write,binding,setBinding,run,cancel,undo,onErr
   action('刷新更新块',()=>syncUpdatePreview(),updateActions);
   action('复制更新块',async()=>{
     if(!updateBox.value)throw new Error('当前没有可复制的完整更新块');
-    try{await navigator.clipboard.writeText(updateBox.value);status.textContent='LoreState 更新块已复制。';}
-    catch{updateBox.focus();updateBox.select();status.textContent='浏览器不允许自动复制，请从文本框手动复制。';}
+    try{await navigator.clipboard.writeText(updateBox.value);updateStatus.textContent='LoreState 更新块已复制。';}
+    catch{updateBox.focus();updateBox.select();updateStatus.textContent='浏览器不允许自动复制，请从文本框手动复制。';}
   },updateActions);
-  const diagnosticGroup=card('最近一次 LoreState 更新诊断','额外模型的原始返回和本地校验结果，用来定位失败原因。'),diagnosticMeta=make('p','',diagnosticGroup),diagnosticBox=make('textarea',null,diagnosticGroup);
+  const diagnosticGroup=uiCard(doc,updatePanel,{title:'最近一次 LoreState 更新诊断',hint:'模型返回与本地校验结果，用来定位失败原因。'}),diagnosticMeta=make('p','',diagnosticGroup),diagnosticBox=make('textarea',null,diagnosticGroup);
   diagnosticBox.readOnly=true;diagnosticBox.spellcheck=false;diagnosticBox.setAttribute('aria-label','最近一次 LoreState 更新诊断');diagnosticBox.style.cssText='width:100%;min-height:320px;box-sizing:border-box;white-space:pre;overflow:auto';
   note(diagnosticGroup,'这里记录当前标签页、当前聊天最近 10 次额外模型请求的原始返回和本地校验结果；单次输出最多保留 32000 字符。诊断不保存到聊天或角色卡，不记录请求提示或 API 密钥，切换聊天时清空。');
   function syncDiagnostics(){
@@ -1184,7 +1192,7 @@ function createApiPanel({doc,read,write,binding,setBinding,run,cancel,undo,onErr
   }
   const diagnosticActions=uiActions(doc,diagnosticGroup);
   action('刷新诊断',syncDiagnostics,diagnosticActions);
-  action('复制诊断',async()=>{if(!diagnosticBox.value)throw new Error('当前没有可复制的诊断');try{await navigator.clipboard.writeText(diagnosticBox.value);status.textContent='LoreState 诊断已复制。';}catch{diagnosticBox.focus();diagnosticBox.select();status.textContent='浏览器不允许自动复制，请从文本框手动复制。';}},diagnosticActions);
+  action('复制诊断',async()=>{if(!diagnosticBox.value)throw new Error('当前没有可复制的诊断');try{await navigator.clipboard.writeText(diagnosticBox.value);updateStatus.textContent='LoreState 诊断已复制。';}catch{diagnosticBox.focus();diagnosticBox.select();updateStatus.textContent='浏览器不允许自动复制，请从文本框手动复制。';}},diagnosticActions);
   action('清除诊断',()=>{clearDiagnostics();syncDiagnostics();},diagnosticActions);
   function load(){
     resetModels();const p=(read().profiles??[]).find(p=>p.id===select.value);editedId=p?.id??'';
@@ -1192,15 +1200,19 @@ function createApiPanel({doc,read,write,binding,setBinding,run,cancel,undo,onErr
   }
   function visibility(){presetName.parentElement.hidden=presetMode.value!=='named';bound.parentElement.hidden=source.value!=='custom';}
   presetMode.onchange=source.onchange=visibility;
+  let loadedSignature=null;
   function sync(preferred=editedId){
+    const signature=JSON.stringify([read(),binding(),listRequestPresets()]);
+    // Navigation refreshes read-only operation summaries without discarding unsaved fields.
+    if(signature===loadedSignature&&preferred===editedId){refreshOperations();return;}
+    loadedSignature=signature;
     const profiles=read().profiles??[];choices(select,[['','新建预设'],...profiles.map(p=>[p.id,p.name])]);choices(bound,[['','未绑定'],...profiles.map(p=>[p.id,p.name])]);
     select.value=preferred;const config=normalizeUpdateSettings(binding());bound.value=config.profileId;mode.value=config.mode;source.value=config.source;presetMode.value=config.presetMode;
     choices(presetName,[['','请选择预设'],...listRequestPresets().map(name=>[name,name])]);presetName.value=config.presetName;
     auto.checked=config.auto;stream.checked=config.stream;attempts.value=config.attempts;timeout.value=config.timeoutSeconds;
     const current=profiles.find(p=>p.id===config.profileId);
     status.textContent=`当前模式：${config.mode==='extra'?'额外模型':'随正文更新'}；状态模型：${config.source==='current'?'酒馆当前连接':current?.name??(config.profileId?'预设已删除，请重新绑定':'未绑定')}。`;
-    runButton.textContent=config.mode==='inline'?'重新计算最新失败回复状态':'重新更新最新回复状态';
-    load();visibility();syncUpdatePreview();syncDiagnostics();
+    load();visibility();refreshOperations();
   }
   select.onchange=load;
   const values=()=>({id:editedId||crypto.randomUUID(),name:name.value,url:url.value,key:key.value,model:model.value,maxTokens:maxTokens.value,temperature:temperature.value,topP:topP.value,topK:topK.value,frequencyPenalty:frequency.value,presencePenalty:presence.value});
@@ -1215,7 +1227,13 @@ function createApiPanel({doc,read,write,binding,setBinding,run,cancel,undo,onErr
   },bindingActions).classList.add('ls-primary');
   const runButton=action('重新更新最新回复状态',async()=>{await run();syncUpdatePreview();},runActions);runButton.classList.add('ls-primary');
   action('取消状态更新',cancel,runActions);action('撤销最近一次状态更新',async()=>{await undo();syncUpdatePreview();},runActions);
-  return {panel,sync,report:text=>{status.textContent=text;},refreshUpdate:syncUpdatePreview,refreshDiagnostics:syncDiagnostics,clear:()=>{modelEpoch++;key.value='';updateBox.value='';updateMeta.textContent='';diagnosticBox.value='';diagnosticMeta.textContent='';}};
+  function refreshOperations(){
+    const config=normalizeUpdateSettings(binding()),latest=latestUpdateBlock(),profile=(read().profiles??[]).find(p=>p.id===config.profileId);
+    runButton.textContent=config.mode==='inline'?'重新计算最新失败回复状态':'重新更新最新回复状态';
+    updateScope.textContent=(latest?`目标：第 ${latest.floor} 楼。`:'当前聊天还没有 AI 回复。')+(config.mode==='inline'?'随正文模式：只重算失败回复；尾部截断会先要求核对分界。':'额外模型模式：重新整理最新回复状态。')+` 模型：${config.source==='current'?'酒馆当前连接':profile?.name??'未绑定，请先配置模型连接'}。`;
+    syncUpdatePreview();syncDiagnostics();
+  }
+  return {panel,updatePanel,sync,refreshOperations,report:text=>{updateStatus.textContent=text;},refreshUpdate:syncUpdatePreview,refreshDiagnostics:syncDiagnostics,clear:()=>{modelEpoch++;loadedSignature=null;key.value='';updateStatus.textContent='';updateScope.textContent='';updateBox.value='';updateMeta.textContent='';diagnosticBox.value='';diagnosticMeta.textContent='';}};
 }
 
 
@@ -1294,124 +1312,150 @@ function settleContinuedMessage(original,current,mode,previous,schema,floor,rece
   catch{return narrative.replace(new RegExp(TAG_PATTERN,'g'),'');}
 }
 
+// The management shell owns its light palette; user-authored HTML stays independent.
+const CONTROL_CENTER_CSS = `
+#lorestate-state-manager{--ls-bg:#fafaf7;--ls-surface:#f0f3f0;--ls-card:#fff;--ls-soft:#e4efea;--ls-line:#d4ddd7;--ls-muted:#53645b;--ls-accent:#23664f;--ls-warn:#a13d2e;box-sizing:border-box;width:min(1160px,calc(100vw - 24px));height:min(840px,calc(100dvh - 32px));max-width:none;max-height:calc(100dvh - 32px);padding:0;border:1px solid var(--ls-line);border-radius:18px;background:var(--ls-bg);color:#23352d;font:15px/1.6 system-ui,-apple-system,'Segoe UI','Microsoft YaHei',sans-serif;text-shadow:none;overflow:hidden;color-scheme:light;box-shadow:0 24px 80px #172e2529}
+#lorestate-state-manager[open]{display:flex;flex-direction:column}
+#lorestate-state-manager::backdrop,#lorestate-state-manager .ls-style-dialog::backdrop{background:#172e2570}
+#lorestate-state-manager *{box-sizing:border-box;min-width:0;text-shadow:none;font-family:inherit}
+#lorestate-state-manager [hidden]{display:none!important}
+#lorestate-state-manager :is(h2,h3,h4,p){margin:0 0 12px;color:inherit;overflow-wrap:anywhere}
+#lorestate-state-manager h2{font-size:22px;letter-spacing:-.04em;margin:0;font-weight:750}
+#lorestate-state-manager h3{font-size:22px;font-weight:650;letter-spacing:-.02em}
+#lorestate-state-manager h4{font-size:13px;color:var(--ls-muted);margin:16px 0 4px}
+#lorestate-state-manager .ls-top{flex:0 0 auto;background:var(--ls-card);border-bottom:1px solid var(--ls-line)}
+#lorestate-state-manager .ls-header{display:flex;align-items:center;justify-content:space-between;padding:18px 24px;gap:16px}
+#lorestate-state-manager .ls-header p{font-size:12px;color:var(--ls-muted);margin:0}
+#lorestate-state-manager .ls-layout{flex:1;min-height:0;container-type:inline-size}
+#lorestate-state-manager .ls-workspace{display:grid;grid-template-columns:188px minmax(0,1fr);height:100%}
+#lorestate-state-manager .ls-tabs{display:flex;flex-direction:column;gap:6px;padding:20px 12px;background:var(--ls-surface);border-right:1px solid var(--ls-line);overflow:auto}
+#lorestate-state-manager .ls-tabs button{display:flex;flex-direction:column;align-items:flex-start;flex:0 0 auto;min-height:66px;padding:10px 14px;border:1px solid transparent;background:transparent;text-align:left;color:var(--ls-muted);font-size:14px}
+#lorestate-state-manager .ls-tabs button small{font-size:11px;font-weight:400;margin-top:3px;color:var(--ls-muted)}
+#lorestate-state-manager .ls-tabs button[aria-selected=true]{background:var(--ls-card);color:var(--ls-accent);border-color:var(--ls-line);box-shadow:0 2px 5px #23352d08;font-weight:700}
+#lorestate-state-manager .ls-content{overflow:auto;overscroll-behavior:contain;scrollbar-gutter:stable;padding-bottom:4px}
+#lorestate-state-manager button{font:inherit;line-height:1.4;min-height:44px;max-width:100%;margin:0;padding:10px 14px;border:1px solid var(--ls-line);border-radius:8px;background:var(--ls-card);color:inherit;cursor:pointer;overflow-wrap:anywhere;box-shadow:none}
+#lorestate-state-manager button:hover{background:var(--ls-soft);border-color:#9ab5a6}
+#lorestate-state-manager button:disabled{opacity:.5;cursor:default}
+#lorestate-state-manager .ls-primary{background:var(--ls-accent);color:#fff;border-color:var(--ls-accent);font-weight:600}
+#lorestate-state-manager .ls-primary:hover{background:#194d3b;color:#fff}
+#lorestate-state-manager .ls-danger{color:var(--ls-warn);border-color:#e4c9c1}
+#lorestate-state-manager :is(button,select,input,textarea,summary,[role=tabpanel]):focus-visible{outline:2px solid var(--ls-accent);outline-offset:3px}
+#lorestate-state-manager .ls-toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:18px 24px;border-bottom:1px solid var(--ls-line);background:var(--ls-card)}
+#lorestate-state-manager .ls-toolbar label{display:flex;flex-shrink:0;gap:10px;align-items:center;margin:0 auto 0 0;white-space:nowrap}
+#lorestate-state-manager .ls-body{padding:24px}
+#lorestate-state-manager .ls-page-header{margin-bottom:22px}
+#lorestate-state-manager .ls-page-header h3{margin-bottom:4px}
+#lorestate-state-manager .ls-page-header p{color:var(--ls-muted);font-size:13px;margin:0}
+#lorestate-state-manager .ls-actions{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 0}
+#lorestate-state-manager :is(select,input,textarea){font:inherit;width:100%;max-width:100%;min-height:44px;border:1px solid #b5c3bb;border-radius:7px;background:#fff;color:#23352d;padding:10px;box-shadow:none}
+#lorestate-state-manager select{width:auto}
+#lorestate-state-manager label{display:block;margin:14px 0 6px;color:var(--ls-muted);font-size:13px}
+#lorestate-state-manager label :is(select,textarea,input){display:block;width:100%;margin-top:6px;font-size:15px}
+#lorestate-state-manager .ls-check{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:48px;margin:8px 0 0;padding:8px 12px;border:1px solid var(--ls-line);border-radius:8px;background:var(--ls-card);color:#23352d;font-size:14px;cursor:pointer}
+#lorestate-state-manager label input[type=checkbox]{flex:0 0 auto;display:inline-block;width:22px;height:22px;min-height:22px;padding:0;margin:0 0 0 12px;-webkit-appearance:checkbox;appearance:auto;background:initial;border:initial;border-radius:initial;box-shadow:none;accent-color:var(--ls-accent);cursor:pointer;touch-action:manipulation}
+#lorestate-state-manager label input[type=checkbox]::before{content:none!important}
+#lorestate-state-manager .ls-card{margin:0 0 16px;padding:0;border:1px solid var(--ls-line);border-radius:10px;background:var(--ls-card);overflow:hidden}
+#lorestate-state-manager .ls-card>summary{display:block;min-height:48px;padding:16px 18px;cursor:pointer;list-style:none}
+#lorestate-state-manager .ls-card>summary::-webkit-details-marker{display:none}
+#lorestate-state-manager .ls-card>summary:hover{background:#f4f7f4}
+#lorestate-state-manager .ls-card[open]>summary{border-bottom:1px solid var(--ls-line)}
+#lorestate-state-manager .ls-card-row{display:flex;align-items:center;gap:10px}
+#lorestate-state-manager .ls-step{flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:7px;background:var(--ls-soft);color:var(--ls-accent);font-size:12px;font-weight:700}
+#lorestate-state-manager .ls-card-title{font-size:15px;font-weight:650}
+#lorestate-state-manager .ls-chevron{margin-left:auto;color:var(--ls-muted);font-size:13px;transition:transform .15s ease}
+#lorestate-state-manager .ls-card[open]>.ls-card-row .ls-chevron,#lorestate-state-manager .ls-card[open]>summary .ls-chevron{transform:rotate(180deg)}
+#lorestate-state-manager .ls-hint{display:block;margin-top:5px;color:var(--ls-muted);font-size:12px;line-height:1.6;font-weight:400}
+#lorestate-state-manager .ls-card-body{padding:4px 18px 18px}
+#lorestate-state-manager .ls-note{margin:12px 0 0;color:var(--ls-muted);font-size:13px}
+#lorestate-state-manager .ls-subhead{margin:20px 0 0;padding-bottom:6px;border-bottom:1px solid var(--ls-line);color:var(--ls-muted);font-size:12px}
+#lorestate-state-manager .ls-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(240px,100%),1fr));gap:0 18px}
+#lorestate-state-manager .ls-health{margin:0 0 18px;padding:12px 16px;border-left:3px solid var(--ls-accent);border-radius:6px;background:var(--ls-soft);font-size:13px;white-space:pre-wrap}
+#lorestate-state-manager .ls-health:empty{display:none}
+#lorestate-state-manager .ls-health[data-error=true]{border-color:var(--ls-warn);background:#fff0e9;color:#773323}
+#lorestate-state-manager textarea{display:block;min-height:140px;resize:vertical;font:13px/1.7 ui-monospace,monospace;margin:6px 0 0}
+#lorestate-state-manager details:not(.ls-card){margin:16px 0 0;padding:12px 0 0;border-top:1px solid var(--ls-line)}
+#lorestate-state-manager summary{cursor:pointer;font-weight:600;min-height:44px}
+#lorestate-state-manager pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px}
+#lorestate-state-manager .ls-fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(230px,100%),1fr));gap:16px;margin:16px 0}
+#lorestate-state-manager dt{font-size:12px;color:var(--ls-muted)}#lorestate-state-manager dd{margin:4px 0 0;overflow-wrap:anywhere}
+#lorestate-state-manager .ls-appearance{container-type:inline-size}
+#lorestate-state-manager .ls-appearance-work{display:grid;grid-template-columns:minmax(0,1fr);gap:18px;margin:20px 0}
+#lorestate-state-manager .ls-appearance-preview{padding:16px;border:1px solid var(--ls-line);border-radius:10px;background:var(--ls-card)}
+#lorestate-state-manager .ls-appearance-code textarea{font:13px/1.6 ui-monospace,monospace;tab-size:2;min-height:320px;resize:vertical}
+#lorestate-state-manager .ls-appearance-frame{margin-top:16px}
+#lorestate-state-manager .ls-style-dialog{position:fixed;inset:0;margin:auto;width:min(680px,calc(100vw - 24px));max-width:none;max-height:calc(100dvh - 24px);padding:0;border:1px solid var(--ls-line);border-radius:14px;background:var(--ls-bg);color:#23352d;font:inherit;overflow:auto;color-scheme:light}
+#lorestate-state-manager .ls-style-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:18px;border-bottom:1px solid var(--ls-line)}
+#lorestate-state-manager .ls-style-head h3{margin:0;font-size:18px}
+#lorestate-state-manager .ls-style-body{padding:18px}
+#lorestate-state-manager .ls-style-footer{position:sticky;bottom:0;background:var(--ls-bg);padding:12px 18px;margin:0;border-top:1px solid var(--ls-line)}
+@container(min-width:700px){#lorestate-state-manager .ls-appearance-work{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}}
+@container(max-width:720px){#lorestate-state-manager .ls-workspace{grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr)}#lorestate-state-manager .ls-tabs{flex-direction:row;gap:4px;padding:8px 12px;border-right:0;border-bottom:1px solid var(--ls-line)}#lorestate-state-manager .ls-tabs button{align-items:center;min-height:44px;white-space:nowrap;padding:10px 12px}#lorestate-state-manager .ls-tabs button small{display:none}#lorestate-state-manager .ls-toolbar{padding:14px}#lorestate-state-manager .ls-body{padding:18px 14px}#lorestate-state-manager .ls-toolbar label{width:100%;margin-right:0}#lorestate-state-manager .ls-toolbar select{flex:1}#lorestate-state-manager .ls-actions button{flex:1 1 140px}}
+@media(max-width:520px){#lorestate-state-manager .ls-header{padding:12px 16px}#lorestate-state-manager h3{font-size:20px}}
+@media(prefers-reduced-motion:reduce){#lorestate-state-manager .ls-chevron{transition:none}#lorestate-state-manager *{scroll-behavior:auto}}
+`;
+
 
 // Presentation only: no host data writes or persisted navigation state.
-function createControlCenter({doc,manager,panel,summary,status,floorSelect,details,diagnostics,repairBox,tailPreview,snapshotPanel,apiPanel,loadApi,actions,loadSettings,settingsGroups,appearancePanel,loadAppearance}) {
+function createControlCenter({doc,manager,panel,summary,status,floorSelect,details,diagnostics,repairBox,tailPreview,snapshotPanel,apiPanel,loadApi,updatePanel,loadUpdates,actions,loadSettings,settingsGroups,appearancePanel,loadAppearance}) {
   const make=(tag,text,parent)=>{const el=doc.createElement(tag);if(text)el.textContent=text;parent?.append(el);return el;};
   manager.replaceChildren();manager.removeAttribute('style');manager.setAttribute('aria-label','LoreState 控制中心');
   panel.removeAttribute('style');
-  const style=make('style',null,manager);style.textContent=`
-  #lorestate-state-manager{--ls-bg:#20251f;--ls-surface:#2a3028;--ls-card:#262c25;--ls-soft:#39412f;--ls-line:#485343;--ls-muted:#b6c0b0;--ls-accent:#d5e5ae;--ls-warn:#efb06a;box-sizing:border-box;width:min(880px,calc(100vw - 24px));max-width:none;max-height:calc(100dvh - 32px);padding:0;border:1px solid var(--ls-line);border-radius:16px;background:var(--ls-bg);color:#f1f3ed;font:15px/1.6 system-ui,sans-serif;overflow:auto;color-scheme:dark}
-  #lorestate-state-manager::backdrop{background:#10150fc9}
-  #lorestate-state-manager *{box-sizing:border-box;min-width:0}
-  #lorestate-state-manager [hidden]{display:none!important}
-  #lorestate-state-manager h2,#lorestate-state-manager h3,#lorestate-state-manager h4,#lorestate-state-manager p{margin:0 0 12px;overflow-wrap:anywhere}
-  #lorestate-state-manager h2{font-size:21px;letter-spacing:.02em;margin:0}
-  #lorestate-state-manager h3{font-size:17px;margin:0 0 12px}
-  #lorestate-state-manager h4{font-size:13px;color:var(--ls-muted);margin:16px 0 4px}
-  /* Header and tabs stay reachable while a long page scrolls underneath. */
-  #lorestate-state-manager .ls-top{position:sticky;top:0;z-index:3;background:var(--ls-bg);border-bottom:1px solid var(--ls-line)}
-  #lorestate-state-manager .ls-header{display:flex;align-items:center;justify-content:space-between;padding:16px 24px 10px;gap:16px}
-  #lorestate-state-manager .ls-header p{font-size:13px;color:var(--ls-muted);margin:0}
-  #lorestate-state-manager .ls-tabs{display:flex;flex-wrap:wrap;gap:4px;margin:0 24px 12px;padding:4px;border:1px solid var(--ls-line);border-radius:12px;background:var(--ls-surface)}
-  #lorestate-state-manager .ls-tabs button{flex:1 1 0;min-height:44px;padding:8px 10px;border:1px solid transparent;border-radius:9px;background:transparent;color:var(--ls-muted);font-size:14px}
-  #lorestate-state-manager .ls-tabs button:hover{color:#f1f3ed;background:#333a30;border-color:transparent}
-  #lorestate-state-manager .ls-tabs button[aria-selected=true]{background:var(--ls-accent);color:#202719;font-weight:600}
-  #lorestate-state-manager button{font:inherit;line-height:1.3;min-height:44px;max-width:100%;margin:0;padding:10px 14px;border:1px solid var(--ls-line);border-radius:9px;background:var(--ls-surface);color:inherit;cursor:pointer}
-  #lorestate-state-manager button:hover{border-color:var(--ls-accent)}#lorestate-state-manager button:disabled{opacity:.45;cursor:default}
-  #lorestate-state-manager button[aria-selected=true],#lorestate-state-manager .ls-primary{background:var(--ls-accent);color:#202719;border-color:var(--ls-accent);font-weight:600}
-  #lorestate-state-manager .ls-danger{color:var(--ls-warn)}
-  #lorestate-state-manager :is(button,select,input,textarea,summary):focus-visible{outline:2px solid var(--ls-accent);outline-offset:3px}
-  #lorestate-state-manager .ls-toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:16px 24px 0}
-  #lorestate-state-manager .ls-toolbar label{display:flex;gap:10px;align-items:center;margin:0 auto 0 0}
-  #lorestate-state-manager .ls-body{padding:20px 24px 24px}
-  #lorestate-state-manager .ls-actions{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0 0}
-  #lorestate-state-manager select,#lorestate-state-manager input,#lorestate-state-manager textarea{font:inherit;width:100%;max-width:100%;min-height:44px;border:1px solid var(--ls-line);border-radius:8px;background:#171c16;color:inherit;padding:10px}
-  #lorestate-state-manager select{width:auto}
-  #lorestate-state-manager label{display:block;margin:12px 0 6px;color:var(--ls-muted);font-size:13px}
-  #lorestate-state-manager label :is(select,textarea,input){display:block;width:100%;margin-top:6px;font-size:15px}
-  /* Host themes strip the native tick and hit area; restore a real checkbox. */
-  #lorestate-state-manager .ls-check{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:44px;margin:8px 0 0;padding:8px 12px;border:1px solid var(--ls-line);border-radius:9px;background:var(--ls-surface);color:#f1f3ed;font-size:15px;cursor:pointer}
-  #lorestate-state-manager label input[type=checkbox]{flex:0 0 auto;display:inline-block;width:22px;height:22px;min-height:22px;padding:0;vertical-align:middle;margin:0 0 0 12px;-webkit-appearance:checkbox;appearance:auto;background:initial;border:initial;border-radius:initial;box-shadow:none;accent-color:var(--ls-accent);cursor:pointer;touch-action:manipulation}
-  #lorestate-state-manager label input[type=checkbox]::before{content:none!important}
-  #lorestate-state-manager .ls-card{margin:0 0 12px;padding:0;border:1px solid var(--ls-line);border-radius:12px;background:var(--ls-card);overflow:hidden}
-  #lorestate-state-manager .ls-card>summary{display:block;min-height:44px;padding:13px 16px;cursor:pointer;list-style:none}
-  #lorestate-state-manager .ls-card>summary::-webkit-details-marker{display:none}
-  #lorestate-state-manager .ls-card>summary:hover{background:#2d3429}
-  #lorestate-state-manager .ls-card[open]>summary{border-bottom:1px solid var(--ls-line)}
-  #lorestate-state-manager .ls-card-row{display:flex;align-items:center;gap:10px}
-  #lorestate-state-manager .ls-step{flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:999px;background:var(--ls-soft);color:var(--ls-accent);font-size:13px;font-weight:700}
-  #lorestate-state-manager .ls-card-title{font-size:15px;font-weight:600}
-  #lorestate-state-manager .ls-chevron{display:inline-block;margin-left:auto;color:var(--ls-muted);font-size:13px;transition:transform .15s ease}
-  #lorestate-state-manager .ls-card[open] .ls-chevron{transform:rotate(180deg)}
-  #lorestate-state-manager .ls-hint{display:block;margin-top:4px;color:var(--ls-muted);font-size:12.5px;line-height:1.5}
-  #lorestate-state-manager .ls-card-body{padding:4px 16px 16px}
-  #lorestate-state-manager .ls-note{margin:10px 0 0;color:var(--ls-muted);font-size:13px}
-  #lorestate-state-manager .ls-subhead{margin:16px 0 0;color:var(--ls-muted);font-size:12px;letter-spacing:.06em}
-  #lorestate-state-manager .ls-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(220px,100%),1fr));gap:0 16px}
-  #lorestate-state-manager .ls-health{margin:0 0 16px;padding:12px 16px;border-left:3px solid var(--ls-accent);border-radius:8px;background:var(--ls-surface);font-size:14px}
-  #lorestate-state-manager .ls-health[data-error=true]{border-color:var(--ls-warn)}
-  #lorestate-state-manager textarea{display:block;min-height:140px;resize:vertical;font:13px/1.6 ui-monospace,monospace;margin:6px 0 0}
-  #lorestate-state-manager details:not(.ls-card){margin:14px 0 0;padding:12px 0 0;border-top:1px solid var(--ls-line)}
-  #lorestate-state-manager summary{cursor:pointer;font-weight:600;min-height:32px}
-  #lorestate-state-manager pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px}
-  #lorestate-state-manager .ls-fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(240px,100%),1fr));gap:16px;margin:16px 0}
-  #lorestate-state-manager dt{font-size:13px;color:var(--ls-muted)}#lorestate-state-manager dd{margin:4px 0 0;overflow-wrap:anywhere}
-  #lorestate-state-manager .ls-appearance{container-type:inline-size}
-  #lorestate-state-manager .ls-appearance-work{display:grid;grid-template-columns:minmax(0,1fr);gap:16px;margin:20px 0}
-  #lorestate-state-manager .ls-appearance-code textarea{font:13px/1.6 ui-monospace,monospace;tab-size:2;min-height:300px;resize:vertical}
-  #lorestate-state-manager .ls-appearance-frame{margin-top:12px}
-  #lorestate-state-manager .ls-style-dialog{position:fixed;inset:0;margin:auto;width:min(640px,calc(100vw - 24px));max-width:none;max-height:calc(100dvh - 24px);padding:0;border:1px solid var(--ls-line);border-radius:14px;background:var(--ls-bg);color:inherit;font:inherit;overflow:auto}
-  #lorestate-state-manager .ls-style-dialog::backdrop{background:#080e0bd9}
-  #lorestate-state-manager .ls-style-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px;border-bottom:1px solid var(--ls-line)}
-  #lorestate-state-manager .ls-style-head h3{margin:0}
-  #lorestate-state-manager .ls-style-body{padding:16px}
-  #lorestate-state-manager .ls-style-footer{position:sticky;bottom:0;background:var(--ls-bg);padding:12px 16px;margin:0;border-top:1px solid var(--ls-line)}
-  @container(min-width:650px){#lorestate-state-manager .ls-appearance-work{grid-template-columns:minmax(0,1.15fr) minmax(0,1fr)}}
-  @media(prefers-reduced-motion:reduce){#lorestate-state-manager .ls-chevron{transition:none}}
-  @media(max-width:520px){#lorestate-state-manager .ls-header{padding:14px 14px 8px}#lorestate-state-manager .ls-tabs{margin:0 14px 10px}#lorestate-state-manager .ls-tabs button{padding:8px 4px;font-size:13px}#lorestate-state-manager .ls-toolbar{padding:12px 14px 0}#lorestate-state-manager .ls-body{padding:14px}#lorestate-state-manager .ls-toolbar label{width:100%;margin-right:0}#lorestate-state-manager .ls-toolbar select{flex:1}#lorestate-state-manager .ls-card>summary{padding:12px}#lorestate-state-manager .ls-card-body{padding:4px 12px 14px}#lorestate-state-manager .ls-actions button{flex:1 1 140px}}
-  `;
+  const style=make('style',null,manager);style.textContent=CONTROL_CENTER_CSS;
   const top=make('div',null,manager);top.className='ls-top';
   const header=make('header',null,top);header.className='ls-header';
-  const brand=make('div',null,header);make('h2','LoreState',brand);make('p','文字状态 · 历史与维护',brand);
+  const brand=make('div',null,header);make('h2','LoreState',brand);make('p','控制中心 / 让故事的变化有迹可循',brand);
   const exit=make('button','关闭',header);exit.type='button';exit.onclick=()=>manager.close();
-  const nav=make('div',null,top);nav.className='ls-tabs';nav.setAttribute('role','tablist');nav.setAttribute('aria-label','LoreState 功能');
-  const toolbar=make('div',null,manager);toolbar.className='ls-toolbar';const floorLabel=make('label','AI 楼层',toolbar);floorLabel.append(floorSelect);
+  const layout=make('div',null,manager);layout.className='ls-layout';
+  const workspace=make('div',null,layout);workspace.className='ls-workspace';
+  const nav=make('div',null,workspace);nav.className='ls-tabs';nav.setAttribute('role','tablist');nav.setAttribute('aria-label','LoreState 功能');
+  const content=make('div',null,workspace);content.className='ls-content';
+  const toolbar=make('div',null,content);toolbar.className='ls-toolbar';const floorLabel=make('label','查看楼层',toolbar);floorLabel.append(floorSelect);
   for(const title of ['上一 AI 层','下一 AI 层','返回最新','定位聊天消息'])toolbar.append(actions.get(title));
-  const body=make('div',null,manager);body.className='ls-body';
+  const body=make('div',null,content);body.className='ls-body';
   summary.className='ls-health';body.append(summary);
   const statePage=make('section',null,body),repairPage=make('section',null,body);body.append(panel);
-  statePage.append(details);repairPage.append(diagnostics);
+  statePage.append(details);
   const card=(parent,options)=>uiCard(doc,parent,options);
   const act=titles=>titles.map(title=>actions.get(title)).filter(Boolean);
-  // Diagnostics page: the report for the selected floor first, then repair tools.
-  uiActions(doc,card(repairPage,{title:'检查与报告',hint:'重新回放全部楼层，或复制一份不含正文的诊断报告。',open:true}),act(['重新校验全部楼层','复制诊断报告']));
-  const repair=card(repairPage,{title:'状态重算',hint:'随正文更新失败时，可用 API 预设中的状态模型重新计算本层状态。仅支持最新回复，保留剧情正文；此前历史须无缺口，标签边界须可识别。',open:true});
-  uiActions(doc,repair,act(['重新计算本层状态','预览尾部截断修复']));repair.append(repairBox);if(tailPreview)repair.append(tailPreview);
-  uiActions(doc,card(repairPage,{title:'旧格式修复备份',hint:'仅用于恢复旧版本留下的原文备份；不再提供基础格式修复。'}),act(['查看格式修复备份','撤销最近一次格式修复']));
-  if(snapshotPanel)card(repairPage,{title:'历史快照与回档',hint:'回到某一楼的完整状态；正文保留，旧剧情仍在上下文中。',open:true}).append(snapshotPanel);
+  // One update workspace owns run/cancel/undo and the contextual tail confirmation.
+  if(updatePanel){repairPage.append(updatePanel);if(tailPreview)updatePanel.querySelector('[data-ls-update-actions]').append(tailPreview);}
+  if(snapshotPanel)card(repairPage,{title:'历史快照与回档',hint:'先预览，再恢复保存的状态。正文保留，旧剧情仍在上下文中。'}).append(snapshotPanel);
+  const report=card(repairPage,{title:'楼层检查与报告',hint:'检查上方所选楼层，或重新校验全部历史。'});report.parentElement.dataset.lsFloorReport='';report.append(diagnostics,repairBox);
+  uiActions(doc,report,act(['重新校验全部楼层','复制诊断报告']));
+  const legacy=card(repairPage,{title:'旧版本修复备份',hint:'仅用于恢复旧版本保存的格式修复备份。'});
+  uiActions(doc,legacy,act(['查看格式修复备份','撤销最近一次格式修复']));
   // Move the original controls; handlers and unconfirmed drafts stay intact.
   panel.replaceChildren(status);status.className='ls-health';
   settingsGroups.forEach((group,index)=>{
     const box=card(panel,{title:group.title,hint:group.hint,step:index+1,open:index===0});
     for(const item of group.items)if(Array.isArray(item))uiActions(doc,box,item);else box.append(item);
   });
-  for(const title of ['保存 HTML 并启用本聊天','重新计算本层状态','确认边界并重算'])actions.get(title)?.classList.add('ls-primary');
+  for(const title of ['保存 HTML 并启用本聊天','确认边界并重算'])actions.get(title)?.classList.add('ls-primary');
   for(const title of ['删除所选预设','暂停本聊天'])actions.get(title)?.classList.add('ls-danger');
   if(appearancePanel)body.append(appearancePanel);
   if(apiPanel)body.append(apiPanel);
-  const pages={state:statePage,diagnostics:repairPage,settings:panel,...(appearancePanel?{appearance:appearancePanel}:{}),...(apiPanel?{api:apiPanel}:{})},tabs={};let active='state';
-  function select(id,focus=false){active=id;for(const [key,page] of Object.entries(pages)){page.hidden=key!==id;tabs[key].setAttribute('aria-selected',String(key===id));tabs[key].tabIndex=key===id?0:-1;}toolbar.hidden=['settings','appearance','api'].includes(id);summary.hidden=toolbar.hidden;if(focus)tabs[id].focus();}
-  for(const [id,title] of [['state','状态历史'],['diagnostics','诊断修复'],['settings','设置'],...(appearancePanel?[['appearance','外观制作']]:[]),...(apiPanel?[['api','API 预设']]:[])]){
-    const tab=make('button',title,nav);tab.type='button';tab.id='ls-tab-'+id;tab.setAttribute('role','tab');tab.setAttribute('aria-controls','ls-page-'+id);tabs[id]=tab;
+  const pages={state:statePage,diagnostics:repairPage,settings:panel,...(appearancePanel?{appearance:appearancePanel}:{}),...(apiPanel?{api:apiPanel}:{})},tabs={},scrolls={};let active='state';
+  const descriptions={state:'浏览每一楼的状态与变化',diagnostics:'最新回复更新、撤销与历史恢复',settings:'绑定世界书，配置栏目和聊天',appearance:'制作、预览与应用状态栏外观',api:'管理连接与状态更新策略'};
+  function select(id,focus=false){
+    if(!pages[id])return;
+    scrolls[active]=content.scrollTop;active=id;
+    for(const [key,page] of Object.entries(pages)){page.hidden=key!==id;tabs[key].setAttribute('aria-selected',String(key===id));tabs[key].tabIndex=key===id?0:-1;}
+    toolbar.hidden=['settings','appearance','api'].includes(id);summary.hidden=toolbar.hidden;
+    content.scrollTop=scrolls[id]??0;if(id==='diagnostics')loadUpdates?.();if(focus)tabs[id].focus();
+  }
+  for(const [id,title] of [['state','状态总览'],['diagnostics','更新与恢复'],['settings','规则配置'],...(appearancePanel?[['appearance','外观制作']]:[]),...(apiPanel?[['api','模型连接']]:[])]){
+    const subtitles={state:'状态 · 变化 · 档案',diagnostics:'重算 · 撤销 · 回档',settings:'世界书 · 栏目 · 聊天',appearance:'草稿 · 预览 · 预设',api:'API · 绑定 · 请求策略'};
+    const tab=make('button',null,nav);make('span',title,tab);make('small',subtitles[id],tab);tab.setAttribute('aria-label',title);tab.type='button';tab.id='ls-tab-'+id;tab.setAttribute('role','tab');tab.setAttribute('aria-controls','ls-page-'+id);tabs[id]=tab;
+    if(!['api','appearance'].includes(id)){const heading=make('header');heading.className='ls-page-header';make('h3',title,heading);make('p',descriptions[id],heading);pages[id].prepend(heading);}
     pages[id].id=id==='settings'?'lorestate-prototype-settings':'ls-page-'+id;tab.setAttribute('aria-controls',pages[id].id);pages[id].setAttribute('role','tabpanel');pages[id].setAttribute('aria-labelledby',tab.id);
     tab.onclick=()=>{select(id);if(id==='settings')void loadSettings();if(id==='appearance')void loadAppearance?.();if(id==='api')loadApi?.();};
-    tab.onkeydown=e=>{const keys=Object.keys(pages),i=keys.indexOf(active);let next;if(e.key==='ArrowRight')next=keys[(i+1)%keys.length];if(e.key==='ArrowLeft')next=keys[(i+keys.length-1)%keys.length];if(e.key==='Home')next=keys[0];if(e.key==='End')next=keys.at(-1);if(next){e.preventDefault();tabs[next].click();tabs[next].focus();}};
+    tab.onkeydown=e=>{const keys=Object.keys(pages),i=keys.indexOf(active);let next;if(['ArrowRight','ArrowDown'].includes(e.key))next=keys[(i+1)%keys.length];if(['ArrowLeft','ArrowUp'].includes(e.key))next=keys[(i+keys.length-1)%keys.length];if(e.key==='Home')next=keys[0];if(e.key==='End')next=keys.at(-1);if(next){e.preventDefault();tabs[next].click();tabs[next].focus();tabs[next].scrollIntoView({block:'nearest',inline:'nearest'});}};
   }
   let returnFocus;
   manager.addEventListener('close',()=>{if(returnFocus?.isConnected)returnFocus.focus();});
+  const resize=new doc.defaultView.ResizeObserver(()=>nav.setAttribute('aria-orientation',layout.clientWidth<=720?'horizontal':'vertical'));resize.observe(layout);
   select('state');
-  return {select,open(id){if(!manager.open){returnFocus=doc.activeElement;manager.showModal();}select(id);tabs[id].focus();},get active(){return active;}};
+  return {select,open(id){if(!manager.open){returnFocus=doc.activeElement;manager.showModal();}select(id);tabs[id].focus();},get active(){return active;},dispose(){resize.disconnect();}};
 }
 
 // Both inline and expanded state views retain the opaque, script-free sandbox.
@@ -1427,11 +1471,11 @@ function createStateFrame(doc,title,{expanded=false}={}){
 
 function createStateWindow(doc){
   const dialog=doc.createElement('dialog');dialog.id='lorestate-state-window';dialog.setAttribute('aria-label','LoreState 状态窗口');
-  dialog.style.cssText='position:fixed;inset:0;margin:auto;width:min(1000px,calc(100vw - 24px));height:min(780px,calc(100dvh - 32px));max-width:none;max-height:none;box-sizing:border-box;padding:16px;border:1px solid #59634d;border-radius:14px;background:#20251f;color:#f1f3ed;overflow:hidden';
-  const style=doc.createElement('style');style.textContent='#lorestate-state-window[open]{display:flex;flex-direction:column;gap:12px}#lorestate-state-window::backdrop{background:#10150fc9}#lorestate-state-window button:focus-visible{outline:2px solid #d5e5ae;outline-offset:2px}';dialog.append(style);
+  dialog.style.cssText='position:fixed;inset:0;margin:auto;width:min(1000px,calc(100vw - 24px));height:min(780px,calc(100dvh - 32px));max-width:none;max-height:none;box-sizing:border-box;padding:16px;border:1px solid #d4ddd7;border-radius:14px;background:#fafaf7;color-scheme:light;color:#23352d;overflow:hidden';
+  const style=doc.createElement('style');style.textContent='#lorestate-state-window[open]{display:flex;flex-direction:column;gap:12px}#lorestate-state-window::backdrop{background:#172e2570}#lorestate-state-window button:focus-visible{outline:2px solid #23664f;outline-offset:2px}';dialog.append(style);
   const header=doc.createElement('header');header.style.cssText='display:flex;align-items:center;justify-content:space-between;gap:12px;flex:0 0 auto';
   const heading=doc.createElement('h2');heading.textContent='LoreState · 当前状态';heading.style.cssText='font:600 18px/1.5 system-ui;margin:0';
-  const close=doc.createElement('button');close.type='button';close.textContent='关闭状态窗口';close.style.cssText='font:inherit;min-height:44px;padding:8px 12px;border:1px solid #59634d;border-radius:8px;background:#2a3028;color:inherit;cursor:pointer';close.onclick=()=>dialog.close();
+  const close=doc.createElement('button');close.type='button';close.textContent='关闭状态窗口';close.style.cssText='font:inherit;min-height:44px;padding:8px 12px;border:1px solid #d4ddd7;border-radius:8px;background:#fff;color:inherit;cursor:pointer';close.onclick=()=>dialog.close();
   header.append(heading,close);dialog.append(header);const frame=createStateFrame(doc,'LoreState 展开状态',{expanded:true});dialog.append(frame);doc.body.append(dialog);
   let opener;dialog.addEventListener('close',()=>{if(opener?.isConnected)opener.focus();});
   return {open(source){frame.srcdoc=source;if(!dialog.open){opener=doc.activeElement;dialog.showModal();}close.focus();},update(source){if(dialog.open)frame.srcdoc=source;},close(){dialog.close();},dispose(){dialog.remove();}};
@@ -1742,9 +1786,11 @@ function startPrototype(defaultHtml) {
   const actions=new Map();
   const button=(title,parent,fn)=>{const el=node('button',title,parent);el.type='button';actions.set(title,el);el.onclick=async()=>{el.disabled=true;try{await fn();}catch(e){fault(e,'操作失败');}finally{el.disabled=false;}};return el;};
   const notice=node('aside',undefined,doc.body);notice.hidden=true;notice.setAttribute('role','alert');
-  notice.style.cssText='position:fixed;right:12px;top:12px;z-index:100000;max-width:min(440px,92vw);padding:16px;background:#382621;color:#fff;border:2px solid #efb06a;border-radius:8px;white-space:pre-wrap';
+  notice.style.cssText='position:fixed;right:12px;top:12px;z-index:100000;max-width:min(440px,92vw);padding:16px;background:#fff4ec;color:#773323;border:1px solid #d8a78e;font:14px/1.6 system-ui;text-shadow:none;color-scheme:light;border-radius:8px;white-space:pre-wrap';
   const noticeText=node('p','',notice);
+  for(const el of [noticeText])el.style.cssText='color:inherit;font:inherit;text-shadow:none';
   button('查看诊断',notice,()=>openManager(chatSettings().current?.errors?.[0]?.floor));button('关闭提醒',notice,()=>{notice.hidden=true;});
+  for(const el of notice.querySelectorAll('button'))el.style.cssText='font:inherit;min-height:44px;padding:8px 12px;margin:4px 8px 0 0;border:1px solid #d8a78e;border-radius:8px;background:#fff;color:#773323;text-shadow:none;cursor:pointer';
   let noticeKey='',runtimeLogs=[],extraDiagnostics=[];
   function diagnosticText(value,limit=32000){
     const text=typeof value==='string'?value:value==null?'':String(value);if(text.length<=limit)return {text,truncated:false};
@@ -1788,15 +1834,12 @@ function startPrototype(defaultHtml) {
   }
   function showFloor(){
     syncSnapshots();
-    repairBox.hidden=true;recalculate.hidden=true;previewTail.hidden=true;
+    repairBox.hidden=true;
     if(tailDraft&&(!tailCurrent(tailDraft)||tailDraft.floor!==Number(floorSelect.value)))clearTailPreview();
     details.replaceChildren();diagnostics.replaceChildren();
     if(!floorSelect.value){summary.textContent='当前聊天没有可查看的 AI 楼层。';return;}
     const config=settings();if(!schemaFor(config)){summary.textContent='请先配置并启用 LoreState。';return;}
     const item=inspectFloor(messages(),schemaFor(config),chatSettings().start??1,Number(floorSelect.value));
-    recalculate.hidden=updateBinding().mode!=='inline'||!item.error||item.excluded||item.floor!==messages().at(-1)?.message_id;
-    previewTail.hidden=recalculate.hidden||!splitTruncatedUpdate(item.source);
-    if(!previewTail.hidden)recalculate.hidden=true;
     summary.textContent=item.excluded?'本层在初始化起点之前，未参与状态更新。':item.error?'本层更新失败，整轮未应用。':item.tainted?'本层已应用，但前面存在失败更新，状态有缺口。':'本层更新成功。';
     node('p',`最后连续正常楼层：${item.lastGoodFloor??'尚无'}；最后应用楼层：${item.lastAppliedFloor??'尚无'}`,details);
     summary.dataset.error=String(item.tainted);
@@ -1817,9 +1860,9 @@ function startPrototype(defaultHtml) {
   function syncFloors(preferred=floorSelect.value){
     const list=floorList();floorSelect.replaceChildren();
     for(const m of list){const option=node('option',`第 ${m.message_id} 楼`,floorSelect);option.value=String(m.message_id);}
-    floorSelect.value=list.some(m=>String(m.message_id)===String(preferred))?String(preferred):String(list.at(-1)?.message_id??'');showFloor();
+    floorSelect.value=list.some(m=>String(m.message_id)===String(preferred))?String(preferred):String(list.at(-1)?.message_id??'');showFloor();apiUi.refreshOperations();
   }
-  function openManager(floor){center.open(floor!==undefined?'diagnostics':'state');syncFloors(floor);}
+  function openManager(floor){center.open(floor!==undefined?'diagnostics':'state');syncFloors(floor);if(floor!==undefined){const report=manager.querySelector('[data-ls-floor-report]');report.open=true;report.scrollIntoView({block:'nearest'});}}
   floorSelect.onchange=()=>{try{showFloor();}catch(e){fault(e,'历史读取失败');}};
   button('上一 AI 层',manager,()=>{floorSelect.selectedIndex=Math.max(0,floorSelect.selectedIndex-1);showFloor();});
   button('下一 AI 层',manager,()=>{floorSelect.selectedIndex=Math.min(floorSelect.options.length-1,floorSelect.selectedIndex+1);showFloor();});
@@ -1835,12 +1878,6 @@ function startPrototype(defaultHtml) {
     repairBox.hidden=false;repairBox.value=JSON.stringify(payload,null,2);
     try{await navigator.clipboard.writeText(repairBox.value);summary.textContent='诊断报告已复制，不含完整消息和状态正文。';}catch{summary.textContent='请从下方文本框手动复制诊断报告。';}
   });
-  const recalculate=button('重新计算本层状态',manager,async()=>{
-    const floor=Number(floorSelect.value);
-    center.open('api');apiUi.sync();
-    try{await runExtraUpdate({repair:true,floor});apiUi.refreshUpdate();}
-    catch(error){apiUi.report(error.message);throw error;}
-  });recalculate.hidden=true;
   let tailDraft=null;
   const tailPreview=node('section');tailPreview.hidden=true;
   node('p','确认下方分界：保留正文应完整，待替换尾部不应包含需要保留的剧情。若正文也截断，请先补完正文。确认后才请求状态模型；失败或取消不会删除原文。',tailPreview);
@@ -1869,12 +1906,12 @@ function startPrototype(defaultHtml) {
     keptStory.value=split.story;removedTail.value=split.tail;tailPreview.hidden=false;
     center.open('diagnostics');tailPreview.closest('details').open=true;
     summary.textContent='尾部截断预览未修改消息，也未调用模型；请核对分界后确认。';
+    tailPreview.scrollIntoView({block:'nearest'});keptStory.focus({preventScroll:true});
   }
-  const previewTail=button('预览尾部截断修复',manager,previewTruncatedTail);previewTail.hidden=true;
   button('确认边界并重算',tailPreview,async()=>{
     const plan=tailDraft;
     if(!tailCurrent(plan)){clearTailPreview();throw new Error('聊天、回复或配置已变化，请重新预览截断尾部');}
-    clearTailPreview();center.open('api');apiUi.sync();
+    clearTailPreview();center.open('diagnostics');
     try{await runExtraUpdate({repair:true,floor:plan.floor,tailPlan:plan});apiUi.refreshUpdate();}
     catch(error){apiUi.report(error.message);throw error;}
   });
@@ -1891,7 +1928,7 @@ function startPrototype(defaultHtml) {
     updateVariablesWith(v=>{const next={...v[PROTO_KEY]};delete next.repairBackup;return {...v,[PROTO_KEY]:next};},{type:'chat'});
     await refresh();syncFloors(backup.floor);
   });
-  button('查看格式修复备份',manager,()=>{repairBox.value=chatSettings().repairBackup?.original??'没有备份';repairBox.hidden=false;});
+  button('查看格式修复备份',manager,()=>{repairBox.value=chatSettings().repairBackup?.original??'没有备份';repairBox.hidden=false;repairBox.closest('details').open=true;repairBox.scrollIntoView({block:'nearest'});});
   let restoreDraft=null,capturedKey='';
   const snapshotPanel=node('section'),snapshotSelect=node('select',undefined,snapshotPanel);
   snapshotSelect.setAttribute('aria-label','历史状态快照');
@@ -2141,7 +2178,7 @@ function startPrototype(defaultHtml) {
   const appearanceInput=options=>({...options,schema:appearanceSchema(),html:options.mode==='new'?'':html.value});
   function appearanceSummary(){
     const config=settings(),preset=listPresets(config).find(p=>p.id===config.activePresetId);
-    let api='生成 API：尚未绑定，请到 API 预设页保存模型来源';
+    let api='生成 API：尚未绑定，请到“模型连接”保存模型来源';
     try{const binding=updateBinding(),profile=selectedStateModel(binding);api='生成 API：'+(profile?profile.name+' / '+profile.model:'跟随酒馆当前连接')+'（使用已保存设置）';}catch{}
     return {active:config.ready?'当前生效：'+(preset?.name??'随卡外观')+(preset&&preset.html!==config.html?'（已修改）':''):'尚未初始化栏目配置',html:config.html??defaultHtml,api};
   }
@@ -2169,10 +2206,10 @@ function startPrototype(defaultHtml) {
     readSummary:appearanceSummary,run:runAppearance,cancel:()=>appearanceJob?.cancel(),prompt:options=>appearancePrompt(appearanceInput(options)),
     readPreset:()=>{const preset=listPresets(settings()).find(p=>p.id===presetSelect.value);if(!preset)throw new Error('请先选择预设');return preset.html;},
     goApi:()=>{center.select('api');apiUi.sync();},
-    applyDraft:async()=>{const config=settings();if(!config.ready)throw new Error('请先在“设置”完成首次栏目绑定并启用本聊天；将使用这份 HTML 草稿');validateTemplateV2(html.value,config.schema);writeConfig({...config,html:html.value});renderKey='';await refresh();},
+    applyDraft:async()=>{const config=settings();if(!config.ready)throw new Error('请先在“规则配置”完成首次栏目绑定并启用本聊天；将使用这份 HTML 草稿');validateTemplateV2(html.value,config.schema);writeConfig({...config,html:html.value});renderKey='';await refresh();},
   });
   const openAppearance=button('打开外观制作台',panel,async()=>{center.select('appearance');await loadSettings();appearanceUi.sync();});
-  const center=createControlCenter({doc,manager,panel,summary,status,floorSelect,details,diagnostics,repairBox,tailPreview,snapshotPanel,apiPanel:apiUi.panel,loadApi:apiUi.sync,actions,loadSettings,
+  const center=createControlCenter({doc,manager,panel,summary,status,floorSelect,details,diagnostics,repairBox,tailPreview,snapshotPanel,apiPanel:apiUi.panel,loadApi:apiUi.sync,updatePanel:apiUi.updatePanel,loadUpdates:apiUi.refreshOperations,actions,loadSettings,
     appearancePanel:appearanceUi.panel,loadAppearance:async()=>{await loadSettings();appearanceUi.sync();},settingsGroups:[
     {title:'世界书与规则',hint:'选择条目后确认绑定，再到外观制作台生成 HTML，最后保存并启用。',items:[bookLabel,entryLabel,[a('刷新世界书列表'),a('确认绑定状态栏条目'),openAppearance],ruleDisclosure,[a('保存 HTML 并启用本聊天')]]},
     {title:'初始档案与字段约束',hint:'可选：给新聊天一份确定的初始状态，并用文字规则约束字段。保存的默认值用于新聊天，已有聊天保留自己的配置。',items:[authorHelp,initialLabel,[a('生成初始档案模板')],constraintLabel,[a('预览作者配置')],policyPreview,[a('保存为新聊天默认配置'),a('应用到尚未开始的本聊天')]]},
@@ -2483,7 +2520,7 @@ function startPrototype(defaultHtml) {
     if(closed)return;
     disposeEjsBridge();ejsGeneration=null;
     if(ejsEarlyEvent)try{eventRemoveListener(ejsEarlyEvent,captureEjsGeneration);}catch{console.warn('[LoreState/EJS] 生成前态监听清理失败；旧回调已停用。');}
-    closed=true;appearanceUi?.dispose();cancelExtraUpdate();apiUi.clear();menuObserver?.disconnect();chatObserver?.disconnect();chatObserver=null;if(chatRepairTimer){clearTimeout(chatRepairTimer);chatRepairTimer=null;}floorLayout.remove();stateWindow.dispose();menu.remove();panel.remove();manager.remove();notice.remove();view?.remove();
+    closed=true;center.dispose();appearanceUi?.dispose();cancelExtraUpdate();apiUi.clear();menuObserver?.disconnect();chatObserver?.disconnect();chatObserver=null;if(chatRepairTimer){clearTimeout(chatRepairTimer);chatRepairTimer=null;}floorLayout.remove();stateWindow.dispose();menu.remove();panel.remove();manager.remove();notice.remove();view?.remove();
     const cleanup=uninject;uninject=null;cleanup?.();
     if(runtimeRegistration&&window.parent[runtimeSlot]===runtimeRegistration)delete window.parent[runtimeSlot];
   }

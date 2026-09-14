@@ -25,7 +25,7 @@ const tick=()=>new Promise(resolve=>setTimeout(resolve,30));
 async function emit(name){for(const fn of handlers.get(name)??[])await fn();await tick();}
 function assert(ok,message='断言失败'){if(!ok)throw new Error(message);}
 async function check(name,fn){try{await fn();results.push('PASS '+name);}catch(e){results.push('FAIL '+name+': '+e.message);}}
-function button(label,root=document){return [...root.querySelectorAll('button')].find(el=>el.textContent===label);}
+function button(label,root=document){return [...root.querySelectorAll('button')].find(el=>(el.getAttribute('aria-label')??el.textContent)===label);}
 async function click(label,root=document){const el=button(label,root);assert(el,'找不到 '+label);await el.onclick();await tick();}
 for(const m of list){const el=document.createElement('div');el.className='mes';el.setAttribute('mesid',m.message_id);document.getElementById('chat').append(el);}
 if(new URLSearchParams(location.search).has('bundle')){
@@ -35,7 +35,7 @@ await tick();
 let manager=document.querySelector('[aria-label="LoreState 控制中心"]'),notice=document.querySelector('aside[role="alert"]');
 await check('启动立即告警并显示具体错误楼层',async()=>{
   assert(!notice.hidden);assert(notice.textContent.includes('第 3 楼'));
-  await click('查看诊断',notice);assert(manager.open);assert(manager.querySelector('select').value==='3');manager.close();
+  await click('查看诊断',notice);assert(manager.open);assert(manager.querySelector('select').value==='3');assert(manager.querySelector('[data-ls-floor-report]').open,'告警入口应展开具体报告');manager.close();
 });
 await check('魔法棒管理器查看旧楼层，不显示未来状态',async()=>{
   await click('LoreState');assert(manager.open);
@@ -77,7 +77,7 @@ await check('宿主主题覆盖下复选框仍是可见可点的原生控件',as
 await check('基础格式修复已移除，旧备份仍可查看与恢复且拒绝覆盖变化回复',async()=>{
   await click('返回最新',manager);assert(manager.textContent.includes('本层更新失败'));
   assert(!button('预览基础格式修复'));assert(!button('应用预览修复'));
-  assert(!button('重新计算本层状态').hidden);
+  assert(!button('重新计算本层状态'),'重复重算入口已移除');
   const original=list[1].message,repaired=original.replace('A & B','A &amp; B');
   variables.chat[PROTO_KEY].repairBackup={floor:3,swipe:0,original,repaired};
   await click('查看格式修复备份');assert(manager.querySelector('[aria-label="诊断报告与旧修复备份"]').value===original);
@@ -393,7 +393,7 @@ await check('API 预设只存全局，当前聊天独立绑定；保存和删除
   variables={global:{keep:'global'},script:{[PROTO_KEY]:{ready:true,schema:{shared:['地点'],entity:[]},html,book:'test-book',uid:1}},chat:{[PROTO_KEY]:{enabled:true,start:1}}};
   list=[{message_id:0,role:'user',message:'去书店'},{message_id:1,role:'assistant',message:'我们抵达书店。',swipe_id:0}];
   window.getWorldbook=async()=>[{uid:1,content:'记录地点'}];window.generateRaw=normalExtra;window.stopGenerationById=id=>{extraStops.push(id);return true;};
-  await emit('CHAT_CHANGED');await click('LoreState');await click('API 预设');
+  await emit('CHAT_CHANGED');await click('LoreState');await click('模型连接');
   input('API 预设名称','A');input('API 地址','https://example.com/v1/chat/completions');input('API 密钥','synthetic-private-key');input('API 模型名称','model-A');await click('保存 API 预设');
   assert(variables.global[apiKey],notice.textContent+' / '+manager.querySelector('#ls-page-api').textContent);const first=variables.global[apiKey].profiles[0];assert(first.url==='https://example.com/v1');
   input('状态更新方式','extra');input('状态更新 API 预设',first.id);await click('保存状态更新绑定');
@@ -414,8 +414,8 @@ async function inlineRepairFixture(fn){
   try{
     variables.chat[PROTO_KEY].variableUpdate={...variables.chat[PROTO_KEY].variableUpdate,mode:'inline',attempts:2};
     list=[{message_id:0,role:'user',message:'去书店'},{message_id:1,role:'assistant',message:'正文 A & B。',swipe_id:0}];
-    extraPlace='书店';await emit('MESSAGE_UPDATED');await click('API 预设');await fn();
-  }finally{variables=savedVariables;list=savedList;extraPlace=savedPlace;window.generateRaw=normalExtra;await emit('MESSAGE_UPDATED');await click('API 预设');}
+    extraPlace='书店';await emit('MESSAGE_UPDATED');await click('模型连接');await fn();
+  }finally{variables=savedVariables;list=savedList;extraPlace=savedPlace;window.generateRaw=normalExtra;await emit('MESSAGE_UPDATED');await click('模型连接');}
 }
 await check('随正文缺块手动重算共用模型配置，保留模式和正文，支持撤销',()=>inlineRepairFixture(async()=>{
   const original=list[1].message,count=extraCalls.length;
@@ -431,8 +431,8 @@ await check('随正文错误块从本层前态重算，诊断按钮调用共用�
     {message_id:3,role:'assistant',message:'前文 A & B。'+wrap('错误 & 状态')+'后文。',swipe_id:0}];
   const original=list[2].message;let attempts=0;variables.chat[PROTO_KEY].variableUpdate.attempts=3;
   window.generateRaw=async request=>{extraCalls.push(request);attempts++;return attempts===1?extraReply(request).replaceAll('地点','不存在'):attempts===2?'抱歉，我无法完成这个请求。':extraReply(request);};
-  await emit('MESSAGE_UPDATED');await click('返回最新');await click('诊断修复');
-  await click('重新计算本层状态');assert(attempts===3);assert(!document.getElementById('ls-page-api').hidden);
+  await emit('MESSAGE_UPDATED');await click('返回最新');await click('更新与恢复');
+  await click('重新计算最新失败回复状态');assert(attempts===3);assert(!document.getElementById('ls-page-diagnostics').hidden);
   assert(extraCalls.at(-2).ordered_prompts.some(item=>item?.content?.includes('纠错重试')));
   assert(!extraCalls.at(-1).ordered_prompts.some(item=>item?.content?.includes('纠错重试')));
   assert(extraCalls.at(-1).ordered_prompts.some(item=>item?.content?.includes('车站')));
@@ -448,7 +448,7 @@ await check('随正文修复拒绝历史、前态缺口、正常回复和损坏�
   for(const [message,error] of cases){list[1].message=message;const count=extraCalls.length;await click('重新计算最新失败回复状态');assert(extraCalls.length===count);assert(list[1].message===message);assert(notice.textContent.includes(error),notice.textContent);}
   list=[{message_id:1,role:'assistant',message:'缺少初始状态',swipe_id:0},{message_id:3,role:'assistant',message:'新的剧情',swipe_id:0}];
   const count=extraCalls.length;await click('重新计算最新失败回复状态');assert(extraCalls.length===count);assert(notice.textContent.includes('第 1 楼'));
-  await click('返回最新');await click('上一 AI 层');await click('重新计算本层状态');assert(extraCalls.length===count);assert(notice.textContent.includes('仅支持'));
+  await click('返回最新');await click('上一 AI 层');await click('更新与恢复');await click('重新计算最新失败回复状态');assert(extraCalls.length===count);assert(notice.textContent.includes('第 1 楼')); // 浏览历史不改变最新回复更新的目标，历史缺口仍拒绝请求。
 }));
 await check('随正文修复取消及上下文变化后迟到结果不写入，失败保留原文',()=>inlineRepairFixture(async()=>{
   const original=list[1].message;
@@ -480,15 +480,15 @@ await check('随正文修复允许跟随当前连接，失效自定义绑定不�
 await check('尾部截断预览不请求不改文，确认后只用保留正文重算并可完整撤销',()=>inlineRepairFixture(async()=>{
   const story='正文 A & B。\n\n',tail='<LoreState version="3"><Shared><地点>不可采信残值';
   list[1].message=story+tail;const original=list[1].message,count=extraCalls.length;
-  await emit('MESSAGE_UPDATED');await click('返回最新');await click('诊断修复');
-  assert(!button('预览尾部截断修复').hidden);assert(button('重新计算本层状态').hidden);
-  await click('预览尾部截断修复');assert(extraCalls.length===count);assert(list[1].message===original);
+  await emit('MESSAGE_UPDATED');await click('返回最新');await click('更新与恢复');
+  assert(!button('预览尾部截断修复')&&!button('重新计算本层状态'),'不保留第二套更新按钮');
+  await click('重新计算最新失败回复状态');assert(extraCalls.length===count);assert(list[1].message===original);
   assert(manager.querySelector('[aria-label="将保留的正文"]').value===story);
   assert(manager.querySelector('[aria-label="将替换的截断尾部"]').value===tail);
   await emit('MESSAGE_UPDATED');assert(!button('确认边界并重算').closest('section').hidden,'未变动历史不应清除预览');
   manager.style.width='336px';assert(manager.scrollWidth<=manager.clientWidth+1,'截断预览横向溢出');manager.style.width='';
   await click('取消截断预览');assert(extraCalls.length===count);assert(list[1].message===original);
-  await click('预览尾部截断修复');await click('确认边界并重算');
+  await click('重新计算最新失败回复状态');await click('确认边界并重算');
   assert(extraCalls.length===count+1);assert(!JSON.stringify(extraCalls.at(-1)).includes('不可采信残值'));
   assert(extraCalls.at(-1).user_input.includes(story));assert(list[1].message.startsWith(story));
   assert((list[1].message.match(/<LoreState/g)||[]).length===1);assert(!variables.chat[PROTO_KEY].current.errors.length);
@@ -505,7 +505,7 @@ await check('截断预览在正文、分支、配置或聊天变化后失效且�
   const original='正文。\n<LoreState><Shared><地点>残值';
   for(const change of ['正文','分支','配置','聊天']){
     list[1].message=original;list[1].swipe_id=0;const binding=structuredClone(variables.chat[PROTO_KEY].variableUpdate);
-    await click('API 预设');await click('重新计算最新失败回复状态');const before=extraCalls.length;
+    await click('模型连接');await click('重新计算最新失败回复状态');const before=extraCalls.length;
     if(change==='正文')list[1].message+='新内容';
     if(change==='分支')list[1].swipe_id=1;
     if(change==='配置')variables.chat[PROTO_KEY].variableUpdate.attempts=1;
@@ -517,7 +517,7 @@ await check('截断预览在正文、分支、配置或聊天变化后失效且�
 await check('截断重算失败、取消及请求中改文均保留当时原文，不提前剥离残块',()=>inlineRepairFixture(async()=>{
   const original='正文。\n<LoreState><Shared><地点>残值';
   for(const outcome of ['校验失败','取消','改文','写入失败']){
-    list[1].message=original;await click('API 预设');await click('重新计算最新失败回复状态');
+    list[1].message=original;await click('模型连接');await click('重新计算最新失败回复状态');
     const write=window.setChatMessages;let resolve;
     try{
       window.generateRaw=outcome==='校验失败'?async()=> '抱歉，无法更新':request=>new Promise(done=>{resolve=()=>done(extraReply(request));});
@@ -531,7 +531,7 @@ await check('截断重算失败、取消及请求中改文均保留当时原文�
 }));
 await check('截断预览拒绝历史缺口、回档保留区与模糊起点',()=>inlineRepairFixture(async()=>{
   const original='正文。\n<LoreState><Shared>';
-  list[1].message='正文<Lore';await click('返回最新');assert(button('预览尾部截断修复').hidden,'模糊前缀不应可预览');
+  list[1].message='正文<Lore';await click('返回最新');assert(manager.querySelector('[aria-label="将保留的正文"]').closest('section').hidden,'模糊前缀不应可预览');
   const count=extraCalls.length;await click('重新计算最新失败回复状态');assert(extraCalls.length===count,'模糊前缀不得作为正文送出');
   list[1].message=original;variables.chat[PROTO_KEY].checkpoint={cutoff:1};const before=extraCalls.length;
   await click('重新计算最新失败回复状态');assert(extraCalls.length===before);assert(notice.textContent.includes('回档前保留'));
@@ -606,18 +606,18 @@ await check('请求中切换聊天会取消旧请求，迟到结果不污染新�
   assert(!variables.chat[PROTO_KEY].variableUpdate);window.generateRaw=normalExtra;
 });
 await check('API 设置 JSON 重载后可读取；失效绑定禁止请求且不回退',async()=>{
-  variables=JSON.parse(JSON.stringify(variables));await click('LoreState');await click('API 预设');assert(manager.querySelector('[aria-label="编辑 API 预设"]').options.length===2);
-  variables.chat[PROTO_KEY].variableUpdate={mode:'extra',profileId:'deleted'};await click('API 预设');const before=extraCalls.length;await click('重新更新最新回复状态');assert(extraCalls.length===before);assert(notice.textContent.includes('不存在'));
+  variables=JSON.parse(JSON.stringify(variables));await click('LoreState');await click('模型连接');assert(manager.querySelector('[aria-label="编辑 API 预设"]').options.length===2);
+  variables.chat[PROTO_KEY].variableUpdate={mode:'extra',profileId:'deleted'};await click('模型连接');const before=extraCalls.length;await click('重新更新最新回复状态');assert(extraCalls.length===before);assert(notice.textContent.includes('不存在'));
 });
 let presetRevision=1,presetCalls=[];
 window.getPresetNames=()=>['整理测试'];window.getPreset=name=>({name,revision:presetRevision});
 window.generate=async request=>{presetCalls.push(request);await generate();return extraReply({...request,ordered_prompts:[{content:request.user_input}]});};
 await check('状态术语统一；请求参数保存重载，当前和指定预设均真实接入请求',async()=>{
   list.at(-1).message='我们在车站休息。\n'+list.at(-1).message;
-  variables.chat[PROTO_KEY].variableUpdate={mode:'extra',profileId:variables.global[apiKey].profiles[0].id};await click('API 预设');
+  variables.chat[PROTO_KEY].variableUpdate={mode:'extra',profileId:variables.global[apiKey].profiles[0].id};await click('模型连接');
   assert(!document.querySelector('#ls-page-api').textContent.includes('\u53d8\u91cf'));
   input('请求预设','current');input('状态模型来源','current');input('请求总次数','2');input('总超时（秒）','180');input('自动更新','').checked=false;input('兼容流式响应','').checked=true;
-  await click('保存状态更新绑定');variables=JSON.parse(JSON.stringify(variables));await click('API 预设');
+  await click('保存状态更新绑定');variables=JSON.parse(JSON.stringify(variables));await click('模型连接');
   assert(input('请求总次数','2').value==='2');assert(manager.querySelector('[aria-label="自动更新"]').checked===false);
   extraPlace='内置测试地点';await click('重新更新最新回复状态');assert(presetCalls.length===1,'请求次数 '+presetCalls.length+' / '+notice.textContent);assert(presetCalls[0].preset_name==='in_use','预设名称');assert(!presetCalls[0].custom_api,'自定义API应省略');assert(presetCalls[0].should_stream===true,'流式开关');assert(variables.chat[PROTO_KEY].current.state.shared.地点==='内置测试地点','状态未写入 / '+notice.textContent);
   input('请求预设','named');input('目标酒馆预设','整理测试');await click('保存状态更新绑定');await click('重新更新最新回复状态');assert(presetCalls.at(-1).preset_name==='整理测试','指定预设 / '+notice.textContent);
@@ -635,7 +635,7 @@ await check('预设编辑或取消终止整个重试流程，迟到结果不提�
   running=button('重新更新最新回复状态').onclick();await tick();const late=pendingReply;await click('取消状态更新');await running;late();await tick();assert(tries===2);assert(list.at(-1).message===original);
 });
 await check('模型列表经指定地址读取并选择保存，切换地址后拒绝旧列表',async()=>{
-  await click('API 预设');const p=variables.global[apiKey].profiles[0];input('编辑 API 预设',p.id).onchange();let request;
+  await click('模型连接');const p=variables.global[apiKey].profiles[0];input('编辑 API 预设',p.id).onchange();let request;
   window.getModelList=async value=>{request=value;return ['model-A','model-C','model-C'];};await click('获取模型列表');assert(request.apiurl===p.url);assert(request.key===p.key);
   input('可用模型','model-C').onchange();input('Top P','0.7');input('Top K','40');input('频率惩罚','0.2');input('存在惩罚','-0.1');await click('保存 API 预设');assert(variables.global[apiKey].profiles[0].model==='model-C');assert(variables.global[apiKey].profiles[0].topP===0.7);
   window.getModelList=()=>new Promise(resolve=>{pendingReply=()=>resolve(['obsolete-model']);});const running=button('获取模型列表').onclick();await tick();input('API 地址','https://other.example/v1').oninput();pendingReply();await running;assert(!manager.querySelector('[aria-label="可用模型"]').textContent.includes('obsolete-model'));
@@ -872,7 +872,7 @@ await check('API 页面保存新绑定会取消外观请求，不使用未保存
   let reply;respond(()=>new Promise(resolve=>{reply=resolve;}));await open();const original=v2Editor().value;
   const running=button('生成 HTML 草稿').onclick();await tick();
   // Programmatic simulation of another UI changing the saved binding.
-  await click('API 预设');input('状态模型来源','current');await click('保存状态更新绑定');await running;reply(aiHtml);await tick();
+  await click('模型连接');input('状态模型来源','current');await click('保存状态更新绑定');await running;reply(aiHtml);await tick();
   assert(v2Editor().value===original);assert(stops.length===1);assert(variables.chat[PROTO_KEY].variableUpdate.source==='current');
 }));
 await check('跟随当前连接使用独立提示词，非 Chat Completion 不发送外观请求',()=>appearanceFixture(async({calls,open})=>{
@@ -890,17 +890,17 @@ await check('首次选择非首条目，刷新与切页保留，独立绑定后�
     select.value='92';select.onchange();
     await click('刷新世界书列表');assert(select.value==='92','刷新丢失选择');
     await click('打开外观制作台');assert(select.value==='92','制作台丢失选择');
-    await click('设置');assert(select.value==='92','返回设置丢失选择');
+    await click('规则配置');assert(select.value==='92','返回设置丢失选择');
     await click('确认绑定状态栏条目');
     assert(variables.script[PROTO_KEY].setupBinding.uid===92);assert(!variables.script[PROTO_KEY].ready);
     variables=JSON.parse(JSON.stringify(variables));await emit('CHAT_CHANGED');await click('LoreState');assert(select.value==='92','保存的绑定没有恢复');
     await click('外观制作');await open();await click('生成 HTML 草稿');assert(calls.length===1,'未使用所选栏目生成');
     window.getWorldbook=async()=>[{uid:91,name:'普通背景',content:'不是栏目'}];
-    await click('设置');assert(select.value==='','条目删除后静默回退首项');
+    await click('规则配置');assert(select.value==='','条目删除后静默回退首项');
   }finally{window.getWorldbook=original;await emit('CHAT_CHANGED');}
 }));
 await check('首次启用前可以保存 API 绑定并制作草稿，应用仍要求正常初始化',()=>appearanceFixture(async({calls,open})=>{
-  variables.script[PROTO_KEY]={};await click('API 预设');input('状态模型来源','current');await click('保存状态更新绑定');
+  variables.script[PROTO_KEY]={};await click('模型连接');input('状态模型来源','current');await click('保存状态更新绑定');
   assert(variables.chat[PROTO_KEY].variableUpdate.source==='current');await click('外观制作');await open();await click('生成 HTML 草稿');assert(calls.length===1);assert(!variables.script[PROTO_KEY].ready);
   await click('应用 HTML 草稿');assert(!variables.script[PROTO_KEY].ready);assert(document.getElementById('ls-page-appearance').textContent.includes('首次栏目绑定'));
 }));
@@ -940,8 +940,43 @@ await check('保存命名预设与应用分开；非法手工草稿不能应用'
   v2Editor().value=aiHtml;await click('覆盖所选预设');assert(variables.script[PROTO_KEY].html===original);assert(JSON.stringify(variables.script[PROTO_KEY].presets)!==presets);
   const saved=JSON.stringify(variables);v2Editor().value='<script>bad</scr'+'ipt>';await click('应用 HTML 草稿');assert(JSON.stringify(variables)===saved);assert(v2Protected()===before);
 }));
+await check('浅色控制中心隔离宿主深色文字阴影，操作仅存在于更新与恢复',async()=>{
+  await click('LoreState');await click('更新与恢复');
+  const theme=document.createElement('style');theme.textContent='dialog{color:white;background:#111;text-shadow:1px 1px black}button,h3,p{font-family:serif;text-shadow:1px 1px black}';document.head.append(theme);
+  try{
+    assert(getComputedStyle(manager).colorScheme==='light');assert(getComputedStyle(manager).backgroundColor==='rgb(250, 250, 247)');
+    assert(getComputedStyle(manager.querySelector('button')).textShadow==='none');
+    assert(!button('重新计算本层状态')&&!button('预览尾部截断修复'),'旧入口不应残留');
+    const operations=document.getElementById('ls-page-diagnostics'),connections=document.getElementById('ls-page-api');
+    for(const title of ['取消状态更新','撤销最近一次状态更新','确认边界并重算','复制更新块','复制诊断']){
+      assert(button(title,operations),'恢复页缺少 '+title);assert(!button(title,connections),'连接页残留 '+title);
+      assert([...manager.querySelectorAll('button')].filter(el=>el.textContent===title).length===1,'重复操作 '+title);
+    }
+    assert(!manager.querySelector('.ls-card-title')?.textContent.includes('状态重算'));
+  }finally{theme.remove();}
+});
+await check('切页保留模型连接未保存字段和每页滚动位置，导航不写数据',async()=>{
+  await click('模型连接');const name=manager.querySelector('[aria-label="API 预设名称"]'),old=name.value;
+  const data=JSON.stringify(variables);name.value='尚未保存的连接草稿';
+  const scroll=manager.querySelector('.ls-content');scroll.scrollTop=160;const position=scroll.scrollTop;
+  await click('更新与恢复');await click('模型连接');
+  assert(name.value==='尚未保存的连接草稿','切页丢弃草稿');assert(scroll.scrollTop===position,'切页丢失滚动位置');assert(JSON.stringify(variables)===data,'切页不应保存配置');name.value=old;
+});
+await check('320px 五页内容可重排、导航可横滚且焦点键盘可达',async()=>{
+  const old=manager.style.width;manager.style.width='320px';await tick();
+  try{
+    assert(manager.querySelector('[role=tablist]').getAttribute('aria-orientation')==='horizontal');
+    for(const tab of manager.querySelectorAll('[role=tab]')){
+      tab.click();await tick();const area=manager.querySelector('.ls-content');
+      assert(area.scrollWidth<=area.clientWidth+1,'内容溢出 '+tab.getAttribute('aria-label'));
+      assert(tab.getBoundingClientRect().height>=44);
+    }
+    const last=manager.querySelector('#ls-tab-api');last.focus();last.dispatchEvent(new KeyboardEvent('keydown',{key:'Home',bubbles:true}));assert(document.activeElement.id==='ls-tab-state');
+    manager.querySelector('#ls-tab-state').dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowDown',bubbles:true}));assert(document.activeElement.id==='ls-tab-diagnostics');
+  }finally{manager.style.width=old;}
+});
 output.textContent=results.join('\n');
 // ?preview[=state|diagnostics|settings|api] leaves the control center open for a visual check.
 const preview=new URLSearchParams(location.search).get('preview');
-if(preview!==null){await click('LoreState');document.querySelector('#ls-tab-'+(preview||'state'))?.click();}
+if(preview!==null){await click('LoreState');v2Editor().value=compactHtml;await click('预览 HTML（不保存）');document.querySelector('#ls-tab-'+(preview||'state'))?.click();}
 window.testResults=results;

@@ -70,9 +70,11 @@ export function startPrototype(defaultHtml) {
   const actions=new Map();
   const button=(title,parent,fn)=>{const el=node('button',title,parent);el.type='button';actions.set(title,el);el.onclick=async()=>{el.disabled=true;try{await fn();}catch(e){fault(e,'操作失败');}finally{el.disabled=false;}};return el;};
   const notice=node('aside',undefined,doc.body);notice.hidden=true;notice.setAttribute('role','alert');
-  notice.style.cssText='position:fixed;right:12px;top:12px;z-index:100000;max-width:min(440px,92vw);padding:16px;background:#382621;color:#fff;border:2px solid #efb06a;border-radius:8px;white-space:pre-wrap';
+  notice.style.cssText='position:fixed;right:12px;top:12px;z-index:100000;max-width:min(440px,92vw);padding:16px;background:#fff4ec;color:#773323;border:1px solid #d8a78e;font:14px/1.6 system-ui;text-shadow:none;color-scheme:light;border-radius:8px;white-space:pre-wrap';
   const noticeText=node('p','',notice);
+  for(const el of [noticeText])el.style.cssText='color:inherit;font:inherit;text-shadow:none';
   button('查看诊断',notice,()=>openManager(chatSettings().current?.errors?.[0]?.floor));button('关闭提醒',notice,()=>{notice.hidden=true;});
+  for(const el of notice.querySelectorAll('button'))el.style.cssText='font:inherit;min-height:44px;padding:8px 12px;margin:4px 8px 0 0;border:1px solid #d8a78e;border-radius:8px;background:#fff;color:#773323;text-shadow:none;cursor:pointer';
   let noticeKey='',runtimeLogs=[],extraDiagnostics=[];
   function diagnosticText(value,limit=32000){
     const text=typeof value==='string'?value:value==null?'':String(value);if(text.length<=limit)return {text,truncated:false};
@@ -116,15 +118,12 @@ export function startPrototype(defaultHtml) {
   }
   function showFloor(){
     syncSnapshots();
-    repairBox.hidden=true;recalculate.hidden=true;previewTail.hidden=true;
+    repairBox.hidden=true;
     if(tailDraft&&(!tailCurrent(tailDraft)||tailDraft.floor!==Number(floorSelect.value)))clearTailPreview();
     details.replaceChildren();diagnostics.replaceChildren();
     if(!floorSelect.value){summary.textContent='当前聊天没有可查看的 AI 楼层。';return;}
     const config=settings();if(!schemaFor(config)){summary.textContent='请先配置并启用 LoreState。';return;}
     const item=inspectFloor(messages(),schemaFor(config),chatSettings().start??1,Number(floorSelect.value));
-    recalculate.hidden=updateBinding().mode!=='inline'||!item.error||item.excluded||item.floor!==messages().at(-1)?.message_id;
-    previewTail.hidden=recalculate.hidden||!splitTruncatedUpdate(item.source);
-    if(!previewTail.hidden)recalculate.hidden=true;
     summary.textContent=item.excluded?'本层在初始化起点之前，未参与状态更新。':item.error?'本层更新失败，整轮未应用。':item.tainted?'本层已应用，但前面存在失败更新，状态有缺口。':'本层更新成功。';
     node('p',`最后连续正常楼层：${item.lastGoodFloor??'尚无'}；最后应用楼层：${item.lastAppliedFloor??'尚无'}`,details);
     summary.dataset.error=String(item.tainted);
@@ -145,9 +144,9 @@ export function startPrototype(defaultHtml) {
   function syncFloors(preferred=floorSelect.value){
     const list=floorList();floorSelect.replaceChildren();
     for(const m of list){const option=node('option',`第 ${m.message_id} 楼`,floorSelect);option.value=String(m.message_id);}
-    floorSelect.value=list.some(m=>String(m.message_id)===String(preferred))?String(preferred):String(list.at(-1)?.message_id??'');showFloor();
+    floorSelect.value=list.some(m=>String(m.message_id)===String(preferred))?String(preferred):String(list.at(-1)?.message_id??'');showFloor();apiUi.refreshOperations();
   }
-  function openManager(floor){center.open(floor!==undefined?'diagnostics':'state');syncFloors(floor);}
+  function openManager(floor){center.open(floor!==undefined?'diagnostics':'state');syncFloors(floor);if(floor!==undefined){const report=manager.querySelector('[data-ls-floor-report]');report.open=true;report.scrollIntoView({block:'nearest'});}}
   floorSelect.onchange=()=>{try{showFloor();}catch(e){fault(e,'历史读取失败');}};
   button('上一 AI 层',manager,()=>{floorSelect.selectedIndex=Math.max(0,floorSelect.selectedIndex-1);showFloor();});
   button('下一 AI 层',manager,()=>{floorSelect.selectedIndex=Math.min(floorSelect.options.length-1,floorSelect.selectedIndex+1);showFloor();});
@@ -163,12 +162,6 @@ export function startPrototype(defaultHtml) {
     repairBox.hidden=false;repairBox.value=JSON.stringify(payload,null,2);
     try{await navigator.clipboard.writeText(repairBox.value);summary.textContent='诊断报告已复制，不含完整消息和状态正文。';}catch{summary.textContent='请从下方文本框手动复制诊断报告。';}
   });
-  const recalculate=button('重新计算本层状态',manager,async()=>{
-    const floor=Number(floorSelect.value);
-    center.open('api');apiUi.sync();
-    try{await runExtraUpdate({repair:true,floor});apiUi.refreshUpdate();}
-    catch(error){apiUi.report(error.message);throw error;}
-  });recalculate.hidden=true;
   let tailDraft=null;
   const tailPreview=node('section');tailPreview.hidden=true;
   node('p','确认下方分界：保留正文应完整，待替换尾部不应包含需要保留的剧情。若正文也截断，请先补完正文。确认后才请求状态模型；失败或取消不会删除原文。',tailPreview);
@@ -197,12 +190,12 @@ export function startPrototype(defaultHtml) {
     keptStory.value=split.story;removedTail.value=split.tail;tailPreview.hidden=false;
     center.open('diagnostics');tailPreview.closest('details').open=true;
     summary.textContent='尾部截断预览未修改消息，也未调用模型；请核对分界后确认。';
+    tailPreview.scrollIntoView({block:'nearest'});keptStory.focus({preventScroll:true});
   }
-  const previewTail=button('预览尾部截断修复',manager,previewTruncatedTail);previewTail.hidden=true;
   button('确认边界并重算',tailPreview,async()=>{
     const plan=tailDraft;
     if(!tailCurrent(plan)){clearTailPreview();throw new Error('聊天、回复或配置已变化，请重新预览截断尾部');}
-    clearTailPreview();center.open('api');apiUi.sync();
+    clearTailPreview();center.open('diagnostics');
     try{await runExtraUpdate({repair:true,floor:plan.floor,tailPlan:plan});apiUi.refreshUpdate();}
     catch(error){apiUi.report(error.message);throw error;}
   });
@@ -219,7 +212,7 @@ export function startPrototype(defaultHtml) {
     updateVariablesWith(v=>{const next={...v[PROTO_KEY]};delete next.repairBackup;return {...v,[PROTO_KEY]:next};},{type:'chat'});
     await refresh();syncFloors(backup.floor);
   });
-  button('查看格式修复备份',manager,()=>{repairBox.value=chatSettings().repairBackup?.original??'没有备份';repairBox.hidden=false;});
+  button('查看格式修复备份',manager,()=>{repairBox.value=chatSettings().repairBackup?.original??'没有备份';repairBox.hidden=false;repairBox.closest('details').open=true;repairBox.scrollIntoView({block:'nearest'});});
   let restoreDraft=null,capturedKey='';
   const snapshotPanel=node('section'),snapshotSelect=node('select',undefined,snapshotPanel);
   snapshotSelect.setAttribute('aria-label','历史状态快照');
@@ -469,7 +462,7 @@ export function startPrototype(defaultHtml) {
   const appearanceInput=options=>({...options,schema:appearanceSchema(),html:options.mode==='new'?'':html.value});
   function appearanceSummary(){
     const config=settings(),preset=listPresets(config).find(p=>p.id===config.activePresetId);
-    let api='生成 API：尚未绑定，请到 API 预设页保存模型来源';
+    let api='生成 API：尚未绑定，请到“模型连接”保存模型来源';
     try{const binding=updateBinding(),profile=selectedStateModel(binding);api='生成 API：'+(profile?profile.name+' / '+profile.model:'跟随酒馆当前连接')+'（使用已保存设置）';}catch{}
     return {active:config.ready?'当前生效：'+(preset?.name??'随卡外观')+(preset&&preset.html!==config.html?'（已修改）':''):'尚未初始化栏目配置',html:config.html??defaultHtml,api};
   }
@@ -497,10 +490,10 @@ export function startPrototype(defaultHtml) {
     readSummary:appearanceSummary,run:runAppearance,cancel:()=>appearanceJob?.cancel(),prompt:options=>appearancePrompt(appearanceInput(options)),
     readPreset:()=>{const preset=listPresets(settings()).find(p=>p.id===presetSelect.value);if(!preset)throw new Error('请先选择预设');return preset.html;},
     goApi:()=>{center.select('api');apiUi.sync();},
-    applyDraft:async()=>{const config=settings();if(!config.ready)throw new Error('请先在“设置”完成首次栏目绑定并启用本聊天；将使用这份 HTML 草稿');validateTemplateV2(html.value,config.schema);writeConfig({...config,html:html.value});renderKey='';await refresh();},
+    applyDraft:async()=>{const config=settings();if(!config.ready)throw new Error('请先在“规则配置”完成首次栏目绑定并启用本聊天；将使用这份 HTML 草稿');validateTemplateV2(html.value,config.schema);writeConfig({...config,html:html.value});renderKey='';await refresh();},
   });
   const openAppearance=button('打开外观制作台',panel,async()=>{center.select('appearance');await loadSettings();appearanceUi.sync();});
-  const center=createControlCenter({doc,manager,panel,summary,status,floorSelect,details,diagnostics,repairBox,tailPreview,snapshotPanel,apiPanel:apiUi.panel,loadApi:apiUi.sync,actions,loadSettings,
+  const center=createControlCenter({doc,manager,panel,summary,status,floorSelect,details,diagnostics,repairBox,tailPreview,snapshotPanel,apiPanel:apiUi.panel,loadApi:apiUi.sync,updatePanel:apiUi.updatePanel,loadUpdates:apiUi.refreshOperations,actions,loadSettings,
     appearancePanel:appearanceUi.panel,loadAppearance:async()=>{await loadSettings();appearanceUi.sync();},settingsGroups:[
     {title:'世界书与规则',hint:'选择条目后确认绑定，再到外观制作台生成 HTML，最后保存并启用。',items:[bookLabel,entryLabel,[a('刷新世界书列表'),a('确认绑定状态栏条目'),openAppearance],ruleDisclosure,[a('保存 HTML 并启用本聊天')]]},
     {title:'初始档案与字段约束',hint:'可选：给新聊天一份确定的初始状态，并用文字规则约束字段。保存的默认值用于新聊天，已有聊天保留自己的配置。',items:[authorHelp,initialLabel,[a('生成初始档案模板')],constraintLabel,[a('预览作者配置')],policyPreview,[a('保存为新聊天默认配置'),a('应用到尚未开始的本聊天')]]},
@@ -811,7 +804,7 @@ export function startPrototype(defaultHtml) {
     if(closed)return;
     disposeEjsBridge();ejsGeneration=null;
     if(ejsEarlyEvent)try{eventRemoveListener(ejsEarlyEvent,captureEjsGeneration);}catch{console.warn('[LoreState/EJS] 生成前态监听清理失败；旧回调已停用。');}
-    closed=true;appearanceUi?.dispose();cancelExtraUpdate();apiUi.clear();menuObserver?.disconnect();chatObserver?.disconnect();chatObserver=null;if(chatRepairTimer){clearTimeout(chatRepairTimer);chatRepairTimer=null;}floorLayout.remove();stateWindow.dispose();menu.remove();panel.remove();manager.remove();notice.remove();view?.remove();
+    closed=true;center.dispose();appearanceUi?.dispose();cancelExtraUpdate();apiUi.clear();menuObserver?.disconnect();chatObserver?.disconnect();chatObserver=null;if(chatRepairTimer){clearTimeout(chatRepairTimer);chatRepairTimer=null;}floorLayout.remove();stateWindow.dispose();menu.remove();panel.remove();manager.remove();notice.remove();view?.remove();
     const cleanup=uninject;uninject=null;cleanup?.();
     if(runtimeRegistration&&window.parent[runtimeSlot]===runtimeRegistration)delete window.parent[runtimeSlot];
   }
