@@ -1,6 +1,6 @@
 # LoreState Agent Guide
 
-- 这是 LoreState 的主仓库；当前维护线是 `prototype/` 的 Tavern Helper 远程脚本，`artifact/bundle.js` 是 `main` 分支运行代码。
+- 这是 LoreState 的主仓库；当前维护线是 `prototype/` 的 Tavern Helper 远程脚本，`artifact/bundle.js` 是 `main` 分支运行代码；当前固定稳定版是不可移动标签 **`0.12.1`**。
 - 默认用中文沟通。开始工作前先读本文件、`docs/版本管理.md`、`docs/开发说明.md` 和 `交接文档.md`，再确认目标、基底 ref、红线和验收；不要把历史交接记录当成当前指令。
 - `examples/` 与 `examples/wishnote` 分支已退休，不得重新创建或把 WishNote 专用代码接回主构建。
 - 根目录 `src/`、`index.js`、`manifest.json` 与 `package.json` 的 `0.2.1` 属于旧原生扩展；不得拿它当当前 Tavern Helper 脚本版本。
@@ -8,10 +8,10 @@
 ## 版本与分支：强制规则
 
 - `main` 是唯一长期开发分支，也是唯一活动开发远程入口。
-- 正式版本只能用不可移动的语义版本 Git tag 表示，例如 `0.10.2`、`0.10.4`。**禁止创建裸版本号 branch**，禁止移动或覆盖已发布 tag。
+- 正式版本只能用不可移动的语义版本 Git tag 表示，例如当前 `0.12.1` 和未来新的 patch tag。**禁止创建裸版本号 branch**，禁止移动或覆盖已发布 tag。
 - 普通工作分支只允许短期使用 `fix/*`、`feat/*`、`chore/*`；针对固定版本的临时诊断只能用 `debug/<version>-<slug>`。完成后必须删除短期分支。
 - 不再创建 `release-*`、`source-port*`、版本号 branch 或长期 hotfix branch。
-- 历史上误建的 `0.10.3` branch 已删除，其原 SHA `08a0df5` 固化为不可移动的同名 RC/兼容 tag；不得移动该 tag，也不得用它推导今后的版本流程。下一次完整发布从 `0.10.4` 开始。
+- 历史上误建的 `0.10.3` branch 已删除，其原 SHA `08a0df5` 固化为不可移动的同名 RC/兼容 tag；不得移动该 tag，也不得用它推导今后的版本流程。`0.10.4` 已成为第一版完整采用“固定入口 + receipt + bundle + tag 同提交”规则的正式版本。
 
 ## 版本相关问题的取证要求
 
@@ -25,7 +25,7 @@
 - 凡涉及 `prototype/`、`scripts/`、`artifact/` 或远程分发行为的更新/修复，修改维护源后必须运行 `npm run build`。
 - `artifact/bundle.js`、`prototype/dist/main/lorestate-script.json` 和 `prototype/dist/main/receipt.json` 是生成物；**禁止手工维护生成物来掩盖源代码未修改的问题**。
 - 当前活动交付只有远程版：不得新增无版本根入口或离线备用产物。历史固定版本/旧离线文件只作历史复现，不得在新文档中推荐。
-- 构建后运行 `npm run check`、`npm test`；涉及模板、UI 或宿主行为时再运行 `node scripts/test-browser.mjs`。测试通过不等于真实 SillyTavern 验收。
+- 构建后运行 `npm run check`、`npm test`；涉及模板、UI 或宿主行为时再运行 `node scripts/test-browser.mjs`。涉及 EJS 时按任务需要运行 `node scripts/test-ejs.mjs`。测试通过不等于真实 SillyTavern 验收。
 
 ## main 构建与固定版本发布
 
@@ -55,10 +55,10 @@ npm run build
 npm run build -- <version>
 ```
 
-例如：
+当前 `0.12.1` 已发布；下一 patch 的示例：
 
 ```sh
-npm run build -- 0.10.4
+npm run build -- 0.12.2
 ```
 
 固定版本的 `prototype/dist/<version>/lorestate-script.json` 必须且只能引用 `@<version>/artifact/bundle.js`。提交生成物并通过检查后，tag 再指向这个完全一致的提交。已经发布的 tag 永远不移动。
@@ -74,8 +74,10 @@ npm run build -- 0.10.4
 
 - 活动说明统一放在 `docs/`；版本制度以 `docs/版本管理.md` 为准。
 - 对外发布包统一放在 `docs/发布材料/`，历史迁移/旧扩展记录统一放在 `docs/archive/`。
+- `prototype/world-memory.md` 是当前 v3 协议参考；`prototype/people-memory.md`、旧版本号文档等历史材料不得冒充当前接口。
 - 不重新创建顶层 `release/`、`examples/` 或 `examples/wishnote`；旧版本与旧离线文件只留在历史目录/tag 中，不在新文档中推荐。
 - README 中的“当前版本”“稳定版”“开发版”必须与实际 refs 一致；不得让 README 长期停留在过期版本号。
+- 带明确旧版本号的发布说明保留对应版本事实；不要为了更新当前文档而重写旧 tag 的历史行为。
 
 ## 提交前自检
 
@@ -84,6 +86,7 @@ npm run build -- 0.10.4
 - 运行构建后确认 `git diff` / `git status` 只包含预期文件；生成物与源码一致。
 - `npm run check` 必须通过版本管理守卫：禁止语义版本 branch、禁止临时诊断进入 main、禁止旧的无版本 dist 根入口。
 - 固定版本发布前确认 loader ref、receipt ref、tag 名三者完全一致。
+- 纯文档同步不需要为了制造“新产物”而重建未修改的 runtime；但必须确认文档没有声称不存在的版本/验证状态。
 
 ## 权限与交付
 
