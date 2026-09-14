@@ -1,23 +1,30 @@
-# LoreState Template API v2：作者接口
+# LoreState Template API v2 · 当前作者接口
 
-> 基础接口从 `0.11.0` 引入；本文新增的条件显隐、class 映射与外观制作台适用于 `0.11.1` 起的版本（含 `0.12.0`）与 `main`。已有 v2 模板仍兼容。旧 `0.10.6` 标签保留原有模板行为；本次完整 UI 的真实 SillyTavern、真实模型及人工验收仍待完成。
+Template API v2 从 `0.11.0` 引入；`0.11.1` 增加条件显隐、class 映射和外观制作台；当前固定版 **`0.12.1`** 继续兼容现有 v2 模板，并修复首次条目绑定与首次 HTML 制作流程。
 
-Template API v2 将「存什么」和「怎么显示」分开：**模块条目定义 DataSchema，HTML 只选择展示字段和布局**。人物、物品、事件、国家可各自排版；字段可以省略、重复，整类也可以不显示。
+Template API v2 的核心原则是：**模块条目定义“存什么”，HTML 只定义“怎么显示”。** 人物、物品、国家、事件等模块可以拥有不同字段；模板可以只显示部分字段、重复字段、同类多个区域或冷档区域，而不会改变 DataSchema。
 
-这是一项模板破坏性变更：只接受 `<html data-lore-template="2">` 完整文档。旧 `data-lore-person/entity/module` 不执行、不转换；旧 HTML 与预设原文留在原位，可以在设置里复制。**XML 仍为 v3，config.version 仍为 4，已有状态/schema/快照不迁移、不清空。**
+旧 `0.10.6` 及更早模板不自动转换。旧 HTML/预设原文会保留，但当前展示层要求完整 v2 文档。
 
-## 先试两套外观
+## 第一次使用
 
-两份示例共用同一个[模块条目](../prototype/module-example.txt)，无需改字段或重建存档：
+当前 0.12.1 推荐顺序：
 
-- [旅途档案 HUD](../prototype/example.html)：深色多区域界面，人物卡、紧凑物品、事件与世界动向分开。
-- [紧凑日志](../prototype/module-example.html)：浅色日志布局，展示同一份状态，适合偏文字的卡。
+1. 在设置选择世界书与 `【LoreState模块 v1】` 状态栏条目。
+2. 点击 **确认绑定状态栏条目**。
+3. 打开 **外观制作**，生成/修改 HTML 草稿；或直接粘贴合法 v2 HTML。
+4. 预览、校验并应用草稿/预设。
+5. 首次启用回设置点击 **保存 HTML 并启用本聊天**。
 
-首次在设置选择模块条目，再打开“外观制作”生成/粘贴 HTML，预览后回设置完成绑定。已有配置在外观制作台直接改稿与应用，继续使用已保存的数据 schema。命名预设保存/覆盖不自动应用；应用草稿也不覆盖命名预设。预览区分当前聊天状态与合成数据，不写配置、不安装正则、不请求模型。详见[外观制作台](外观制作台.md)。
+可直接试用：
 
-## 可直接运行的最小多区域模板
+- [旅途档案 HUD](../prototype/example.html)
+- [紧凑日志](../prototype/module-example.html)
+- [配套模块条目](../prototype/module-example.txt)
 
-下面配套上述模块条目：公共字段为「地点、时间」，人物字段为「身体状况、当前目标」，物品为「持有者、完好状况」，事件为「事项、进展」，国家为「政局、外交」。示例故意只显示部分字段。
+## 文档根
+
+v2 模板必须是完整 HTML 文档，并在根节点声明：
 
 ```html
 <!doctype html>
@@ -25,162 +32,188 @@ Template API v2 将「存什么」和「怎么显示」分开：**模块条目�
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<style>
-:root{--accent:#e1c185;--surface:#202e37}
-body{margin:0;padding:16px;background:#11191f;color:#eaf0ef;font:1rem/1.6 system-ui}
-h1{font-size:1.4rem}h2{font-size:1rem;color:var(--accent)}
-main{display:grid;grid-template-columns:minmax(0,1fr);gap:12px}
-section,article{min-width:0}article{padding:12px;background:var(--surface);margin:8px 0;border-radius:10px}
-p,span,h3{overflow-wrap:anywhere}summary{min-height:44px;cursor:pointer}
-summary:focus,summary:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
-@media(min-width:640px){main{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media(prefers-reduced-motion:reduce){*{animation:none;transition:none}}
-</style>
+<style>/* 静态 CSS */</style>
 </head>
-<body>
-<header><h1>旅途状态</h1><p data-lore-shared="地点"></p><p data-lore-shared="时间"></p></header>
-<main>
-<section>
-  <h2>在场人物 · <span data-lore-count="人物"></span></h2>
-  <p data-lore-empty="人物">暂无在场人物</p>
-  <article data-lore-each="人物"><h3 data-lore-name></h3><p data-lore-field="身体状况"></p></article>
-</section>
-<section>
-  <h2>物品</h2><p data-lore-empty="物品">暂无物品</p>
-  <article data-lore-each="物品"><h3 data-lore-name></h3><p data-lore-field="持有者"></p></article>
-</section>
-<section>
-  <h2>事件</h2><p data-lore-empty="事件">暂无事件</p>
-  <article data-lore-each="事件"><h3 data-lore-name></h3><p data-lore-field="进展"></p></article>
-</section>
-<section>
-  <h2>世界</h2><p data-lore-empty="国家">暂无世界动向</p>
-  <article data-lore-each="国家"><h3 data-lore-name></h3><p data-lore-field="外交"></p></article>
-</section>
-</main>
-<details>
-  <summary>人物冷档 · <span data-lore-count="人物" data-lore-presence="cold"></span></summary>
-  <p>最多显示 5 项；完整档案请看历史与诊断。</p>
-  <p data-lore-empty="人物" data-lore-presence="cold">暂无封存人物</p>
-  <article data-lore-each="人物" data-lore-presence="cold" data-lore-limit="5"><b data-lore-name></b><p data-lore-identity></p></article>
-</details>
-</body>
+<body>...</body>
 </html>
 ```
 
-## 查询与文字绑定
+HTML 不负责定义状态字段。模板中引用的字段必须已经由当前模块条目声明。
 
-| 属性 | 位置与含义 |
-| --- | --- |
-| `data-lore-each="人物"` | 复制本元素；类型精确匹配已声明模块；可有同类多个区域 |
-| `data-lore-presence="cold"` | each/count/empty 的修饰符；填写三者之一，默认 active；all 只联合 active 与 cold |
-| `data-lore-select-id="P01"` | 可选精确 ID 过滤；仅在作者明确知道该实体编号时使用 |
-| `data-lore-limit="5"` | 仅 each；1–100 的十进制整数，不带前导零；省略不作业务截断 |
-| `data-lore-field="身体状况"` | each 内读取该实体所属模块字段；可重复、可省略其他字段 |
-| `data-lore-shared="时间"` | 显式读取公共值；each 内外均可，与同名实体字段互不覆盖 |
-| `data-lore-name/id/type/identity/confirmed` | 分别为五个独立属性；each 内显示名称/编号/类别/识别信息/最后确认时间；属性值为空 |
-| `data-lore-count="人物"` | each 外的独立文字节点；显示完整查询数量，不受其他区域 limit 影响 |
-| `data-lore-empty="人物"` | each 外的静态容器；同条件查询为零时保留，否则删除；内部不放查询或绑定 |
+## 公共字段
 
+公共状态使用 `data-lore-shared`：
 
-### 作用域与查询顺序
-
-- 绑定节点只有文字，没有子元素；每个节点只使用一种输出绑定，不与 each/empty 同节点。标题与装饰放在外围。
-- each/count/empty 不嵌套；未知 `data-lore-*`、孤立修饰符、未知类别或字段都会报错。诊断包含区域、类型与字段。
-- 查询依次按类型、presence、可选 ID 过滤，维持 `state.entities` 的输入遍历顺序，each 最后应用 limit。count/empty 不受其他 each 的 limit 影响。
-- `limit="1"` 不识别玩家，`limit="5"` 不表示最近任务。本期不排序、不推断身份、不执行表达式。
-- 缺失/null 显示“尚未记录”；空串保留；有限数字/布尔显示文字；数组、对象、非有限数字显示“数据格式异常”，并生成不含原值的诊断。
-
-## 0.11.1 新增：受控显隐与状态样式
-
-不更改 HTML 根版本，仍使用 data-lore-template="2"。这些属性由可信 renderer 解释，不是模板脚本接口；不会增加存储字段、修改状态或执行表达式。
-
-| 属性 | 含义 |
-| --- | --- |
-| data-lore-if-shared="地点" | 公共字段是有效非空标量时保留容器，否则删除容器与子内容 |
-| data-lore-if-field="目标" | each 内按当前实体的字段显隐；字段须属于此模块 |
-| data-lore-equals="危险" | 与上述显隐来源同节点；按显示文字精确相等，省略则判断非空 |
-| data-lore-class-shared="地点" | 根据公共字段值添加映射 class |
-| data-lore-class-field="身体状况" | each 内根据当前实体字段值添加映射 class |
-| data-lore-class-map='{"健康":"is-healthy","危险":"is-danger"}' | 必须与 class 字段来源同节点；JSON 对象，1～32 项；精确值匹配 |
-
-显隐可与 class 规则组合；同一种规则不可同时指定公共与实体来源。null/缺失或异常对象不匹配；0、false 是已记录值，不等于“空”；空字符串可用显式 equals="" 匹配。条件容器及其子孙禁止 id/IDREF，避免隐藏目标后留下无效引用。count 始终统计完整查询，显隐并不改变数据或查询数量。
-
-映射的键最长 200 字符；值只允许单个 1～64 字符的 class 名（字母、数字、下划线、横线，不能以数字开头）。未命中保留原 class。禁止把字段写入 style、URL、事件属性或任意表达式。
-
-示例：
-
-~~~html
-<article data-lore-each="人物"
-  data-lore-class-field="身体状况"
-  data-lore-class-map='{"危险":"is-danger","健康":"is-healthy"}'>
-  <h3 data-lore-name></h3>
-  <p data-lore-field="身体状况"></p>
-  <section data-lore-if-field="当前目标">
-    <h4>目标</h4><p data-lore-field="当前目标"></p>
-  </section>
-</article>
-~~~
-
-定义 .is-danger/.is-healthy 的静态 CSS 即可；模块需要声明对应字段。0.11.0 会拒绝这些新增属性，不要把新增模板倒装到旧固定版本。
-
-## 样式、交互与预算
-
-作者控制模板内的页面结构、CSS token、各类布局、原生折叠和冷档位置。宿主仍拥有尾部可信状态提示、历史诊断入口和展开窗口。冷档不再自动附加在 iframe 外。
-
-- 静态标签白名单允许常用语义容器、标题、文字、列表、表格和 details/summary。元数据、文本均通过 `textContent` 绑定，不执行状态里的 HTML。
-- 禁止脚本、事件属性、iframe、SVG、表单、URL 资源属性、图片、外链字体、contenteditable 与作者 http-equiv。META 只接受 UTF-8 charset 和 `width=device-width, initial-scale=1`。
-- 样式先经过词法门，再检查浏览器 CSSOM 的规则及声明；CSS 转义、`@import`、`url()`、`image-set()`、`attr()`、执行型属性、未知函数/规则拒绝。符号直接使用 Unicode，避免转义式图标。
-- CSS at-rule 开放 media、supports、keyframes、container、layer；容器内规则同样检查。常用函数开放 var/calc/min/max/clamp、minmax/repeat/fit-content、颜色函数、渐变、CSS 变换、cubic-bezier/steps，以及常用选择器函数。具体白名单见维护源 `prototype/template.js` 的 `V2_CSS_FUNCTIONS`。不支持的函数会明确报错。
-- 重复区域不放 id、for 或 ARIA IDREF。静态 id 必须唯一；静态引用目标必须存在且不在重复区域。重复区可用 class、语义标签和静态 aria-label。
-- 最终 iframe 保持 `sandbox=""`；renderer 注入 CSP：`default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'`。不添加模板脚本或 postMessage 通道。
-
-| 预算 | 上限 |
-| --- | --- |
-| HTML 原文 | 100000 字符（JavaScript 字符串长度） |
-| 原始 DOM | 5000 元素 |
-| each 区域 | 32 |
-| 所有区域合计克隆 | 500 |
-| 最终 DOM | 30000 元素 |
-| 最终序列化 HTML | 2000000 字符，含转义后的文字和注入外壳 |
-
-渲染逐批检查预算，超额显示可定位错误，不静默裁剪存档。大冷档建议设置 limit，同时展示完整 count；完整数据仍在“查看历史与诊断”。
-
-建议 320px 单列、宽屏再分栏，所有收缩子项 `min-width:0`；长 CJK、无空格文本可折行。检查 200% 字体缩放、可见键盘焦点、44px 折叠热区、reduced-motion，避免仅用颜色表达状态。
-
-本期沿用固定高度的尾部 iframe 与展开外壳，内容较多时内部滚动。新状态导致 srcdoc 更新时，details/滚动位置可能重置；同楼层、相同状态与模板不重绘。数值条、任意属性绑定、tabs、自定义排序、外部图片及自动测高均不属于本版。
-
-## 旧模板与错误恢复
-
-旧 HTML 不运行，也不被默认模板覆盖。在设置的 HTML 编辑区可复制当前原文；“查看所选预设原文”可读取其他预设，包括旧版模板。重新制作 v2 后预览并保存，或应用已有合法 v2 预设，即可恢复展示。
-
-非法预览、另存、覆盖、应用或启用均在写配置之前校验。旧模板与其他模板错误仅阻止该 HUD；状态更新、full/delta、冷档读取、快照和诊断继续运行。尾部保留错误说明与“打开模板设置”，有状态缺口时仍显示宿主可信提示。
-
-旧 `config.schema` 是存档的数据合同，不删除。真实模块字段变化仍受原有保护；只隐藏字段、重复字段或改变布局不会改 schema。样式预设只保存 id/name/html，不复制策略、聊天起点、回档或 API 绑定。
-
-## 开发者调用
-
-```js
-const dataSchema = moduleShape(parseModules(moduleRules));
-const plan = validateTemplateV2(html, dataSchema); // 只读 TemplatePlan，不是 DataSchema
-const diagnostics = [];
-const srcdoc = renderTemplateV2(html, state, dataSchema, DOMParser, diagnostics);
+```html
+<p>地点：<b data-lore-shared="地点"></b></p>
+<p>时间：<b data-lore-shared="时间"></b></p>
 ```
 
-`inspectTemplateV2(html, Parser)` 返回解析文档、查询/绑定定位和只读计划；`validateTemplateV2` 额外检查数据字段引用。`selectEntities(state, {type, presence, selectId, limit})` 是纯查询函数。render 始终走同一校验链，既不改变 state/schema，也不复用已变异的 DOM。
+公共字段可以在任意非重复上下文中显示，也可以重复显示。
 
-## 可复用的网页 AI 请求
+## 实体模块
+
+`data-lore-each="模块名"` 会为匹配实体复制该元素；区域内部才能使用该模块字段：
+
+```html
+<section>
+  <h2>在场人物 · <span data-lore-count="人物"></span></h2>
+  <p data-lore-empty="人物">暂无人物</p>
+
+  <article data-lore-each="人物">
+    <h3 data-lore-name></h3>
+    <p>身体：<b data-lore-field="身体状况"></b></p>
+    <p>目标：<b data-lore-field="当前目标"></b></p>
+  </article>
+</section>
+```
+
+模板可以只显示人物的“身体状况”而不显示“当前目标”；这只是视觉选择，不会删除未显示字段。
+
+## 查询接口
+
+| 属性 | 用途 |
+| --- | --- |
+| `data-lore-each="人物"` | 为指定模块的实体重复当前元素 |
+| `data-lore-presence="active"` | 只查询热档；省略时默认 active |
+| `data-lore-presence="cold"` | 只查询冷档 |
+| `data-lore-presence="all"` | 查询 active + cold |
+| `data-lore-select-id="P01"` | 精确筛选稳定实体 ID |
+| `data-lore-limit="5"` | each 最多展示 5 项；不会删除数据 |
+| `data-lore-count="人物"` | 显示匹配数量，不受其他 each 的 limit 影响 |
+| `data-lore-empty="人物"` | 同条件查询为 0 时保留该静态容器 |
+
+`each`、`count`、`empty` 可以分别带相同的 presence 条件。不要用 `limit="1"` 猜玩家身份，也不要把 limit 当作“最近/最重要”的业务排序；当前接口不自动排序。
+
+## 实体元数据与字段
+
+`data-lore-each` 内可使用：
+
+| 属性 | 显示内容 |
+| --- | --- |
+| `data-lore-name` | 名称 |
+| `data-lore-id` | 稳定 ID |
+| `data-lore-type` | 模块/类别 |
+| `data-lore-identity` | 识别信息 |
+| `data-lore-confirmed` | 最后确认信息 |
+| `data-lore-field="字段名"` | 当前模块声明的字段值 |
+
+输出节点只接收文字。缺失/null 显示“尚未记录”；对象、数组等异常值不会被当作 HTML 执行。
+
+## 条件显隐 · 0.11.1 起
+
+可以根据某个已声明字段是否存在/是否等于指定文字，保留或移除一个静态容器：
+
+```html
+<section data-lore-if-shared="地点">
+  <p>地点：<span data-lore-shared="地点"></span></p>
+</section>
+```
+
+实体区域内：
+
+```html
+<article data-lore-each="人物">
+  <h3 data-lore-name></h3>
+  <section data-lore-if-field="当前目标">
+    <p data-lore-field="当前目标"></p>
+  </section>
+</article>
+```
+
+需要精确匹配时在同一个条件节点添加：
+
+```html
+<section data-lore-if-field="身体状况" data-lore-equals="危险">...</section>
+```
+
+条件只控制展示，不改变状态，也不参与 entity count。
+
+## 字段值映射 class · 0.11.1 起
+
+模板可以把**精确字段文字**映射到受控的静态 class：
+
+```html
+<article
+  data-lore-each="人物"
+  data-lore-class-field="身体状况"
+  data-lore-class-map='{"健康":"is-healthy","危险":"is-danger"}'>
+  <h3 data-lore-name></h3>
+  <p data-lore-field="身体状况"></p>
+</article>
+```
+
+公共字段使用 `data-lore-class-shared`。映射只添加白名单格式的 class，不允许把状态值写入 `style`、URL、事件属性或表达式。
+
+## 冷档布局
+
+冷档不再由宿主在 iframe 外硬编码追加；作者可以自己安排：
+
+```html
+<details>
+  <summary>人物冷档 · <span data-lore-count="人物" data-lore-presence="cold"></span></summary>
+  <p data-lore-empty="人物" data-lore-presence="cold">暂无封存人物</p>
+  <article data-lore-each="人物" data-lore-presence="cold" data-lore-limit="5">
+    <b data-lore-name></b>
+    <p data-lore-identity></p>
+  </article>
+</details>
+```
+
+大冷档建议设置 limit，同时显示完整 count。完整状态仍可在 LoreState 管理/诊断界面查看。
+
+## 安全边界
+
+模板是受限静态 HTML/CSS：
+
+- 禁止 `<script>`、事件属性、iframe、SVG、表单、contenteditable；
+- 禁止远程图片、字体和其他 URL 资源；
+- CSS 禁止 `@import`、`url()`、`image-set()`、`attr()`、执行型/未知函数与逃逸式资源加载；
+- 最终 iframe 保持空 sandbox，并使用限制资源的 CSP；
+- 状态文字通过 `textContent` 一类的可信路径填入，不作为 HTML 执行；
+- 重复 each 区域不要放会重复的静态 `id`、`for` 或 ARIA IDREF。
+
+允许常见静态布局、媒体查询、container/layer/keyframes、渐变、CSS 变量、calc/min/max/clamp、原生 `details/summary` 等；准确白名单以 `prototype/template.js` 为准。
+
+## 预算
+
+当前实现对 HTML 原文、原始/最终 DOM、each 区域、总克隆数和最终序列化大小都有硬上限。超限会报错，不会静默删状态。
+
+大致设计原则：保持模板结构简洁；冷档使用 limit；不要为每个字段制造大量重复包装；移动端优先单列、宽屏再分栏。
+
+## 响应式建议
+
+- 320px 左右保持单列；
+- grid/flex 子项设置 `min-width:0`；
+- 长中文和无空格文本使用 `overflow-wrap:anywhere`；
+- 检查 200% 字体缩放；
+- 原生折叠热区建议至少 44px；
+- 提供可见键盘焦点；
+- 尊重 `prefers-reduced-motion`；
+- 不要仅靠颜色表达危险/完成等状态。
+
+## 外观制作台与外部 AI
+
+当前推荐直接使用 [外观制作台](外观制作台.md)：它会根据真实 DataSchema 组装 HTML 制作任务，生成结果先进入草稿并走本地校验。
+
+如果要交给外部网页 AI，可以复制类似要求：
 
 ```text
 请根据我附上的 LoreState 模块条目制作 Template API v2 完整 HTML。
-模块定义存储字段，模板仅选展示；允许部分字段、重复字段和同类多个区域。
-人物、物品、事件、国家分区；公共值用 data-lore-shared，实体值在 data-lore-each 内用 data-lore-field。
-使用 data-lore-template="2"，提供 count/empty 和受限的冷档区域。不要猜玩家 ID 或用 limit 冒充排序。
-采用静态 HTML/CSS 与 details/summary，无脚本、外链、图片、CSS url/import/转义或任意属性绑定。
-320px 单列，宽屏分栏，长文字可折行，支持放大字体、焦点与 reduced-motion。
-HTML 只制作一次；状态模型每轮仍只输出 XML v3。只返回完整 HTML。
+模块条目定义 DataSchema，HTML 只选择展示字段和布局。
+公共值使用 data-lore-shared；实体使用 data-lore-each，区域内用 data-lore-field。
+允许部分字段、重复字段、多个同类区域，以及受限的 cold 档案区域。
+只使用静态 HTML/CSS 和 details/summary；禁止脚本、外链、图片、URL 资源和任意属性绑定。
+320px 单列，宽屏可分栏，长文字可折行，支持放大字体、键盘焦点和 reduced-motion。
+根节点必须包含 data-lore-template="2"。只返回完整 HTML。
 ```
 
-设置中的“生成并复制 HTML 制作提示词”会自动附上实际 DataSchema、完整接口规则与可运行的部分字段示例，优先使用该入口。
+脚本仍保留制作提示词能力时，可以把它作为外部 AI 的辅助入口；但当前首选是外观制作台，因为它直接使用已确认绑定的真实条目/schema。
 
-[模块条目](0.9.0模块条目与试卡.md) · [开发说明](开发说明.md) · [作者文档目录](README.md)
+## 旧模板升级
+
+从 `0.11.0` / `0.11.1` / `0.12.0` 升级到 `0.12.1`，合法 v2 模板无需重制，状态/schema/快照也不迁移。
+
+从 `0.10.6` 或更早版本升级，旧 HTML 原文和预设文本会保留，但旧 `data-lore-person/entity/module` 等接口不在 v2 展示层运行。重新制作 v2 模板并应用即可；状态引擎与已有数据不会因为换皮肤而被清空。
+
+[作者入门](作者入门.md) · [模块条目指南](状态栏条目创作指南.md) · [外观制作台](外观制作台.md) · [0.12.1 发布说明](发布材料/0.12.1-条目绑定修复.md)
