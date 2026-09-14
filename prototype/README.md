@@ -1,95 +1,110 @@
 # 当前入口：0.12.1 固定版与 main 开发版
 
-请从[作者目录](../docs/README.md)、[模块试卡](../docs/0.9.0模块条目与试卡.md)和[隐藏助手兼容与更新](../docs/隐藏助手兼容与更新.md)进入。固定安装使用 [0.12.1 固定远程组件](dist/0.12.1/lorestate-script.json)；持续开发使用 [main 远程组件](dist/main/lorestate-script.json) 和 [main 脚本代码](../artifact/bundle.js)。旧固定标签保持不变。
+当前固定安装使用 [0.12.1 远程组件](dist/0.12.1/lorestate-script.json)；持续开发使用 [main 远程组件](dist/main/lorestate-script.json) 和 [main 脚本代码](../artifact/bundle.js)。旧固定标签保持不可移动。
 
-0.12.0 新增可选 [EJS / 动态世界书只读桥接](../docs/EJS动态世界书.md)，复用当前回放，不改 v3 状态与 v2 外观；[发布说明](../docs/发布材料/0.12.0-EJS动态世界书.md)列出自动化与真实宿主边界。
+作者请从 [文档目录](../docs/README.md) 和 [作者入门](../docs/作者入门.md) 开始。
 
-以下保留各阶段说明，版本内的“当前”指当时阶段，不代表最新主线；其中旧离线链接仅是历史记录，不是当前交付入口。
+## 当前能力
 
----
+- XML v3 状态：首次 full，后续 delta；状态随聊天历史回放。
+- `【LoreState模块 v1】`：公共栏目与人物/物品/国家/事件等模块可拥有不同字段。
+- 热档/冷档、按需读取、事件与有限关联召回。
+- Template API v2：多区域布局、部分/重复字段、自定义冷档区域。
+- 0.11.1 起：API 辅助外观制作、条件显隐、字段值 → class 映射。
+- 0.12.0 起：可选 ST-Prompt-Template / EJS 只读桥接。
+- **0.12.1：修复首次设置时条目选择在刷新/切页后丢失；新增独立“确认绑定状态栏条目”。**
 
-# 当前试用版：0.7.0 世界实体冷热档
+## 0.12.1 首次配置
 
-[0.7.0 历史远程组件](dist/v0.7.0/lorestate-script.json) · [v3 协议、示例与边界](world-memory.md)。人物、国家、组织、地点、物品和事件共用冷热管理；常驻状态每轮提供，未完成事件保持热档。新协议、新命名空间和新模板，不迁移旧数据。固定版本远程入口为 prototype-v0.7.0；CDN 可用性另验，真实酒馆验收待完成。作者教程见 [docs](../docs/README.md)。
+1. 导入固定组件，只启用一份 LoreState。
+2. 在角色/聊天世界书建立模块条目，可直接使用 [module-example.txt](module-example.txt)。
+3. 打开 LoreState 设置，选择世界书与状态栏条目。
+4. 点击 **确认绑定状态栏条目**。
+5. 打开外观制作，使用 API 生成/修改 v2 HTML，或直接粘贴 [example.html](example.html) / [module-example.html](module-example.html)。
+6. 预览并应用外观；首次使用回设置点击 **保存 HTML 并启用本聊天**。
+7. 用独立测试聊天验证 full → delta、刷新恢复、切聊天与导出。
 
-下方是旧版发布说明，旧版协议和流程不适用于 v3。
+0.12.1 会在刷新世界书和设置/外观页切换后保留选择；已确认条目消失时留空并要求重新选择，不自动改用第一条。
 
----
+## 当前模板接口
 
-# LoreState 统一文字状态
+Template API v2 根节点：
 
-**0.5.2 正文显示修复（历史）**：[远程脚本](dist/v0.5.2/lorestate-script.json)。状态栏铺满正文宽度，采用更大高度；点击 **展开状态窗口** 可居中大窗查看。保留原脚本数据，只启用一个版本。
-
-**0.5.1 UI 试用版（历史）**：魔法棒只保留 **LoreState** 一个入口，窗口内按 **状态历史／诊断修复／设置** 切换。设置分为世界书、外观模板、预设和聊天维护；编辑草稿在切页时保留。新 UI 已通过浏览器回归，待真实酒馆验收，远程入口固定 `prototype-v0.5.1`，可导入 [远程组件](dist/v0.5.1/lorestate-script.json)。
-
-**0.5.0 历史候选版**：组件位于 `dist/v0.5.0/`。核心诊断、历史楼层、修复写回、重载持久化与撤销已在 SillyTavern 1.18.0／酒馆助手 4.9.5 实机验证；远程入口固定 `prototype-v0.5.0`。原 `dist/` 根目录的 0.4.0 组件保留。
-
-魔法棒 → **LoreState · 状态管理器**：按 AI 楼层查看当前选中回复分支的完整状态（含离场人物）、本轮实际变化、原始消息和截至本层的错误。支持上一／下一 AI 层、返回最新、定位已加载的消息、重新校验及复制诊断。历史状态从消息原文按需回放，不保存每层重复的大快照；已编辑覆盖的旧消息版本无法复原。
-
-回复结束后，失败更新会弹出楼层、作用范围和可定位的原文行列。相同未解决错误关闭后不会反复提醒；最新状态栏持续显示缺口和最后连续正常楼层。失败整轮不提交，后续有效更新仍会应用，因此有缺口时不能将显示结果理解为完整正确状态。解析通过也不能证明剧情语义正确。
-
-随正文更新失败后，在诊断页点击 **重新计算本层状态**，使用 API 预设中的状态模型重新判断最新回复状态，不切换随正文模式。仅支持此前历史无缺口、标签边界可识别的最新 AI 回复；正文保留，失败不写回，支持取消和撤销最近一次状态更新。状态块在消息末尾被截断且起点唯一时，按钮换成 **预览尾部截断修复**：核对将保留的正文与将替换的截断尾部，点击 **确认边界并重算** 后才请求模型，只发送保留正文，撤销可恢复含截断尾部的原文。基础格式修复已移除，旧备份仍可查看与恢复。详见[额外模型与 API 预设](../docs/额外模型与API预设.md)。
-
-诊断报告包含楼层错误和本次运行最多 30 条异常，不包含完整聊天或状态正文；栏目名、人物编号等错误上下文可能出现在报告中。运行异常列表在切换聊天或重载时清空；解析错误由原文重新计算，并保存在当前聊天的状态快照中。
-
-酒馆助手是固定前提。0.4.0 将简单状态栏与人物记忆合为一套：公共状态＋可选人物档案，共用更新、回放、提示与 HTML 渲染。没有模式选择，也不读取旧版配置或旧版标签。请用新脚本和新聊天配置；旧版原生扩展仍作为历史工程保留在仓库根目录。
-
-## 作者与读者流程
-
-1. 固定使用对应 `0.12.1` 组件；main 入口用于开发。升级时保留存档并换用 v2 HTML，不自动转换旧模板。开启脚本数据随卡导出，只启用一个版本。
-2. 从魔法棒打开 LoreState 设置，选择当前角色绑定的世界书状态栏条目。
-3. 复制 HTML 制作提示词与条目给网页 AI，粘贴生成的 HTML，预览并保存。
-4. 保存会自动添加两条本卡正则：仅显示隐藏、仅提示词过滤；两者都保留正文与消息原文。启用本卡局部正则。
-5. 作者可保存最多 20 份 HTML 预设；v2 可自由选择展示字段与分区，换外观不改 DataSchema、策略或聊天状态。
-6. 读者正常聊天即可。最新 AI 回复旁显示完整状态；AI 首次给完整内容，之后仅给变化。编辑原始 AI 标签后可点击“重新读取当前聊天状态”纠错。
-
-## HTML 接口：Template API v2
-
-`0.11.0` 与后续 main 已改用多区域静态模板；此前的固定 `0.10.6` 保留旧接口。旧 HTML/预设原文保留但不运行；XML v3、config.version=4、存档 DataSchema 与聊天快照不变。
-
-公共值使用 `data-lore-shared`，每类实体用独立 `data-lore-each="类别"`；each 内的 `data-lore-field` 只引用所属模块字段，允许部分字段、重复字段和同类多区。支持 active/cold/all、精确 ID、limit、count 和 empty。
-
-参考 [完整 API 与可复制模板](../docs/HTML模板适配指南.md)。[默认 HUD](example.html) 与 [紧凑日志](module-example.html) 共用 [模块条目](module-example.txt)，换肤不修改存储 schema。
-
-模板保留空 sandbox、固定 CSP、静态 HTML/CSS 和原生 details/summary。CSSOM 与词法门拒绝外部资源、转义及未开放的函数/规则；不开放任意 JS。动态值一律使用 textContent，正文尾部不再额外生成冷档 UI。
-
-以下统一协议和人物档案说明属于早期 0.4.x 历史记录，当前 XML v3 以 [世界实体协议](world-memory.md) 和模块指南为准。
-## 统一协议
-
-```xml
-<LoreState version="2" mode="full">
-  <Shared><地点>驿站</地点></Shared>
-  <Person id="P01" name="林舟" identity="书商" mode="full">
-    <衣着>灰色斗篷</衣着>
-  </Person>
-</LoreState>
+```html
+<html lang="zh-CN" data-lore-template="2">
 ```
 
-```xml
-<LoreState version="2" mode="delta">
-  <Shared><地点>码头</地点></Shared>
-  <Person id="P01" mode="delta"><衣着>雨衣</衣着></Person>
-</LoreState>
+公共值：
+
+```html
+<span data-lore-shared="地点"></span>
 ```
 
-没有公共栏目不输出 Shared；没有人物栏目不输出 Person。首次需包含全部公共栏目；新人物需完整人物栏目，已有编号仅 delta。每项变化写该栏目完整新文字，遗漏保留；删除内容用 `action="remove"`。整轮任何错误均不提交半份状态。标签版本与属性顺序按示例书写。
+实体模块：
 
-在场人物完整注入；离场完整文字留本地，仅注入编号、姓名、识别信息索引。明确提及编号或唯一姓名时预取，临时回归先空 delta 唤醒，下一轮改栏目；不增加模型调用。细节见 [人物档案](people-memory.md)。
+```html
+<article data-lore-each="人物">
+  <h3 data-lore-name></h3>
+  <p data-lore-field="身体状况"></p>
+</article>
+```
 
-存储键为 `lorestate_unified_v1`，脚本配置包含 `schema: {shared: [...], person: [...]}`。消息原始标签是回放依据，聊天快照不替代历史。0 层开场白默认不参与初始化。尚不支持直接字段编辑器、同层续写或自动迁移旧聊天。
+DataSchema 来自模块条目，HTML 只负责展示。完整 API 见 [HTML 模板适配指南](../docs/HTML模板适配指南.md)。
+
+旧 `0.10.6` 及更早 HTML 属于 Template API v1，当前不会自动转换；旧原文保留，但需要重制 v2 外观。已有 `0.11.0+` 合法 v2 模板升级到 0.12.1 无需重制。
+
+## 外观制作
+
+外观制作台复用已保存的 API 连接，但使用独立 HTML 任务。模型只自动收到 DataSchema、风格要求和改稿时的 HTML，不自动收到聊天正文、真实状态或整段世界书。
+
+生成结果先是草稿；通过校验、预览并显式应用后才改变外观。详见 [外观制作台](../docs/外观制作台.md)。
+
+## EJS / 动态世界书
+
+0.12.0 起可以让 ST-Prompt-Template 在 EJS 中只读访问当前 LoreState 快照：
+
+- `lorestate` / `LoreState.state`
+- `ls` / `LoreState.get`
+- `lsHas` / `LoreState.has`
+- `lsRange` / `LoreState.range`
+- `lsStage` / `LoreState.stage`
+
+桥接不内置 EJS、不写状态、不创建第二套变量、不绕过冷档读取校验。当前固定版仍是 `0.12.1`；0.12.0 只表示本功能的首发版本。详见 [EJS 指南](../docs/EJS动态世界书.md)。
+
+## 隐藏楼层
+
+隐藏助手只改变旧正文是否进入模型上下文；属于当前回复分支的隐藏 AI 楼层仍参与 LoreState 本地状态回放。当前 0.12.1 已包含该修复。详见 [隐藏助手兼容与更新](../docs/隐藏助手兼容与更新.md)。
 
 ## 构建
 
+在仓库根目录：
+
 ```sh
-node scripts/build-prototype.mjs
-npm test
+npm run build
 npm run check
+npm test
 ```
 
-浏览器测试：在仓库根目录启动本地静态服务器，打开 `tests/template-browser.html`。
-构建输出 `artifact/bundle.js`、`dist/main/lorestate-script.json` 和 `dist/main/receipt.json`，只生成远程入口，不生成离线备用版。远程地址跟随 `main`；推送后刷新脚本即可取得新内容。
+涉及模板/UI/宿主事件时：
 
-```js
-import 'https://cdn.jsdelivr.net/gh/ZZZdragondYNGPHX/LoreState@main/artifact/bundle.js';
+```sh
+node scripts/test-browser.mjs
 ```
-发布状态与实装边界见 [verification.md](verification.md)。
+
+EJS 相关可额外运行：
+
+```sh
+node scripts/test-ejs.mjs
+```
+
+`npm run build` 只生成 main 开发入口。准备新的固定 tag 时，在打 tag 前使用版本参数，例如下一 patch：
+
+```sh
+npm run build -- 0.12.2
+```
+
+正式固定版本的 loader 只能引用自己的 `@<version>`，不能引用 `@main`。
+
+## 历史资料
+
+`dist/v0.x/`、早期协议说明以及旧版模板/组件保留用于复现，不代表当前安装方式。版本历史与发布证据见 [版本管理](../docs/版本管理.md)、[发布材料](../docs/发布材料/README.md) 与 [验证记录](verification.md)。
