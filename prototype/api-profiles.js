@@ -4,7 +4,7 @@ import { extraUpdateRetryHint } from './extra-update.js';
 export const API_PROFILE_KEY='lorestate_api_profiles_v1';
 export function normalizeApiAddress(value,protocol='helper',exact=false){
   let url;try{url=new URL(String(value??'').trim());}catch{throw new Error('请填写完整的 API 地址');}
-  if(!['http:','https:'].includes(url.protocol)||url.username||url.password||url.search||url.hash)throw new Error('API 地址只接受 HTTP/HTTPS，凭据请填写在密钥栏');
+  if(!['http:','https:'].includes(url.protocol)||url.username||url.password||!exact&&url.search||url.hash)throw new Error('API 地址只接受 HTTP/HTTPS；查询参数需勾选完整端点，凭据请填写在密钥栏');
   if(!exact)url.pathname=url.pathname.replace(/\/(?:chat\/completions|responses|messages|models)\/?$/,'').replace(/\/$/,'');
   return exact?url.href:url.href.replace(/\/$/,'');
 }

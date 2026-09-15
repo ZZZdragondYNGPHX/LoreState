@@ -54,7 +54,7 @@ export function createApiPanel({doc,read,write,binding,setBinding,run,cancel,und
   choices(protocol,[['helper','OpenAI 兼容（酒馆助手）'],['chat','Chat Completions（直连）'],['responses','OpenAI Responses（直连）'],['anthropic','Anthropic Messages（直连）']]);
   const exact=field('API 地址是完整端点','checkbox',profileGroup),modelsUrl=field('模型列表地址（可选）','text',profileGroup),headers=field('自定义请求头（JSON）','password',profileGroup);
   headers.autocomplete='off';headers.placeholder='{}';
-  make('p','直连协议使用内置预设，需要服务允许浏览器跨域请求。基础地址可含 /v1、/v3 或其他前缀；勾选完整端点后原样请求该地址。自定义模型列表地址须同源。不提供列表的服务可手填模型。自定义请求头与密钥同样仅保存在本地。',profileGroup);
+  note(profileGroup,'直连协议支持内置、当前和指定酒馆提示词预设，需要服务允许浏览器跨域请求。基础地址可含 /v1、/v3 或其他前缀；勾选完整端点后原样请求该地址。自定义模型列表地址须同源。不提供列表的服务可手填模型。自定义请求头与密钥同样仅保存在本地。');
   url.placeholder='https://example.com/v1';key.autocomplete='off';name.maxLength=40;model.maxLength=200;
   let editedId='',modelEpoch=0,modelController=null;
   const resetModels=()=>{modelEpoch++;modelController?.abort();choices(models,[['','手动填写模型，或获取列表']]);};
@@ -153,10 +153,7 @@ export function createApiPanel({doc,read,write,binding,setBinding,run,cancel,und
   action('删除 API 预设',()=>{if(!editedId)throw new Error('请选择要删除的预设');write(deleteApiProfile(read(),editedId));sync('');},profileActions).classList.add('ls-danger');
   action('保存状态更新绑定',()=>{
     const config=normalizeUpdateSettings({...binding(),mode:mode.value,profileId:bound.value,source:source.value,presetMode:presetMode.value,presetName:presetName.value,auto:auto.checked,stream:stream.checked,attempts:attempts.value,timeoutSeconds:timeout.value});
-    if(config.mode==='extra'&&config.source==='custom'){
-      const p=boundApiProfile(read(),config.profileId);
-      if(p.protocol!=='helper'&&config.presetMode!=='builtin')throw new Error('直连协议请使用内置预设；酒馆预设请使用酒馆助手连接');
-    }
+    if(config.mode==='extra'&&config.source==='custom')boundApiProfile(read(),config.profileId);
     if(config.presetMode==='named'&&!listRequestPresets().includes(config.presetName))throw new Error('所选酒馆预设已失效');
     setBinding(config);sync();
   },bindingActions).classList.add('ls-primary');

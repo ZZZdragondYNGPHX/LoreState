@@ -25,8 +25,8 @@ export function apiHeaders(profile){
 export function nativeApiRequest(profile,request){
   const p=normalizeApiProfile(profile);
   if(p.protocol==='helper')throw new Error('该预设使用酒馆助手连接');
-  if(!Array.isArray(request.ordered_prompts))throw new Error('直连协议请使用内置预设；酒馆预设请使用酒馆助手连接');
-  const messages=request.ordered_prompts.map(item=>item==='user_input'?{role:'user',content:request.user_input}:item);
+  if(!Array.isArray(request.assembled_messages)&&!Array.isArray(request.ordered_prompts))throw new Error('尚未组装酒馆提示词预设');
+  const messages=request.assembled_messages??request.ordered_prompts.map(item=>item==='user_input'?{role:'user',content:request.user_input}:item);
   const body={model:p.model,stream:request.should_stream===true};
   if(p.protocol==='responses'){
     body.input=messages;body.store=false;
@@ -36,7 +36,7 @@ export function nativeApiRequest(profile,request){
     // the story as user text rather than silently moving them before the story.
     const firstUser=messages.findIndex(m=>m.role==='user');
     body.system=messages.slice(0,firstUser).map(m=>m.content).join('\n\n');
-    body.messages=messages.slice(firstUser).map(m=>({role:m.role==='system'?'user':m.role,content:m.content}));
+    body.messages=messages.slice(firstUser).map(m=>({role:['system','developer'].includes(m.role)?'user':m.role,content:m.content}));
     body.max_tokens=p.maxTokens;
   }else{
     body.messages=messages;if(p.maxTokens)body[p.tokenField]=p.maxTokens;

@@ -1,4 +1,4 @@
-# LoreState｜文字状态栏增量记忆 · 0.12.2
+# LoreState｜文字状态栏增量记忆 · 0.12.3
 
 做文字角色卡时，状态栏常常每轮整张重写。LoreState 的思路是：**第一次记录完整状态，之后只更新发生变化的栏目**；脚本负责校验、合并、历史回放和状态栏展示。
 
@@ -13,15 +13,17 @@
 - 可选 EJS 动态世界书：配合 ST-Prompt-Template，根据 LoreState 当前只读状态按数值区间/阶段输出不同世界书内容。
 - 0.12.2：浅色控制中心、五区导航；更新/取消/撤销统一到“更新与恢复”。保留首次条目绑定修复。
 
+- 0.12.3：彻底删除旧配置后重建栏目；多协议 API、酒馆预设桥接与 auto / max / ultra 思考程度。默认 3 次请求、无限等待、8000 tokens。
+
 **安装**
-需要 SillyTavern + Tavern Helper。推荐固定稳定版 `0.12.2`；`main` 仅用于跟随开发，两者不要同时启用。
+需要 SillyTavern + Tavern Helper。推荐固定稳定版 `0.12.3`；`main` 仅用于跟随开发，两者不要同时启用。
 
 固定版脚本 JSON：
-https://github.com/ZZZdragondYNGPHX/LoreState/raw/refs/tags/0.12.2/prototype/dist/0.12.2/lorestate-script.json
+https://github.com/ZZZdragondYNGPHX/LoreState/raw/refs/tags/0.12.3/prototype/dist/0.12.3/lorestate-script.json
 
 导入后：**魔法棒 → LoreState → 选择世界书/条目 → 确认绑定 → 制作或载入 v2 HTML → 保存并启用聊天。**
 
-从 `0.11.0 / 0.11.1 / 0.12.0` 升级到 `0.12.2`，现有 v3 状态、快照和 v2 外观可继续使用。
+从 `0.11.0 / 0.11.1 / 0.12.0` 升级到 `0.12.3`，现有 v3 状态、快照和 v2 外观可继续使用。
 
 **作者必看**
 - 作者入门：https://github.com/ZZZdragondYNGPHX/LoreState/blob/main/docs/作者入门.md

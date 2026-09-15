@@ -63,6 +63,13 @@ test('总超时取消，清理计时器且无后续重试',async()=>{
   const running=job.run(input,profile,binding),rejected=assert.rejects(running,/超时/);expire();await rejected;reply(html);
   assert.equal(calls,1);assert.equal(cleared,1);assert.equal(stops.length,1);
 });
+test('外观无限等待不设置超时，手动取消仍能立即结束',async()=>{
+  let timers=0;
+  const {job,stops}=harness({generate:()=>new Promise(()=>{}),setTimer:()=>{timers++;return 1;}});
+  const running=job.run(input,profile,{...binding,timeoutSeconds:0});
+  const rejected=assert.rejects(running,/取消/);job.cancel();await rejected;
+  assert.equal(timers,0);assert.equal(stops.length,1);
+});
 test('上下文变化和校验拒绝均不会交付候选 HTML',async()=>{
   let current=true,calls=0;
   const {job}=harness({generate:async()=>{calls++;current=false;return html;},assertCurrent:()=>{if(!current)throw Error('上下文变化');}});

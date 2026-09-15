@@ -10,6 +10,7 @@ import { listPresets, sameSchema, savePreset, deletePreset } from './presets.js'
 import { API_PROFILE_KEY, boundApiProfile, extraModelRequest, normalizeUpdateSettings } from './api-profiles.js';
 import { createApiPanel } from './api-panel.js';
 import { callNativeApi } from './api-transport.js';
+import { collectPresetMessages } from './preset-bridge.js';
 import { appearancePrompt, createAppearanceJob } from './appearance-authoring.js';
 import { createAppearancePanel } from './appearance-panel.js';
 import { variableStory, validateExtraUpdate, settleContinuedMessage, splitTruncatedUpdate } from './extra-update.js';
@@ -30,14 +31,13 @@ export function startPrototype(defaultHtml) {
   const settings=()=>getVariables({type:'script'})[PROTO_KEY]??{};
   const chatSettings=()=>{
     const saved=getVariables({type:'chat'})[PROTO_KEY]??{},config=settings();
-    return config.configId&&saved.configId!==config.configId?{enabled:false}:saved;
+    return config.configId&&saved.configId!==config.configId?{enabled:false,...(saved.preparedConfigId===config.configId?{variableUpdate:saved.preparedVariableUpdate}:{})}:saved;
   };
   const apiSettings=()=>getVariables({type:'global'})?.[API_PROFILE_KEY]??{profiles:[]};
   const updateBinding=()=>normalizeUpdateSettings(chatSettings().variableUpdate);
   const requestPresets=()=>typeof getPresetNames==='function'?getPresetNames():[];
   const selectedStateModel=binding=>binding.source==='custom'?boundApiProfile(apiSettings(),binding.profileId):null;
   function checkRequestPreset(binding){
-    if(binding.source==='custom'&&selectedStateModel(binding).protocol!=='helper'&&binding.presetMode!=='builtin')throw new Error('直连协议请使用内置预设；酒馆预设请使用酒馆助手连接');
     if(binding.source==='current'&&ctx().mainApi!=='openai')throw new Error('跟随当前连接需要酒馆使用 Chat Completion；其他连接请绑定独立 API');
     if(binding.presetMode!=='builtin'&&typeof generate!=='function')throw new Error('当前酒馆助手缺少预设生成接口');
     if(binding.presetMode==='named'&&!requestPresets().includes(binding.presetName))throw new Error('指定的酒馆请求预设不存在，请重新选择');
@@ -429,8 +429,8 @@ export function startPrototype(defaultHtml) {
     const configId=crypto.randomUUID();
     updateVariablesWith(v=>({...v,[PROTO_KEY]:{configId,ready:false}}),{type:'script'});
     updateVariablesWith(v=>{const next={...v};delete next[PROTO_KEY];return next;},{type:'chat'});
-    stateWindow.close();view?.remove();renderKey='';capturedKey='';noticeKey='';notice.hidden=true;runtimeLogs=[];draft=null;restoreDraft=null;
-    html.value='';maker.value='';initialEditor.value='';constraintEditor.value='';policyDraft=null;policyPreview.textContent='尚未预览';preview.srcdoc='';snapshotPreview.textContent='';resetInput.value='';apiUi.sync();syncPresets();
+    stateWindow.close();view?.remove();renderKey='';capturedKey='';noticeKey='';notice.hidden=true;runtimeLogs=[];extraDiagnostics=[];restoreDraft=null;ejsGeneration=null;clearTailPreview();selectionIdentity=null;entryLoad++;
+    html.value='';maker.value='';initialEditor.value='';constraintEditor.value='';policyDraft=null;policyPreview.textContent='尚未预览';preview.srcdoc='';snapshotPreview.textContent='';resetInput.value='';apiUi.clear();apiUi.sync();syncPresets();appearanceUi?.draftChanged();appearanceUi?.sync();
     report('旧配置已删除。重新选择世界书条目、填写 HTML 并保存即可改变栏目；新状态从下一条回复开始，历史正文保留。');
   });
   button('重新读取当前聊天状态',panel,async()=>{renderKey='';await refresh();const result=getResult();report(result.errors.length?`重新校验后仍有 ${result.errors.length} 轮失败，请打开状态管理器。`:'全部参与回放的楼层已通过校验。');});
@@ -471,7 +471,13 @@ export function startPrototype(defaultHtml) {
   const apiUi=createApiPanel({doc,read:apiSettings,
     listRequestPresets:requestPresets,fetchModels:params=>{if(typeof getModelList!=='function')throw new Error('当前酒馆助手缺少模型列表接口');return getModelList(params);},
     write:config=>{appearanceJob?.cancel('API 预设已变化，外观草稿保留');cancelExtraUpdate();updateVariablesWith(v=>({...v,[API_PROFILE_KEY]:config}),{type:'global'});},
-    binding:updateBinding,setBinding:value=>{if(!ctx().getCurrentChatId())throw new Error('请先打开角色聊天');appearanceJob?.cancel('API 绑定已变化，外观草稿保留');cancelExtraUpdate();updateVariablesWith(v=>({...v,[PROTO_KEY]:{...v[PROTO_KEY],variableUpdate:value}}),{type:'chat'});},
+    binding:updateBinding,setBinding:value=>{
+      if(!ctx().getCurrentChatId())throw new Error('请先打开角色聊天');
+      appearanceJob?.cancel('API 绑定已变化，外观草稿保留');cancelExtraUpdate();
+      updateVariablesWith(v=>{const saved=v[PROTO_KEY]??{},configId=settings().configId;
+        return {...v,[PROTO_KEY]:configId&&saved.configId!==configId?{...saved,preparedConfigId:configId,preparedVariableUpdate:value}:{...saved,variableUpdate:value}};
+      },{type:'chat'});
+    },
     run:()=>{if(updateBinding().mode==='inline'&&splitTruncatedUpdate(messages().at(-1)?.message)){return previewTruncatedTail(messages().at(-1)?.message_id);}return runExtraUpdate();},cancel:()=>{const committed=extraJob?.committed;cancelExtraUpdate();apiUi.report(committed?'状态已经写入，如需恢复请撤销最近一次更新。':'状态更新已取消，原消息保留。');},undo:undoExtraUpdate,onError:e=>fault(e,'状态更新操作失败'),
     readDiagnostics:()=>extraDiagnostics,clearDiagnostics:()=>{extraDiagnostics=[];}});
   const ruleDisclosure=node('details');node('summary','查看条目原文',ruleDisclosure);ruleDisclosure.append(rules);
@@ -688,7 +694,11 @@ export function startPrototype(defaultHtml) {
           const diagnostic=beginExtraDiagnostic(attempt,binding.attempts,binding.presetMode==='builtin'?'generateRaw':'generate');apiUi.refreshDiagnostics();
           let output,failure;
           try{
-            const request=extraModelRequest(profile,content,narrative,generationId,binding);
+            let request=extraModelRequest(profile,content,narrative,generationId,binding);
+            if(profile&&profile.protocol!=='helper'&&binding.presetMode!=='builtin'){
+              request=await collectPresetMessages(request,{generate:typeof generate==='function'?generate:null,on:typeof eventOn==='function'?eventOn:null,off:typeof eventRemoveListener==='function'?eventRemoveListener:null,event:tavern_events.CHAT_COMPLETION_SETTINGS_READY,stop:stopGenerationById,signal:controller.signal});
+              assertCurrent();
+            }
             output=await (profile&&profile.protocol!=='helper'?callNativeApi(profile,request,controller.signal):binding.presetMode==='builtin'?generateRaw(request):generate(request));
             const savedOutput=diagnosticText(output);Object.assign(diagnostic,{status:'returned-awaiting-validation',output:savedOutput.text,truncated:savedOutput.truncated});
           }catch(error){failure='状态 API 请求失败，请检查连接配置和网络';Object.assign(diagnostic,{status:'request-error',requestError:safeDiagnosticError(error,[profile?.key])});}

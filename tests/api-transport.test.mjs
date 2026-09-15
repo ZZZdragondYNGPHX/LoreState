@@ -20,6 +20,7 @@ test('协议路径保留 v3、代理前缀与完整自定义端点，不重复�
     assert.equal(apiEndpoint({...base,protocol,url:'https://example.com/custom/run/',exact:true}),'https://example.com/custom/run/');
   }
   assert.equal(apiEndpoint({...base,exact:true,url:'https://example.com/proxy/v3/responses'},true),'https://example.com/proxy/v3/models');
+  assert.equal(apiEndpoint({...base,exact:true,url:'https://example.com/deployments/test/chat/completions?api-version=2025-01-01'}),'https://example.com/deployments/test/chat/completions?api-version=2025-01-01');
   assert.throws(()=>apiEndpoint({...base,exact:true,url:'https://example.com/custom'},true),/另填/);
   assert.throws(()=>apiEndpoint({...base,modelsUrl:'https://elsewhere.invalid/models'},true),/同源/);
 });
@@ -37,7 +38,7 @@ test('三种协议的任务、剧情、长度与参数独立映射',()=>{
   const anthropic=nativeApiRequest({...base,protocol:'anthropic',topP:0.9},request).body;
   assert.equal(anthropic.system,'固定任务');assert.deepEqual(anthropic.messages,[{role:'user',content:'剧情'},{role:'user',content:'尾部'}]);assert.equal(anthropic.top_p,undefined);
   assert.throws(()=>nativeApiRequest({...base,protocol:'anthropic',maxTokens:0},request));
-  assert.throws(()=>nativeApiRequest(base,{user_input:'酒馆预设'}),/内置预设/);
+  assert.throws(()=>nativeApiRequest(base,{user_input:'酒馆预设'}),/尚未组装/);
 });
 test('auto 省略参数；max/ultra 不降级；推理长度参数可选',()=>{
   for(const protocol of ['chat','responses','anthropic']){

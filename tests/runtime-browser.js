@@ -802,7 +802,7 @@ await check('旧模板可被有效 v2 预设替换；唯一尾部和展开窗口
 await check('真实模块 schema 变更仍受保护；隐藏字段并不等于删存档字段',async()=>{
   const before=JSON.stringify(variables),worldbook=window.getWorldbook;
   window.getWorldbook=async()=>[{uid:1,name:'更改后的模块',content:moduleRules.replace('栏目：身体状况、当前目标','栏目：身体状况、当前目标、额外字段')}];
-  try{await click('刷新世界书列表');v2Editor().value=compactHtml;await click('保存 HTML 并启用本聊天');assert(JSON.stringify(variables)===before);assert(notice.textContent.includes('已有配置不支持改变栏目'));}
+  try{await click('刷新世界书列表');v2Editor().value=compactHtml;await click('保存 HTML 并启用本聊天');assert(JSON.stringify(variables)===before);assert(notice.textContent.includes('彻底删除旧配置'));}
   finally{window.getWorldbook=worldbook;await click('刷新世界书列表');}
 });
 
@@ -975,6 +975,84 @@ await check('320px 五页内容可重排、导航可横滚且焦点键盘可达'
     const last=manager.querySelector('#ls-tab-api');last.focus();last.dispatchEvent(new KeyboardEvent('keydown',{key:'Home',bubbles:true}));assert(document.activeElement.id==='ls-tab-state');
     manager.querySelector('#ls-tab-state').dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowDown',bubbles:true}));assert(document.activeElement.id==='ls-tab-diagnostics');
   }finally{manager.style.width=old;}
+});
+await check('彻底删除需确认，清空旧配置和本聊天存档，保留正文、世界书与全局连接',async()=>{
+  manager.close();await tick();window.TavernHelper={builtin:{duringGenerating:()=>false}};
+  variables={global:{keep:'global', [apiKey]:{profiles:[]}},script:{keep:'script',[PROTO_KEY]:{ready:true,schema:{shared:['地点'],entity:[]},html,book:'test-book',uid:1,authorPolicy:{initial:'旧档案'},presets:[{id:'old',name:'旧样式',html}]}},chat:{keep:'chat',[PROTO_KEY]:{enabled:true,start:1,policy:{},variableUpdate:{mode:'inline'},variableUpdateBackup:{original:'旧备份'}}}};
+  list=[{message_id:0,role:'user',message:'测试'},{message_id:3,role:'assistant',message:'保留的旧正文'+wrap('旧地点','full'),swipe_id:0}];
+  window.getWorldbook=async()=>[{uid:1,name:'新规则',content:'【LoreState模块 v1】\n【通用规则】\n记录确定事实。\n【公共栏目】\n栏目：天气\n记录天气。\n【模块：物品】\n栏目：概况\n记录物品。'}];
+  await emit('CHAT_CHANGED');await click('LoreState');await click('规则配置');
+  const before=JSON.stringify(variables),story=JSON.stringify(list);await click('彻底删除旧配置');assert(JSON.stringify(variables)===before,'未确认不能删除');
+  input('删除旧配置确认','删除旧配置');await click('彻底删除旧配置');
+  assert(variables.script[PROTO_KEY].ready===false&&variables.script[PROTO_KEY].configId);assert(Object.keys(variables.script[PROTO_KEY]).length===2);
+  assert(!variables.chat[PROTO_KEY]);assert(variables.chat.keep==='chat'&&variables.script.keep==='script'&&variables.global.keep==='global');assert(JSON.stringify(list)===story);assert(v2Editor().value==='');
+  assert(document.getElementById('lorestate-prototype-settings').textContent.includes('旧配置已删除'),'删除流程须执行到成功反馈');
+});
+await check('删除后同一脚本可保存不同栏目，起点跳过旧正文；旧聊天重启不会误用新栏目',async()=>{
+  const configId=variables.script[PROTO_KEY].configId;v2Editor().value=html.replaceAll('地点','天气');
+  await click('刷新世界书列表');await click('保存 HTML 并启用本聊天');
+  assert(variables.script[PROTO_KEY].ready,'新配置保存失败 '+notice.textContent);assert(variables.script[PROTO_KEY].schema.shared[0]==='天气');assert(variables.chat[PROTO_KEY].start===4);assert(variables.chat[PROTO_KEY].configId===configId);
+  list.push({message_id:4,role:'assistant',message:'新正文<LoreState version="3" mode="full"><Shared><天气>晴</天气></Shared></LoreState>',swipe_id:0});await emit('MESSAGE_UPDATED');
+  assert(variables.chat[PROTO_KEY].current.state.shared.天气==='晴');assert(!variables.chat[PROTO_KEY].current.errors.length);
+  variables.chat={[PROTO_KEY]:{enabled:true,start:1,policy:{initial:'旧档案'},variableUpdateBackup:{original:'旧备份'}}};const old=JSON.stringify(variables.chat);
+  await emit('CHAT_CHANGED');assert(JSON.stringify(variables.chat)===old,'未重新启用时保留其他旧聊天的数据');
+  await click('LoreState');await click('保存 HTML 并启用本聊天');
+  assert(variables.chat[PROTO_KEY].start===5);assert(!variables.chat[PROTO_KEY].variableUpdateBackup);assert(variables.chat[PROTO_KEY].configId===configId);
+});
+await check('新连接 UI 默认 3/0/8000/auto，ultra 与原生协议保存后可重载',async()=>{
+  variables.chat[PROTO_KEY].variableUpdate={};await click('模型连接');input('编辑 API 预设','').onchange();
+  assert(manager.querySelector('[aria-label="请求总次数"]').value==='3');assert(manager.querySelector('[aria-label="总超时（秒）"]').value==='0');
+  assert(manager.querySelector('[aria-label="最大回复 tokens"]').value==='8000');assert(manager.querySelector('[aria-label="思考程度"]').value==='auto');
+  input('API 预设名称','原生测试');input('API 地址','https://example.invalid/v3/responses');input('API 模型名称','synthetic');input('API 协议','responses');input('思考程度','ultra');await click('保存 API 预设');
+  const p=variables.global[apiKey].profiles[0];assert(p.protocol==='responses'&&p.reasoning==='ultra'&&p.maxTokens===8000);assert(p.url==='https://example.invalid/v3');
+  await click('规则配置');await click('模型连接');assert(manager.querySelector('[aria-label="思考程度"]').value==='ultra');
+});
+await check('Responses 复用当前和指定酒馆提示词预设，中止组装请求后才发送并保留正文',async()=>{
+  const nativeFetch=window.fetch,oldGenerate=window.generate,oldStop=window.stopGenerationById,oldOff=window.eventRemoveListener;
+  const event='synthetic-chat-completion-ready';window.tavern_events.CHAT_COMPLETION_SETTINGS_READY=event;
+  window.eventRemoveListener=(name,fn)=>handlers.set(name,(handlers.get(name)??[]).filter(listener=>listener!==fn));
+  let captures=0,sends=0,stopped=0;
+  window.stopGenerationById=()=>{stopped++;return true;};
+  window.generate=async request=>{
+    captures++;assert(request.custom_api.key==='');assert(request.custom_api.apiurl.includes('.invalid'));
+    const data={model:request.custom_api.model,messages:[{role:'system',content:'酒馆预设已展开'}, {role:'user',content:request.user_input}]};
+    for(const fn of handlers.get(event)??[])await fn(data);throw new Error('已中止组装请求');
+  };
+  window.fetch=async(url,options)=>{
+    assert(stopped===captures,'组装请求必须先中止');sends++;assert(url==='https://example.invalid/v3/responses');const data=JSON.parse(options.body);
+    assert(data.input[0].content==='酒馆预设已展开');assert(data.reasoning.effort==='ultra');
+    const token=data.input.map(m=>m.content).join('\n').match(/read="([a-f\d-]+)"/)[1];
+    return new Response(JSON.stringify({status:'completed',output:[{type:'message',role:'assistant',content:[{type:'output_text',text:`<LoreState version="3" mode="full" read="${token}"><Shared><天气>晴</天气></Shared></LoreState>`}]}]}),{headers:{'content-type':'application/json'}});
+  };
+  try{
+    for(const presetMode of ['current','named']){
+      variables.chat[PROTO_KEY]={enabled:true,configId:variables.script[PROTO_KEY].configId,start:1,variableUpdate:{mode:'extra',source:'custom',profileId:variables.global[apiKey].profiles[0].id,presetMode,presetName:window.getPresetNames()[0],attempts:1,timeoutSeconds:0}};
+      list=[{message_id:0,role:'user',message:'去户外'},{message_id:1,role:'assistant',message:'保留的新正文。',swipe_id:0}];
+      await click('更新与恢复');await click('重新更新最新回复状态');assert(list[1].message.startsWith('保留的新正文。')&&list[1].message.includes('<LoreState'),'未写入新协议结果 '+notice.textContent);assert(variables.chat[PROTO_KEY].current.state.shared.天气==='晴');
+      assert((handlers.get(event)??[]).length===0,'预设监听未清理');
+    }
+    assert(captures===2&&sends===2);
+  }finally{window.fetch=nativeFetch;window.generate=oldGenerate;window.stopGenerationById=oldStop;window.eventRemoveListener=oldOff;}
+});
+await check('原生协议无限等待时手动取消会中止 fetch，迟到结果不写入且不重试',async()=>{
+  const nativeFetch=window.fetch;let response,signal,calls=0;
+  variables.chat[PROTO_KEY].variableUpdate={...variables.chat[PROTO_KEY].variableUpdate,presetMode:'builtin',attempts:3,timeoutSeconds:0};
+  const before=JSON.stringify(list);
+  window.fetch=async(url,options)=>{calls++;signal=options.signal;return new Promise(resolve=>{response=resolve;});};
+  try{
+    const running=button('重新更新最新回复状态').onclick();await tick();await tick();assert(signal&&!signal.aborted,'尚未开始直连请求');
+    await click('取消状态更新');await running;assert(signal.aborted);assert(JSON.stringify(list)===before);
+    response(new Response('{}',{headers:{'content-type':'application/json'}}));await tick();assert(calls===1);assert(JSON.stringify(list)===before);
+  }finally{window.fetch=nativeFetch;}
+});
+await check('重置后先绑定模型再制作外观，保存新栏目时保留该绑定',async()=>{
+  await click('规则配置');input('删除旧配置确认','删除旧配置');await click('彻底删除旧配置');
+  await click('模型连接');const id=variables.global[apiKey].profiles[0].id;
+  input('状态更新方式','extra');input('状态模型来源','custom');input('状态更新 API 预设',id);input('请求预设','builtin');await click('保存状态更新绑定');
+  assert(variables.chat[PROTO_KEY].preparedVariableUpdate.profileId===id);
+  await click('规则配置');await click('模型连接');assert(manager.querySelector('[aria-label="状态更新 API 预设"]').value===id);
+  await click('规则配置');await click('刷新世界书列表');v2Editor().value=html.replaceAll('地点','天气');await click('保存 HTML 并启用本聊天');
+  assert(variables.chat[PROTO_KEY].variableUpdate.profileId===id);assert(!variables.chat[PROTO_KEY].preparedVariableUpdate);
 });
 output.textContent=results.join('\n');
 // ?preview[=state|diagnostics|settings|api] leaves the control center open for a visual check.
