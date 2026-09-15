@@ -1,87 +1,36 @@
-# 当前入口：0.12.3 固定版与 main 开发版
+# LoreState prototype · 0.12.3 固定版与 main 开发版
 
-当前固定安装使用 [0.12.3 远程组件](dist/0.12.3/lorestate-script.json)；持续开发使用 [main 远程组件](dist/main/lorestate-script.json) 和 [main 脚本代码](../artifact/bundle.js)。旧固定标签保持不可移动。
+当前固定安装使用 [0.12.3 远程组件](dist/0.12.3/lorestate-script.json)；持续开发使用 [main 远程组件](dist/main/lorestate-script.json) 和 [main bundle](../artifact/bundle.js)。旧固定标签保持不可移动。
 
-作者请从 [文档目录](../docs/README.md) 和 [作者入门](../docs/作者入门.md) 开始。
+作者请从 [文档目录](../docs/README.md) 与 [作者入门](../docs/作者入门.md) 开始；本目录主要面向维护者。
 
 ## 当前能力
 
-- 0.12.3：彻底删除旧配置后在同一脚本重建栏目；原生多协议 API、酒馆提示词预设桥接、auto / max / ultra 等思考程度。见 [发布说明](../docs/发布材料/0.12.3-配置重置与多协议API.md)。
-
-- XML v3 状态：首次 full，后续 delta；状态随聊天历史回放。
-- `【LoreState模块 v1】`：公共栏目与人物/物品/国家/事件等模块可拥有不同字段。
-- 热档/冷档、按需读取、事件与有限关联召回。
-- Template API v2：多区域布局、部分/重复字段、自定义冷档区域。
+- XML v3：首次 full、后续 delta，按聊天历史回放。
+- `【LoreState模块 v1】`：公共栏目与不同实体模块拥有各自字段。
+- 热档/冷档、按需读取、事件与有限一跳关联。
+- Template API v2：多区域、部分/重复字段、自定义冷档布局。
 - 0.11.1 起：API 辅助外观制作、条件显隐、字段值 → class 映射。
-- 0.12.0 起：可选 ST-Prompt-Template / EJS 只读桥接。
-- **0.12.1：修复首次设置时条目选择在刷新/切页后丢失；新增独立“确认绑定状态栏条目”。**
+- 0.12.0 起：ST-Prompt-Template / EJS 只读桥接。
+- 0.12.1 起：首次世界书条目显式确认绑定。
+- 0.12.2 起：浅色控制中心与统一“更新与恢复”。
+- **0.12.3**：彻底删除旧配置后重建栏目；Chat Completions / Responses / Anthropic 直连；酒馆提示词预设桥接；auto / max / ultra 等思考程度。
 
-本版控制中心使用浅色界面；更新/取消/撤销集中在“更新与恢复”，API 配置位于“模型连接”。详见 [0.12.2 发布说明](../docs/发布材料/0.12.2-浅色控制中心.md)。
+## 首次配置
 
-## 首次配置（0.12.1 起保留明确绑定）
+导入固定组件 → 创建/选择模块条目 → 确认绑定 → 制作/粘贴 v2 HTML → 预览并应用 → 保存 HTML 并启用聊天 → 独立测试 full → delta。
 
-1. 导入固定组件，只启用一份 LoreState。
-2. 在角色/聊天世界书建立模块条目，可直接使用 [module-example.txt](module-example.txt)。
-3. 打开 LoreState 设置，选择世界书与状态栏条目。
-4. 点击 **确认绑定状态栏条目**。
-5. 打开外观制作，使用 API 生成/修改 v2 HTML，或直接粘贴 [example.html](example.html) / [module-example.html](module-example.html)。
-6. 预览并应用外观；首次使用回设置点击 **保存 HTML 并启用本聊天**。
-7. 用独立测试聊天验证 full → delta、刷新恢复、切聊天与导出。
+当前 DataSchema 来自模块条目，HTML 只负责展示。模板接口见 [HTML 模板适配指南](../docs/HTML模板适配指南.md)。
 
-0.12.1 会在刷新世界书和设置/外观页切换后保留选择；已确认条目消失时留空并要求重新选择，不自动改用第一条。
+## 0.12.3 重置配置
 
-## 当前模板接口
+结构性增删/改名字段时，可在 **规则配置 → 聊天维护** 输入 `删除旧配置` 并执行 **彻底删除旧配置**。它会清理本脚本配置和当前聊天 LoreState 数据，但保留正文、世界书与全局 API；随后重新绑定条目和 HTML。
 
-Template API v2 根节点：
+## 源码模块
 
-```html
-<html lang="zh-CN" data-lore-template="2">
-```
-
-公共值：
-
-```html
-<span data-lore-shared="地点"></span>
-```
-
-实体模块：
-
-```html
-<article data-lore-each="人物">
-  <h3 data-lore-name></h3>
-  <p data-lore-field="身体状况"></p>
-</article>
-```
-
-DataSchema 来自模块条目，HTML 只负责展示。完整 API 见 [HTML 模板适配指南](../docs/HTML模板适配指南.md)。
-
-旧 `0.10.6` 及更早 HTML 属于 Template API v1，当前不会自动转换；旧原文保留，但需要重制 v2 外观。已有 `0.11.0+` 合法 v2 模板升级到 0.12.3 无需重制。
-
-## 外观制作
-
-外观制作台复用已保存的 API 连接，但使用独立 HTML 任务。模型只自动收到 DataSchema、风格要求和改稿时的 HTML，不自动收到聊天正文、真实状态或整段世界书。
-
-生成结果先是草稿；通过校验、预览并显式应用后才改变外观。详见 [外观制作台](../docs/外观制作台.md)。
-
-## EJS / 动态世界书
-
-0.12.0 起可以让 ST-Prompt-Template 在 EJS 中只读访问当前 LoreState 快照：
-
-- `lorestate` / `LoreState.state`
-- `ls` / `LoreState.get`
-- `lsHas` / `LoreState.has`
-- `lsRange` / `LoreState.range`
-- `lsStage` / `LoreState.stage`
-
-桥接不内置 EJS、不写状态、不创建第二套变量、不绕过冷档读取校验。当前固定版仍是 `0.12.3`；0.12.0 只表示本功能的首发版本。详见 [EJS 指南](../docs/EJS动态世界书.md)。
-
-## 隐藏楼层
-
-隐藏助手只改变旧正文是否进入模型上下文；属于当前回复分支的隐藏 AI 楼层仍参与 LoreState 本地状态回放。当前 0.12.3 已包含该修复。详见 [隐藏助手兼容与更新](../docs/隐藏助手兼容与更新.md)。
+核心运行代码位于本目录，主要模块职责见 [开发说明](../docs/开发说明.md)。`artifact/bundle.js`、`dist/main/` 与固定 `dist/<version>/` 都是构建交付物，不应代替维护源修改。
 
 ## 构建
-
-在仓库根目录：
 
 ```sh
 npm run build
@@ -89,26 +38,16 @@ npm run check
 npm test
 ```
 
-涉及模板/UI/宿主事件时：
+涉及模板/UI/宿主事件时运行 `node scripts/test-browser.mjs`；EJS 相关按需运行 `node scripts/test-ejs.mjs`。
+
+`npm run build` 只生成 main 开发入口。当前 0.12.3 已发布，下一 patch 示例：
 
 ```sh
-node scripts/test-browser.mjs
+npm run build -- 0.12.4
 ```
 
-EJS 相关可额外运行：
-
-```sh
-node scripts/test-ejs.mjs
-```
-
-`npm run build` 只生成 main 开发入口。准备新的固定 tag 时，在打 tag 前使用版本参数，例如下一 patch：
-
-```sh
-npm run build -- 0.12.3
-```
-
-正式固定版本的 loader 只能引用自己的 `@<version>`，不能引用 `@main`。
+正式固定 loader 只能引用自己的 `@<version>/artifact/bundle.js`，不能引用 `@main`。
 
 ## 历史资料
 
-`dist/v0.x/`、早期协议说明以及旧版模板/组件保留用于复现，不代表当前安装方式。版本历史与发布证据见 [版本管理](../docs/版本管理.md)、[发布材料](../docs/发布材料/README.md) 与 [验证记录](verification.md)。
+`dist/v0.x/`、`people-memory.md`、早期 snapshots 设计说明等只用于复现。当前协议参考为 [world-memory.md](world-memory.md)；当前验证入口为 [verification.md](verification.md)；旧作者说明统一进入 [docs/archive](../docs/archive/README.md)。

@@ -7,7 +7,8 @@ async function exists(path){try{await access(path);return true;}catch{return fal
 
 if(await exists('examples'))throw new Error('examples/ 已退休，不得重新加入 main');
 if(await exists('release'))throw new Error('顶层 release/ 已归并，发布材料必须位于 docs/发布材料/');
-for(const path of ['docs/README.md','docs/版本管理.md','docs/发布材料/README.md','docs/发布材料/Discord帖子.md','docs/发布材料/作者改造教程.md','docs/发布材料/状态栏模板.html','docs/发布材料/状态栏条目.txt','docs/archive/README.md'])if(!await exists(path))throw new Error(`缺少规范文档路径：${path}`);
+for(const path of ['docs/README.md','docs/版本管理.md','docs/发布材料/README.md','docs/发布材料/Discord帖子-功能介绍.md','docs/发布材料/Discord帖子-创作者与使用者参考.md','docs/发布材料/作者改造教程.md','docs/发布材料/状态栏模板.html','docs/发布材料/状态栏条目.txt','docs/archive/README.md'])if(!await exists(path))throw new Error(`缺少规范文档路径：${path}`);
+if(await exists('docs/发布材料/Discord帖子.md'))throw new Error('旧的混合 Discord帖子.md 已拆分，请勿重新加入');
 
 for(const path of ['prototype/dist/lorestate-script.json','prototype/dist/lorestate-script-offline.json','prototype/dist/receipt.json'])if(await exists(path))throw new Error(`旧的无版本 dist 入口已退休，请删除：${path}`);
 if(await exists('artifact/diagnostic-hook.js'))throw new Error('临时诊断钩子不得提交到 main；诊断只能存在于临时 debug 分支');
