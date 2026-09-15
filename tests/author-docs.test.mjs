@@ -29,11 +29,17 @@ test('当前作者文档的本地链接均指向实际文件',async()=>{
   }
 });
 
-test('发布材料集中在规范目录且内部附件链接有效',async()=>{
+test('发布材料集中在规范目录且 Discord 文档已按职责拆分',async()=>{
   const root=new URL('../docs/发布材料/',import.meta.url);
-  for(const name of ['README.md','Discord帖子.md','作者改造教程.md','状态栏模板.html','状态栏条目.txt'])await access(new URL(name,root));
-  const source=await readFile(new URL('README.md',root),'utf8');
-  for(const match of source.matchAll(/`([^`]+)`/g)){const target=match[1];if(/\.(?:md|html|txt)$/.test(target))await access(new URL(target,root));}
+  for(const name of ['README.md','Discord帖子-功能介绍.md','Discord帖子-创作者与使用者参考.md','作者改造教程.md','状态栏模板.html','状态栏条目.txt'])await access(new URL(name,root));
+  await assert.rejects(access(new URL('Discord帖子.md',root)));
+  for(const name of ['README.md','作者改造教程.md']){
+    const source=await readFile(new URL(name,root),'utf8');
+    for(const match of source.matchAll(/\]\(([^)]+)\)/g)){
+      const target=match[1];if(target.startsWith('#')||/^https?:/.test(target))continue;
+      await access(new URL(target,root));
+    }
+  }
 });
 
 test('0.8.0 归档样本的可复制初始档案与字段规则通过真实校验',async()=>{
