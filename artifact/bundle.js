@@ -862,18 +862,18 @@ function uiGrid(doc,parent,items=[]){
 
 // Local user configuration only. Never copy this namespace to script/card data.
 const API_PROFILE_KEY='lorestate_api_profiles_v1';
-function normalizeApiAddress(value){
+function normalizeApiAddress(value,protocol='helper',exact=false){
   let url;try{url=new URL(String(value??'').trim());}catch{throw new Error('请填写完整的 API 地址');}
   if(!['http:','https:'].includes(url.protocol)||url.username||url.password||url.search||url.hash)throw new Error('API 地址只接受 HTTP/HTTPS，凭据请填写在密钥栏');
-  url.pathname=url.pathname.replace(/\/(?:chat\/completions|models)\/?$/,'').replace(/\/$/,'');
-  return url.href.replace(/\/$/,'');
+  if(!exact)url.pathname=url.pathname.replace(/\/(?:chat\/completions|responses|messages|models)\/?$/,'').replace(/\/$/,'');
+  return exact?url.href:url.href.replace(/\/$/,'');
 }
 function normalizeUpdateSettings(value={}){
-  const config={...value,mode:value.mode??'inline',profileId:value.profileId??'',source:value.source??'custom',presetMode:value.presetMode??'builtin',presetName:value.presetName??'',auto:value.auto??true,stream:value.stream??false,attempts:Number(value.attempts??1),timeoutSeconds:Number(value.timeoutSeconds??120)};
+  const config={...value,mode:value.mode??'inline',profileId:value.profileId??'',source:value.source??'custom',presetMode:value.presetMode??'builtin',presetName:value.presetName??'',auto:value.auto??true,stream:value.stream??false,attempts:Number(value.attempts??3),timeoutSeconds:Number(value.timeoutSeconds??0)};
   if(!['inline','extra'].includes(config.mode)||!['custom','current'].includes(config.source)||!['builtin','current','named'].includes(config.presetMode))throw new Error('状态更新方式、模型来源或请求预设无效');
   if(typeof config.auto!=='boolean'||typeof config.stream!=='boolean')throw new Error('自动更新和流式设置必须为开关');
   if(!Number.isInteger(config.attempts)||config.attempts<1||config.attempts>5)throw new Error('请求总次数需为 1～5 的整数');
-  if(!Number.isInteger(config.timeoutSeconds)||config.timeoutSeconds<15||config.timeoutSeconds>600)throw new Error('总超时需为 15～600 秒的整数');
+  if(!Number.isInteger(config.timeoutSeconds)||config.timeoutSeconds!==0&&(config.timeoutSeconds<15||config.timeoutSeconds>600))throw new Error('总超时需为 0（无限制）或 15～600 秒的整数');
   if(config.presetMode==='named'&&!config.presetName.trim())throw new Error('请选择酒馆请求预设');
   return config;
 }
@@ -881,7 +881,19 @@ function normalizeApiProfile(profile){
   const name=String(profile.name??'').trim(),model=String(profile.model??'').trim();
   if(!name||name.length>40)throw new Error('API 预设名称需为 1～40 个字符');
   if(!model||model.length>200)throw new Error('请填写模型名称（最多 200 字符）');
-  const url=normalizeApiAddress(profile.url),maxTokens=Number(profile.maxTokens??4096);
+  const protocol=profile.protocol??'helper',exact=profile.exact===true;
+  if(!['helper','chat','responses','anthropic'].includes(protocol))throw new Error('不支持的 API 协议');
+  if(protocol==='helper'&&exact)throw new Error('完整端点请使用直连协议');
+  const url=normalizeApiAddress(profile.url,protocol,exact),maxTokens=Number(profile.maxTokens??8000);
+  const headers=normalizeApiHeaders(profile.headers??{});
+  if(protocol==='helper'&&Object.keys(headers).length)throw new Error('自定义请求头请使用直连协议');
+  const modelsUrl=profile.modelsUrl?normalizeApiAddress(profile.modelsUrl,protocol,true):'';
+  const reasoning=profile.reasoning??'auto';
+  const tokenField=profile.tokenField??'max_tokens';
+  if(!['max_tokens','max_completion_tokens'].includes(tokenField))throw new Error('最大回复参数无效');
+  if(!['auto','none','minimal','low','medium','high','xhigh','max','ultra'].includes(reasoning))throw new Error('思考程度无效');
+  if(protocol==='helper'&&reasoning!=='auto')throw new Error('指定思考程度请使用直连协议，或在酒馆当前连接中配置');
+  if(protocol==='anthropic'&&reasoning==='minimal')throw new Error('Anthropic 请使用 low、medium、high、xhigh 或 max 思考程度');
   if(!Number.isInteger(maxTokens)||maxTokens<0||maxTokens>65536)throw new Error('最大回复长度需为 0～65536 的整数，0 表示不发送此参数');
   const sampling={};
   for(const [key,label,min,max,fallback] of [['temperature','温度',0,2,0.2],['topP','Top P',0,1,'unset'],['topK','Top K',0,1000,'unset'],['frequencyPenalty','频率惩罚',-2,2,'unset'],['presencePenalty','存在惩罚',-2,2,'unset']]){
@@ -890,7 +902,18 @@ function normalizeApiProfile(profile){
     const number=Number(raw);if(!Number.isFinite(number)||number<min||number>max||(key==='topK'&&!Number.isInteger(number)))throw new Error(`${label} 参数范围为 ${min}～${max}${key==='topK'?' 的整数':''}`);
     sampling[key]=key==='topK'&&number===0?'unset':number;
   }
-  return {id:profile.id,name,url,key:String(profile.key??'').trim(),model,maxTokens,...sampling};
+  if(protocol==='anthropic'&&(maxTokens===0||sampling.temperature!=='unset'&&sampling.temperature>1))throw new Error('Anthropic 最大回复长度需大于 0，温度为 0～1 或留空');
+  return {id:profile.id,name,url,key:String(profile.key??'').trim(),model,maxTokens,...sampling,protocol,exact,headers,modelsUrl,reasoning,tokenField};
+}
+function normalizeApiHeaders(value){
+  let headers;try{headers=typeof value==='string'?JSON.parse(value.trim()||'{}'):value;}catch{throw new Error('自定义请求头需要 JSON 对象');}
+  if(!headers||Array.isArray(headers)||typeof headers!=='object'||Object.keys(headers).length>20)throw new Error('自定义请求头需要至多 20 项的 JSON 对象');
+  const result={};
+  for(const [name,value] of Object.entries(headers)){
+    if(!/^[A-Za-z0-9!#$%&'*+.^_`|~-]+$/.test(name)||typeof value!=='string'||/[\r\n]/.test(value)||value.length>8000||/^(host|cookie|content-length|origin|referer|connection|proxy-.*|sec-.*)$/i.test(name))throw new Error('自定义请求头名称或值无效');
+    result[name.toLowerCase()]=value;
+  }
+  return result;
 }
 function saveApiProfile(config,profile){
   const next=normalizeApiProfile(profile),profiles=config.profiles??[];
@@ -922,6 +945,144 @@ function extraModelRequest(profile,content,story,generationId,options={}){
   // Keep the complete task in user_input so the required protocol cannot disappear.
   else Object.assign(request,{preset_name:settings.presetMode==='current'?'in_use':settings.presetName,user_input:task+'\n\n已发生的剧情资料：\n'+story,overrides:{chat_history:{prompts:[],with_depth_entries:false,author_note:''}},injects:[{role:'system',content:'本次请求只整理文字状态，请按本次输入中的 LoreState 协议返回更新块，不续写剧情。',position:'in_chat',depth:0,should_scan:false}]});
   return request;
+}
+
+
+// Browser-side native protocols. The Helper transport remains the legacy default.
+function apiEndpoint(profile,models=false){
+  const p=normalizeApiProfile(profile);
+  if(models&&p.modelsUrl){
+    if(new URL(p.modelsUrl).origin!==new URL(p.url).origin)throw new Error('模型列表地址必须与 API 地址同源');
+    return p.modelsUrl;
+  }
+  if(!models&&p.exact)return p.url;
+  let base=p.url;
+  if(p.exact){
+    if(!/\/(chat\/completions|responses|messages)\/?$/.test(base))throw new Error('自定义端点请另填模型列表地址，或手动填写模型');
+    base=base.replace(/\/(chat\/completions|responses|messages)\/?$/,'');
+  }
+  if(new URL(base).pathname==='/')base+='/v1';
+  return base+'/'+(models?'models':p.protocol==='responses'?'responses':p.protocol==='anthropic'?'messages':'chat/completions');
+}
+function apiHeaders(profile){
+  const p=normalizeApiProfile(profile),headers={'content-type':'application/json'};
+  if(p.protocol==='anthropic')Object.assign(headers,{'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true',...(p.key?{'x-api-key':p.key}:{})});
+  else if(p.key)headers.authorization=`Bearer ${p.key}`;
+  return {...headers,...p.headers};
+}
+function nativeApiRequest(profile,request){
+  const p=normalizeApiProfile(profile);
+  if(p.protocol==='helper')throw new Error('该预设使用酒馆助手连接');
+  if(!Array.isArray(request.ordered_prompts))throw new Error('直连协议请使用内置预设；酒馆预设请使用酒馆助手连接');
+  const messages=request.ordered_prompts.map(item=>item==='user_input'?{role:'user',content:request.user_input}:item);
+  const body={model:p.model,stream:request.should_stream===true};
+  if(p.protocol==='responses'){
+    body.input=messages;body.store=false;
+    if(p.maxTokens)body.max_output_tokens=p.maxTokens;
+  }else if(p.protocol==='anthropic'){
+    // Anthropic has a top-level system field. Preserve trailing instructions after
+    // the story as user text rather than silently moving them before the story.
+    const firstUser=messages.findIndex(m=>m.role==='user');
+    body.system=messages.slice(0,firstUser).map(m=>m.content).join('\n\n');
+    body.messages=messages.slice(firstUser).map(m=>({role:m.role==='system'?'user':m.role,content:m.content}));
+    body.max_tokens=p.maxTokens;
+  }else{
+    body.messages=messages;if(p.maxTokens)body[p.tokenField]=p.maxTokens;
+  }
+  if(p.reasoning!=='auto'){
+    if(p.protocol==='responses')body.reasoning={effort:p.reasoning};
+    else if(p.protocol==='anthropic'){
+      body.thinking={type:p.reasoning==='none'?'disabled':'adaptive'};
+      if(p.reasoning!=='none')body.output_config={effort:p.reasoning};
+    }else body.reasoning_effort=p.reasoning;
+  }
+  for(const [key,wire] of [['temperature','temperature'],['topP','top_p'],['topK','top_k'],['frequencyPenalty','frequency_penalty'],['presencePenalty','presence_penalty']]){
+    if(p[key]==='unset')continue;
+    if(p.protocol==='responses'&&!['temperature','topP'].includes(key))continue;
+    if(p.protocol==='anthropic'&&['frequencyPenalty','presencePenalty'].includes(key))continue;
+    if(p.protocol==='anthropic'&&key==='topP'&&p.temperature!=='unset')continue;
+    if(p.protocol==='anthropic'&&!['auto','none'].includes(p.reasoning)&&['temperature','topP','topK'].includes(key))continue;
+    body[wire]=p[key];
+  }
+  return {url:apiEndpoint(p),headers:apiHeaders(p),body};
+}
+function apiOutput(data,protocol){
+  if(data?.error||['failed','incomplete','cancelled'].includes(data?.status))throw new Error('API 未完成有效响应');
+  if(protocol==='responses')return (data.output??[]).filter(item=>item.type==='message'&&item.role==='assistant').flatMap(item=>item.content??[]).filter(c=>c.type==='output_text').map(c=>c.text??'').join('');
+  if(protocol==='anthropic'){
+    if(data.stop_reason==='max_tokens')throw new Error('API 输出达到长度上限');
+    return (data.content??[]).filter(c=>c.type==='text').map(c=>c.text??'').join('');
+  }
+  const choice=data.choices?.[0];
+  if(['length','content_filter'].includes(choice?.finish_reason))throw new Error('API 输出未完整完成');
+  const content=choice?.message?.content;
+  return typeof content==='string'?content:Array.isArray(content)?content.filter(c=>c.type==='text').map(c=>c.text??'').join(''):'';
+}
+async function readApiResponse(response,protocol){
+  if(!response.ok)throw new Error(`API 请求失败（HTTP ${response.status}），请检查地址、鉴权和协议`);
+  if(!response.headers.get('content-type')?.includes('text/event-stream')){
+    const text=apiOutput(await response.json(),protocol);
+    if(!text.trim())throw new Error('API 没有返回可用文字');
+    if(text.length>200000)throw new Error('API 响应过长');
+    return text;
+  }
+  const reader=response.body.getReader(),decoder=new TextDecoder();
+  let buffer='',text='',done=false,total=0;
+  const consume=block=>{
+    const payload=block.split('\n').filter(line=>line.startsWith('data:')).map(line=>line.slice(5).trimStart()).join('\n');
+    if(!payload)return;
+    if(payload==='[DONE]'){if(protocol==='chat')done=true;return;}
+    const data=JSON.parse(payload);
+    if(data.error||['error','response.failed','response.incomplete'].includes(data.type))throw new Error('API 流式响应失败');
+    if(protocol==='responses'){
+      if(data.type==='response.output_text.delta')text+=data.delta??'';
+      if(data.type==='response.completed'){const final=apiOutput(data.response,protocol);if(final)text=final;done=true;}
+    }else if(protocol==='anthropic'){
+      if(data.type==='content_block_start'&&data.content_block?.type==='text')text+=data.content_block.text??'';
+      if(data.type==='content_block_delta'&&data.delta?.type==='text_delta')text+=data.delta.text??'';
+      if(data.type==='message_delta'&&data.delta?.stop_reason==='max_tokens')throw new Error('API 输出达到长度上限');
+      if(data.type==='message_stop')done=true;
+    }else{
+      const choice=data.choices?.[0];
+      if(['length','content_filter'].includes(choice?.finish_reason))throw new Error('API 输出未完整完成');
+      if(typeof choice?.delta?.content==='string')text+=choice.delta.content;
+      if(choice?.finish_reason==='stop')done=true;
+    }
+    if(text.length>200000)throw new Error('API 响应过长');
+  };
+  try{
+    while(true){
+      const chunk=await reader.read();total+=chunk.value?.length??0;
+      if(total>4000000)throw new Error('API 响应过长');
+      buffer+=decoder.decode(chunk.value??new Uint8Array(),{stream:!chunk.done});
+      // Keep a trailing CR until the next chunk, including split CRLF boundaries.
+      buffer=buffer.replace(/\r\n/g,'\n').replace(/\r(?!$)/g,'\n');
+      let end;while((end=buffer.indexOf('\n\n'))!==-1){consume(buffer.slice(0,end));buffer=buffer.slice(end+2);}
+      if(done)break;
+      if(chunk.done){if(buffer.trim())consume(buffer.replace(/\r$/,''));break;}
+    }
+    if(!done||!text.trim())throw new Error('API 流式响应中断或没有返回文字');
+    return text;
+  }finally{await reader.cancel().catch(()=>{});reader.releaseLock();}
+}
+async function callNativeApi(profile,request,signal,fetcher=fetch){
+  const p=normalizeApiProfile(profile),native=nativeApiRequest(p,request);
+  try{
+    const response=await fetcher(native.url,{method:'POST',headers:native.headers,body:JSON.stringify(native.body),signal,credentials:'omit',redirect:'error'});
+    return await readApiResponse(response,p.protocol);
+  }catch(error){
+    // Never surface response bodies, request headers or third-party error text.
+    if(signal?.aborted)throw new Error('状态 API 请求已取消');
+    if(error.message?.startsWith('API '))throw error;
+    throw new Error('API 请求失败，请检查协议、网络与服务的浏览器跨域支持');
+  }
+}
+async function fetchNativeModels(profile,signal,fetcher=fetch){
+  const p=normalizeApiProfile(profile);
+  const response=await fetcher(apiEndpoint(p,true),{headers:apiHeaders(p),signal,credentials:'omit',redirect:'error'});
+  if(!response.ok)throw new Error('模型列表请求失败');
+  const data=await response.json(),items=Array.isArray(data)?data:data.data??data.models??[];
+  return items.map(item=>typeof item==='string'?item:item.id??item.name).filter(item=>typeof item==='string');
 }
 
 
@@ -970,7 +1131,7 @@ function createAppearanceJob({generate,stop,validate,assertCurrent,report,setTim
     const job={cancelled:false,id:'',reject:null};
     const cancelled=new Promise((_,reject)=>{job.reject=reject;});
     active=job;
-    const timer=setTimer(()=>cancel('外观生成超时，原草稿保留'),options.timeoutSeconds*1000);
+    const timer=options.timeoutSeconds>0?setTimer(()=>cancel('外观生成超时，原草稿保留'),options.timeoutSeconds*1000):undefined;
     const guard=()=>{if(job.cancelled)throw new Error('外观生成已取消，原草稿保留');assertCurrent();};
     try{
       return await Promise.race([cancelled,(async()=>{
@@ -1113,8 +1274,8 @@ function createApiPanel({doc,read,write,binding,setBinding,run,cancel,undo,onErr
   const auto=field('自动更新','checkbox',switchRow),stream=field('兼容流式响应','checkbox',switchRow);
   const limitRow=uiGrid(doc,bindingGroup);
   const attempts=field('请求总次数','number',limitRow),timeout=field('总超时（秒）','number',limitRow);
-  attempts.min='1';attempts.max='5';attempts.step='1';timeout.min='15';timeout.max='600';timeout.step='1';
-  note(bindingGroup,'依次请求，失败后重试；次数包含首次请求。返回完整状态块但格式、协议、栏目或读取凭据校验失败时，下一次请求会带上本地校验原因；道歉、拒答、空响应等没有完整状态块的回复直接重试，不附带原因，也不沿用此前的纠错理由；总超时覆盖全部尝试，取消或聊天变化不会重试。流式只用于接收响应，完整校验前不写入状态。');
+  attempts.min='1';attempts.max='5';attempts.step='1';timeout.min='0';timeout.max='600';timeout.step='1';
+  note(bindingGroup,'默认总共请求 3 次（含首次），总超时默认 0 表示无限制，也可填 15～600 秒。依次失败后重试。返回完整状态块但格式、协议、栏目或读取凭据校验失败时，下一次请求会带上本地校验原因；道歉、拒答、空响应等没有完整状态块的回复直接重试，不附带原因，也不沿用此前的纠错理由；总超时覆盖全部尝试，取消或聊天变化不会重试。流式只用于接收响应，完整校验前不写入状态。');
   note(bindingGroup,'以上请求设置和绑定需保存后生效；可在首次制作 HTML 前保存绑定。外观制作复用模型连接与请求策略，使用独立 HTML 提示词，不使用这里的请求预设。自动更新只用于额外模型模式。随正文模式下，这里的模型与请求设置用于手动重算最新失败回复，无需切换模式。重试与撤销保留剧情正文。');
   const bindingHelp=make('details',null,bindingGroup);make('summary','请求规则与使用说明',bindingHelp);
   for(const explanation of [...bindingGroup.querySelectorAll(':scope > .ls-note')])bindingHelp.append(explanation);
@@ -1131,18 +1292,25 @@ function createApiPanel({doc,read,write,binding,setBinding,run,cancel,undo,onErr
   const profileRow=uiGrid(doc,profileGroup);
   const name=field('API 预设名称','text',profileRow),model=field('API 模型名称','text',profileRow);
   const url=field('API 地址','text',profileGroup),key=field('API 密钥','password',profileGroup),models=field('可用模型','select',profileGroup);
+  const protocol=field('API 协议','select',profileGroup);
+  choices(protocol,[['helper','OpenAI 兼容（酒馆助手）'],['chat','Chat Completions（直连）'],['responses','OpenAI Responses（直连）'],['anthropic','Anthropic Messages（直连）']]);
+  const exact=field('API 地址是完整端点','checkbox',profileGroup),modelsUrl=field('模型列表地址（可选）','text',profileGroup),headers=field('自定义请求头（JSON）','password',profileGroup);
+  headers.autocomplete='off';headers.placeholder='{}';
+  make('p','直连协议使用内置预设，需要服务允许浏览器跨域请求。基础地址可含 /v1、/v3 或其他前缀；勾选完整端点后原样请求该地址。自定义模型列表地址须同源。不提供列表的服务可手填模型。自定义请求头与密钥同样仅保存在本地。',profileGroup);
   url.placeholder='https://example.com/v1';key.autocomplete='off';name.maxLength=40;model.maxLength=200;
-  let editedId='',modelEpoch=0;
-  const resetModels=()=>{modelEpoch++;choices(models,[['','手动填写模型，或获取列表']]);};
+  let editedId='',modelEpoch=0,modelController=null;
+  const resetModels=()=>{modelEpoch++;modelController?.abort();choices(models,[['','手动填写模型，或获取列表']]);};
   models.onchange=()=>{if(models.value)model.value=models.value;};
-  url.oninput=key.oninput=resetModels;
+  url.oninput=key.oninput=modelsUrl.oninput=headers.oninput=resetModels;
+  protocol.onchange=exact.onchange=resetModels;
   const modelActions=uiActions(doc,profileGroup);
   action('获取模型列表',async()=>{
-    if(!fetchModels)throw new Error('当前酒馆助手不支持获取模型列表');
-    const address=normalizeApiAddress(url.value),secret=key.value,epoch=++modelEpoch;let timer;
+    if(protocol.value==='helper'&&!fetchModels)throw new Error('当前酒馆助手不支持获取模型列表');
+    const address=normalizeApiAddress(url.value,protocol.value,exact.checked),secret=key.value,epoch=++modelEpoch;let timer;
+    modelController?.abort();const controller=new AbortController();modelController=controller;
     status.textContent='正在获取模型列表…';
     try{
-      const result=await Promise.race([fetchModels({apiurl:address,key:secret}),new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('模型列表请求超时')),30000);})]);
+      const result=await Promise.race([protocol.value==='helper'?fetchModels({apiurl:address,key:secret}):fetchNativeModels({...values(),name:name.value||'模型列表',model:model.value||'待选择'},controller.signal),new Promise((_,reject)=>{timer=setTimeout(()=>{controller.abort();reject(new Error('模型列表请求超时'));},30000);})]);
       if(epoch!==modelEpoch)return;
       const names=[...new Set((Array.isArray(result)?result:[]).filter(v=>typeof v==='string'&&v.length&&v.length<=200))].sort();
       choices(models,[['','请选择模型'],...names.map(v=>[v,v])]);status.textContent=names.length?`获取到 ${names.length} 个模型，选择后请保存 API 预设。`:'服务未返回模型列表，请检查连接或手动填写模型名称。';
@@ -1150,6 +1318,11 @@ function createApiPanel({doc,read,write,binding,setBinding,run,cancel,undo,onErr
     finally{clearTimeout(timer);}
   },modelActions);
   const advanced=make('details',null,profileGroup);make('summary','高级采样参数',advanced);
+  const reasoning=field('思考程度','select',advanced);
+  const tokenField=field('Chat Completions 长度参数','select',advanced);choices(tokenField,[['max_tokens','max_tokens（兼容服务）'],['max_completion_tokens','max_completion_tokens（OpenAI 推理模型）']]);
+  make('p','长度参数选项仅用于 Chat Completions 直连；Responses 和 Anthropic 自动使用各自字段。',advanced);
+  choices(reasoning,[['auto','auto（跟随服务默认）'],['none','关闭（none）'],['minimal','minimal'],['low','low'],['medium','medium'],['high','high'],['xhigh','xhigh'],['max','max'],['ultra','ultra']]);
+  make('p','指定思考程度需使用直连协议。可用等级由服务和模型决定，max 不会自动降级；不支持时服务会报错。Anthropic 使用 adaptive thinking 与 effort；思考和回答共用最大 tokens，启用后不发送采样参数。OpenAI 推理模型如不支持温度等参数，请将其留空。',advanced);
   note(advanced,'留空表示不发送该采样参数，使用服务默认值。最大回复长度为 0 时不发送；Top K 为 0 时不发送。不同服务支持的参数不同。');
   const advancedRow=uiGrid(doc,advanced);
   const maxTokens=field('最大回复 tokens','number',advancedRow),temperature=field('更新温度','number',advancedRow),topP=field('Top P','number',advancedRow),topK=field('Top K','number',advancedRow),frequency=field('频率惩罚','number',advancedRow),presence=field('存在惩罚','number',advancedRow);
@@ -1196,7 +1369,8 @@ function createApiPanel({doc,read,write,binding,setBinding,run,cancel,undo,onErr
   action('清除诊断',()=>{clearDiagnostics();syncDiagnostics();},diagnosticActions);
   function load(){
     resetModels();const p=(read().profiles??[]).find(p=>p.id===select.value);editedId=p?.id??'';
-    for(const [el,value] of [[name,p?.name??''],[url,p?.url??''],[key,p?.key??''],[model,p?.model??''],[maxTokens,p?.maxTokens??4096],[temperature,p?.temperature??0.2],[topP,p?.topP??''],[topK,p?.topK??''],[frequency,p?.frequencyPenalty??''],[presence,p?.presencePenalty??'']])el.value=value==='unset'?'':value;
+    protocol.value=p?.protocol??'helper';exact.checked=p?.exact??false;modelsUrl.value=p?.modelsUrl??'';headers.value=JSON.stringify(p?.headers??{});reasoning.value=p?.reasoning??'auto';tokenField.value=p?.tokenField??'max_tokens';
+    for(const [el,value] of [[name,p?.name??''],[url,p?.url??''],[key,p?.key??''],[model,p?.model??''],[maxTokens,p?.maxTokens??8000],[temperature,p?.temperature??0.2],[topP,p?.topP??''],[topK,p?.topK??''],[frequency,p?.frequencyPenalty??''],[presence,p?.presencePenalty??'']])el.value=value==='unset'?'':value;
   }
   function visibility(){presetName.parentElement.hidden=presetMode.value!=='named';bound.parentElement.hidden=source.value!=='custom';}
   presetMode.onchange=source.onchange=visibility;
@@ -1215,13 +1389,16 @@ function createApiPanel({doc,read,write,binding,setBinding,run,cancel,undo,onErr
     load();visibility();refreshOperations();
   }
   select.onchange=load;
-  const values=()=>({id:editedId||crypto.randomUUID(),name:name.value,url:url.value,key:key.value,model:model.value,maxTokens:maxTokens.value,temperature:temperature.value,topP:topP.value,topK:topK.value,frequencyPenalty:frequency.value,presencePenalty:presence.value});
+  const values=()=>({id:editedId||crypto.randomUUID(),name:name.value,url:url.value,key:key.value,model:model.value,maxTokens:maxTokens.value,temperature:temperature.value,topP:topP.value,topK:topK.value,frequencyPenalty:frequency.value,presencePenalty:presence.value,protocol:protocol.value,exact:exact.checked,modelsUrl:modelsUrl.value,headers:headers.value,reasoning:reasoning.value,tokenField:tokenField.value});
   action('保存 API 预设',()=>{const p=values();write(saveApiProfile(read(),p));sync(p.id);status.textContent+=' API 预设已保存。';},profileActions).classList.add('ls-primary');
   action('另存为新 API 预设',()=>{const p={...values(),id:crypto.randomUUID()};write(saveApiProfile(read(),p));sync(p.id);},profileActions);
   action('删除 API 预设',()=>{if(!editedId)throw new Error('请选择要删除的预设');write(deleteApiProfile(read(),editedId));sync('');},profileActions).classList.add('ls-danger');
   action('保存状态更新绑定',()=>{
     const config=normalizeUpdateSettings({...binding(),mode:mode.value,profileId:bound.value,source:source.value,presetMode:presetMode.value,presetName:presetName.value,auto:auto.checked,stream:stream.checked,attempts:attempts.value,timeoutSeconds:timeout.value});
-    if(config.mode==='extra'&&config.source==='custom')boundApiProfile(read(),config.profileId);
+    if(config.mode==='extra'&&config.source==='custom'){
+      const p=boundApiProfile(read(),config.profileId);
+      if(p.protocol!=='helper'&&config.presetMode!=='builtin')throw new Error('直连协议请使用内置预设；酒馆预设请使用酒馆助手连接');
+    }
     if(config.presetMode==='named'&&!listRequestPresets().includes(config.presetName))throw new Error('所选酒馆预设已失效');
     setBinding(config);sync();
   },bindingActions).classList.add('ls-primary');
@@ -1233,7 +1410,7 @@ function createApiPanel({doc,read,write,binding,setBinding,run,cancel,undo,onErr
     updateScope.textContent=(latest?`目标：第 ${latest.floor} 楼。`:'当前聊天还没有 AI 回复。')+(config.mode==='inline'?'随正文模式：只重算失败回复；尾部截断会先要求核对分界。':'额外模型模式：重新整理最新回复状态。')+` 模型：${config.source==='current'?'酒馆当前连接':profile?.name??'未绑定，请先配置模型连接'}。`;
     syncUpdatePreview();syncDiagnostics();
   }
-  return {panel,updatePanel,sync,refreshOperations,report:text=>{updateStatus.textContent=text;},refreshUpdate:syncUpdatePreview,refreshDiagnostics:syncDiagnostics,clear:()=>{modelEpoch++;loadedSignature=null;key.value='';updateStatus.textContent='';updateScope.textContent='';updateBox.value='';updateMeta.textContent='';diagnosticBox.value='';diagnosticMeta.textContent='';}};
+  return {panel,updatePanel,sync,refreshOperations,report:text=>{updateStatus.textContent=text;},refreshUpdate:syncUpdatePreview,refreshDiagnostics:syncDiagnostics,clear:()=>{modelEpoch++;modelController?.abort();headers.value='{}';loadedSignature=null;key.value='';updateStatus.textContent='';updateScope.textContent='';updateBox.value='';updateMeta.textContent='';diagnosticBox.value='';diagnosticMeta.textContent='';}};
 }
 
 
@@ -1743,12 +1920,16 @@ function startPrototype(defaultHtml) {
   const loadedChatId=ctx().getCurrentChatId(),loadedChatRef=ctx().chat;
   let runtimeRegistration=null;
   const settings=()=>getVariables({type:'script'})[PROTO_KEY]??{};
-  const chatSettings=()=>getVariables({type:'chat'})[PROTO_KEY]??{};
+  const chatSettings=()=>{
+    const saved=getVariables({type:'chat'})[PROTO_KEY]??{},config=settings();
+    return config.configId&&saved.configId!==config.configId?{enabled:false}:saved;
+  };
   const apiSettings=()=>getVariables({type:'global'})?.[API_PROFILE_KEY]??{profiles:[]};
   const updateBinding=()=>normalizeUpdateSettings(chatSettings().variableUpdate);
   const requestPresets=()=>typeof getPresetNames==='function'?getPresetNames():[];
   const selectedStateModel=binding=>binding.source==='custom'?boundApiProfile(apiSettings(),binding.profileId):null;
   function checkRequestPreset(binding){
+    if(binding.source==='custom'&&selectedStateModel(binding).protocol!=='helper'&&binding.presetMode!=='builtin')throw new Error('直连协议请使用内置预设；酒馆预设请使用酒馆助手连接');
     if(binding.source==='current'&&ctx().mainApi!=='openai')throw new Error('跟随当前连接需要酒馆使用 Chat Completion；其他连接请绑定独立 API');
     if(binding.presetMode!=='builtin'&&typeof generate!=='function')throw new Error('当前酒馆助手缺少预设生成接口');
     if(binding.presetMode==='named'&&!requestPresets().includes(binding.presetName))throw new Error('指定的酒馆请求预设不存在，请重新选择');
@@ -2111,12 +2292,12 @@ function startPrototype(defaultHtml) {
     if(!ctx().getCurrentChatId()||!messages().length)throw new Error('请先打开角色聊天');
     if(ctx().chatMetadata?.wishnote_v1?.enabled||ctx().chatMetadata?.lorestate_v1?.enabled)throw new Error('本聊天启用了旧扩展状态，请先停用旧版或使用新测试聊天');
     const schema=dataSchemaFromEntry(entry),previous=settings();validateTemplateV2(html.value,schema);
-    if(previous.ready&&previous.schema&&!sameSchema(schema,previous.schema))throw new Error('已有配置不支持改变栏目，以免影响其他聊天。新栏目请使用独立角色脚本。');
+    if(previous.ready&&previous.schema&&!sameSchema(schema,previous.schema))throw new Error('栏目已改变，请先在“聊天维护”中彻底删除旧配置，再保存新的栏目。');
     const activePresetId=previous.activePresetId??'default';
     const activeName=listPresets(previous).find(p=>p.id===activePresetId)?.name??'默认样式';
     const config=savePreset({...previous,version:4,ready:true,book,uid:entry.uid,setupBinding:{book,uid:entry.uid},entryName:entry.name,html:html.value,schema,activePresetId},activeName,html.value,activePresetId);
     updateVariablesWith(v=>({...v,[PROTO_KEY]:config}),{type:'script'});
-    const old=chatSettings();updateVariablesWith(v=>({...v,[PROTO_KEY]:{...old,enabled:true,start:old.start??(previous.ready?1:Math.max(1,messages().length))}}),{type:'chat'});
+    const old=chatSettings();updateVariablesWith(v=>({...v,[PROTO_KEY]:{...old,configId:config.configId,enabled:true,start:old.start??(config.configId?Math.max(1,(messages().at(-1)?.message_id??0)+1):previous.ready?1:Math.max(1,messages().length))}}),{type:'chat'});
     // Separate display and prompt copy filters; neither edits the source message.
     await installRegex();if(!matches(original))return;
     if(!isCharacterTavernRegexesEnabled())report('已保存，但本卡局部正则未启用。请启用局部正则后生成，否则历史标签仍会进入上下文。');
@@ -2130,6 +2311,19 @@ function startPrototype(defaultHtml) {
   });
   button('暂停本聊天',panel,async()=>{
     updateVariablesWith(v=>({...v,[PROTO_KEY]:{...chatSettings(),enabled:false}}),{type:'chat'});uninject?.();uninject=null;stateWindow.close();view?.remove();report('已暂停；数据和 HTML 保留，标签过滤正则保留。');
+  });
+  const resetHelp=node('p','彻底删除会清除本脚本的栏目、HTML、外观预设、作者默认配置，以及本聊天的状态、快照、回档与更新绑定。聊天正文、世界书和全局 API 预设保留。其他旧聊天会停用，重新启用时清除旧状态，从下一条回复开始。请输入“删除旧配置”确认。');
+  const resetLabel=node('label','删除确认'),resetInput=node('input',undefined,resetLabel);resetInput.setAttribute('aria-label','删除旧配置确认');
+  button('彻底删除旧配置',panel,async()=>{
+    if(resetInput.value!=='删除旧配置')throw new Error('请输入“删除旧配置”确认删除范围');
+    if(hostGenerating()||extraJob||continuationWork||appearanceJob?.busy)throw new Error('请先停止生成或取消状态更新、外观生成，再删除配置');
+    chatEpoch++;cancelExtraUpdate();uninject?.();uninject=null;
+    const configId=crypto.randomUUID();
+    updateVariablesWith(v=>({...v,[PROTO_KEY]:{configId,ready:false}}),{type:'script'});
+    updateVariablesWith(v=>{const next={...v};delete next[PROTO_KEY];return next;},{type:'chat'});
+    stateWindow.close();view?.remove();renderKey='';capturedKey='';noticeKey='';notice.hidden=true;runtimeLogs=[];draft=null;restoreDraft=null;
+    html.value='';maker.value='';initialEditor.value='';constraintEditor.value='';policyDraft=null;policyPreview.textContent='尚未预览';preview.srcdoc='';snapshotPreview.textContent='';resetInput.value='';apiUi.sync();syncPresets();
+    report('旧配置已删除。重新选择世界书条目、填写 HTML 并保存即可改变栏目；新状态从下一条回复开始，历史正文保留。');
   });
   button('重新读取当前聊天状态',panel,async()=>{renderKey='';await refresh();const result=getResult();report(result.errors.length?`重新校验后仍有 ${result.errors.length} 轮失败，请打开状态管理器。`:'全部参与回放的楼层已通过校验。');});
   const authorHelp=node('p','可选：作者初始档案让首轮直接从确定事实增量更新；字段规则只做文字约束。保存的默认值用于新聊天，已有聊天保留自己的配置。');authorHelp.className='ls-note';
@@ -2160,7 +2354,7 @@ function startPrototype(defaultHtml) {
     updateVariablesWith(v=>({...v,[PROTO_KEY]:{...v[PROTO_KEY],policy}}),{type:'chat'});renderKey='';capturedKey='';await refresh();report('作者配置已用于本聊天，首轮将按初始档案更新。');
   });
   async function loadSettings(){try{syncPresets();await loadBooks();}catch(e){fault(e,'设置读取失败');}}
-  async function open(){if(!settings().ready){center.open('settings');await loadSettings();}else openManager();}
+  async function open(){if(!settings().ready||settings().configId&&getVariables({type:'chat'})[PROTO_KEY]?.configId!==settings().configId){center.open('settings');await loadSettings();report('请保存并启用当前配置；重新启用旧聊天会清除旧状态，从下一条回复开始。');}else openManager();}
   const a=title=>actions.get(title);
   function cancelExtraUpdate(){
     autoUpdate=null;clearTimeout(autoTimer);autoTimer=null;
@@ -2195,7 +2389,8 @@ function startPrototype(defaultHtml) {
     const profile=selectedStateModel(binding),input=appearanceInput(options),id=identity(),epoch=chatEpoch,key=appearanceContext();
     appearancePrompt(input);
     generating=false;uninject?.();uninject=null;
-    const job=createAppearanceJob({generate:request=>generateRaw(request),stop:id=>stopGenerationById(id),
+    const nativeController=new AbortController();
+    const job=createAppearanceJob({generate:request=>profile&&profile.protocol!=='helper'?callNativeApi(profile,request,nativeController.signal):generateRaw(request),stop:id=>{nativeController.abort();stopGenerationById(id);},
       validate:source=>{renderTemplateV2(source,templatePreviewState(input.schema),input.schema);},report:notify,
       assertCurrent:()=>{if(!matches(id)||epoch!==chatEpoch||hostGenerating()||key!==appearanceContext())throw new Error('聊天、栏目、草稿或 API 配置已变化，生成结果未写入');},
     });
@@ -2213,7 +2408,7 @@ function startPrototype(defaultHtml) {
     appearancePanel:appearanceUi.panel,loadAppearance:async()=>{await loadSettings();appearanceUi.sync();},settingsGroups:[
     {title:'世界书与规则',hint:'选择条目后确认绑定，再到外观制作台生成 HTML，最后保存并启用。',items:[bookLabel,entryLabel,[a('刷新世界书列表'),a('确认绑定状态栏条目'),openAppearance],ruleDisclosure,[a('保存 HTML 并启用本聊天')]]},
     {title:'初始档案与字段约束',hint:'可选：给新聊天一份确定的初始状态，并用文字规则约束字段。保存的默认值用于新聊天，已有聊天保留自己的配置。',items:[authorHelp,initialLabel,[a('生成初始档案模板')],constraintLabel,[a('预览作者配置')],policyPreview,[a('保存为新聊天默认配置'),a('应用到尚未开始的本聊天')]]},
-    {title:'聊天维护',hint:'重新计算本聊天状态，或暂停本聊天的状态更新。',items:[[a('重新读取当前聊天状态'),a('暂停本聊天')]]},
+    {title:'聊天维护',hint:'重新计算本聊天状态，或暂停本聊天的状态更新。',items:[[a('重新读取当前聊天状态'),a('暂停本聊天')],resetHelp,resetLabel,[a('彻底删除旧配置')]]},
   ]});
   const menu=node('div');menu.className='extension_container';
   const opener=button('LoreState',menu,open);opener.className='list-group-item';opener.style.cssText='background:transparent;color:inherit;border:0;text-align:left;width:100%;font:inherit';
@@ -2284,7 +2479,7 @@ function startPrototype(defaultHtml) {
     const schemaKey=snapshotSchema(schema,start),captureKey=JSON.stringify([ctx().getCurrentChatId(),signature,schemaKey,checkpoint]);
     const snapshots=capturedKey===captureKey?readSnapshots(old):await collectSnapshots(list,schema,start,old.checkpoint,readSnapshots(old));
     const packed=capturedKey===captureKey&&old.snapshotStore?old.snapshotStore:await packSnapshots(snapshots,old.snapshotStore??emptySnapshotStore());
-    if(!matches(id)||hostGenerating()||historyIdentity(messages())!==signature||snapshotSchema(schemaFor(),chatSettings().start??1)!==schemaKey||JSON.stringify(chatSettings().checkpoint??null)!==checkpoint)return;
+    if(!matches(id)||!active(settings())||hostGenerating()||historyIdentity(messages())!==signature||snapshotSchema(schemaFor(),chatSettings().start??1)!==schemaKey||JSON.stringify(chatSettings().checkpoint??null)!==checkpoint)return;
     const record={...result,lastFloor:list.at(-1)?.message_id??-1};
     updateVariablesWith(v=>{
       const current=v[PROTO_KEY]??{},store=current.snapshotStore??emptySnapshotStore(),merged=new Map(store.snapshots.map(s=>[s.id,s]));
@@ -2353,7 +2548,8 @@ function startPrototype(defaultHtml) {
     const token=crypto.randomUUID();let generationId=crypto.randomUUID();
     let rejectCancel,timer;
     const cancelled=new Promise((_,reject)=>{rejectCancel=reject;});
-    const job={cancelled:false,committed:false,cancel(){if(job.cancelled||job.committed)return;job.cancelled=true;try{stopGenerationById(generationId);}catch{}rejectCancel(new Error('状态更新已取消或超时，原消息保留'));}};
+    const controller=new AbortController();
+    const job={cancelled:false,committed:false,cancel(){if(job.cancelled||job.committed)return;job.cancelled=true;controller.abort();try{stopGenerationById(generationId);}catch{}rejectCancel(new Error('状态更新已取消或超时，原消息保留'));}};
     extraJob=job;autoUpdate=null;
     const current=()=>matches(id)&&chatEpoch===epoch&&!job.cancelled;
     const assertCurrent=()=>{
@@ -2362,7 +2558,7 @@ function startPrototype(defaultHtml) {
       if(requestContextIdentity(binding)!==requestContextKey)throw new Error('酒馆预设或当前连接已变化，状态结果未写入');
     };
     apiUi.report(`正在使用“${profile?.name??'酒馆当前连接'}”更新第 ${last.message_id} 楼状态…`);
-    timer=setTimeout(job.cancel,binding.timeoutSeconds*1000);
+    if(binding.timeoutSeconds>0)timer=setTimeout(job.cancel,binding.timeoutSeconds*1000);
     try{
       await Promise.race([cancelled,(async()=>{
         const source=await getWorldbook(config.book);assertCurrent();
@@ -2385,7 +2581,7 @@ function startPrototype(defaultHtml) {
           let output,failure;
           try{
             const request=extraModelRequest(profile,content,narrative,generationId,binding);
-            output=await (binding.presetMode==='builtin'?generateRaw(request):generate(request));
+            output=await (profile&&profile.protocol!=='helper'?callNativeApi(profile,request,controller.signal):binding.presetMode==='builtin'?generateRaw(request):generate(request));
             const savedOutput=diagnosticText(output);Object.assign(diagnostic,{status:'returned-awaiting-validation',output:savedOutput.text,truncated:savedOutput.truncated});
           }catch(error){failure='状态 API 请求失败，请检查连接配置和网络';Object.assign(diagnostic,{status:'request-error',requestError:safeDiagnosticError(error,[profile?.key])});}
           assertCurrent();

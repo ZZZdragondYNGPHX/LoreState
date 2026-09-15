@@ -1,6 +1,7 @@
 import { boundApiProfile, saveApiProfile, deleteApiProfile, normalizeApiAddress, normalizeUpdateSettings } from './api-profiles.js';
 import { TAG_PATTERN } from './core.js';
 import { uiCard, uiNote, uiHeading, uiActions, uiGrid } from './ui-kit.js';
+import { fetchNativeModels } from './api-transport.js';
 
 export function createApiPanel({doc,read,write,binding,setBinding,run,cancel,undo,onError,listRequestPresets=()=>[],fetchModels,readDiagnostics=()=>[],clearDiagnostics=()=>{}}){
   const make=(tag,text,parent)=>{const el=doc.createElement(tag);if(text)el.textContent=text;parent?.append(el);return el;};
@@ -31,8 +32,8 @@ export function createApiPanel({doc,read,write,binding,setBinding,run,cancel,und
   const auto=field('自动更新','checkbox',switchRow),stream=field('兼容流式响应','checkbox',switchRow);
   const limitRow=uiGrid(doc,bindingGroup);
   const attempts=field('请求总次数','number',limitRow),timeout=field('总超时（秒）','number',limitRow);
-  attempts.min='1';attempts.max='5';attempts.step='1';timeout.min='15';timeout.max='600';timeout.step='1';
-  note(bindingGroup,'依次请求，失败后重试；次数包含首次请求。返回完整状态块但格式、协议、栏目或读取凭据校验失败时，下一次请求会带上本地校验原因；道歉、拒答、空响应等没有完整状态块的回复直接重试，不附带原因，也不沿用此前的纠错理由；总超时覆盖全部尝试，取消或聊天变化不会重试。流式只用于接收响应，完整校验前不写入状态。');
+  attempts.min='1';attempts.max='5';attempts.step='1';timeout.min='0';timeout.max='600';timeout.step='1';
+  note(bindingGroup,'默认总共请求 3 次（含首次），总超时默认 0 表示无限制，也可填 15～600 秒。依次失败后重试。返回完整状态块但格式、协议、栏目或读取凭据校验失败时，下一次请求会带上本地校验原因；道歉、拒答、空响应等没有完整状态块的回复直接重试，不附带原因，也不沿用此前的纠错理由；总超时覆盖全部尝试，取消或聊天变化不会重试。流式只用于接收响应，完整校验前不写入状态。');
   note(bindingGroup,'以上请求设置和绑定需保存后生效；可在首次制作 HTML 前保存绑定。外观制作复用模型连接与请求策略，使用独立 HTML 提示词，不使用这里的请求预设。自动更新只用于额外模型模式。随正文模式下，这里的模型与请求设置用于手动重算最新失败回复，无需切换模式。重试与撤销保留剧情正文。');
   const bindingHelp=make('details',null,bindingGroup);make('summary','请求规则与使用说明',bindingHelp);
   for(const explanation of [...bindingGroup.querySelectorAll(':scope > .ls-note')])bindingHelp.append(explanation);
@@ -49,18 +50,25 @@ export function createApiPanel({doc,read,write,binding,setBinding,run,cancel,und
   const profileRow=uiGrid(doc,profileGroup);
   const name=field('API 预设名称','text',profileRow),model=field('API 模型名称','text',profileRow);
   const url=field('API 地址','text',profileGroup),key=field('API 密钥','password',profileGroup),models=field('可用模型','select',profileGroup);
+  const protocol=field('API 协议','select',profileGroup);
+  choices(protocol,[['helper','OpenAI 兼容（酒馆助手）'],['chat','Chat Completions（直连）'],['responses','OpenAI Responses（直连）'],['anthropic','Anthropic Messages（直连）']]);
+  const exact=field('API 地址是完整端点','checkbox',profileGroup),modelsUrl=field('模型列表地址（可选）','text',profileGroup),headers=field('自定义请求头（JSON）','password',profileGroup);
+  headers.autocomplete='off';headers.placeholder='{}';
+  make('p','直连协议使用内置预设，需要服务允许浏览器跨域请求。基础地址可含 /v1、/v3 或其他前缀；勾选完整端点后原样请求该地址。自定义模型列表地址须同源。不提供列表的服务可手填模型。自定义请求头与密钥同样仅保存在本地。',profileGroup);
   url.placeholder='https://example.com/v1';key.autocomplete='off';name.maxLength=40;model.maxLength=200;
-  let editedId='',modelEpoch=0;
-  const resetModels=()=>{modelEpoch++;choices(models,[['','手动填写模型，或获取列表']]);};
+  let editedId='',modelEpoch=0,modelController=null;
+  const resetModels=()=>{modelEpoch++;modelController?.abort();choices(models,[['','手动填写模型，或获取列表']]);};
   models.onchange=()=>{if(models.value)model.value=models.value;};
-  url.oninput=key.oninput=resetModels;
+  url.oninput=key.oninput=modelsUrl.oninput=headers.oninput=resetModels;
+  protocol.onchange=exact.onchange=resetModels;
   const modelActions=uiActions(doc,profileGroup);
   action('获取模型列表',async()=>{
-    if(!fetchModels)throw new Error('当前酒馆助手不支持获取模型列表');
-    const address=normalizeApiAddress(url.value),secret=key.value,epoch=++modelEpoch;let timer;
+    if(protocol.value==='helper'&&!fetchModels)throw new Error('当前酒馆助手不支持获取模型列表');
+    const address=normalizeApiAddress(url.value,protocol.value,exact.checked),secret=key.value,epoch=++modelEpoch;let timer;
+    modelController?.abort();const controller=new AbortController();modelController=controller;
     status.textContent='正在获取模型列表…';
     try{
-      const result=await Promise.race([fetchModels({apiurl:address,key:secret}),new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('模型列表请求超时')),30000);})]);
+      const result=await Promise.race([protocol.value==='helper'?fetchModels({apiurl:address,key:secret}):fetchNativeModels({...values(),name:name.value||'模型列表',model:model.value||'待选择'},controller.signal),new Promise((_,reject)=>{timer=setTimeout(()=>{controller.abort();reject(new Error('模型列表请求超时'));},30000);})]);
       if(epoch!==modelEpoch)return;
       const names=[...new Set((Array.isArray(result)?result:[]).filter(v=>typeof v==='string'&&v.length&&v.length<=200))].sort();
       choices(models,[['','请选择模型'],...names.map(v=>[v,v])]);status.textContent=names.length?`获取到 ${names.length} 个模型，选择后请保存 API 预设。`:'服务未返回模型列表，请检查连接或手动填写模型名称。';
@@ -68,6 +76,11 @@ export function createApiPanel({doc,read,write,binding,setBinding,run,cancel,und
     finally{clearTimeout(timer);}
   },modelActions);
   const advanced=make('details',null,profileGroup);make('summary','高级采样参数',advanced);
+  const reasoning=field('思考程度','select',advanced);
+  const tokenField=field('Chat Completions 长度参数','select',advanced);choices(tokenField,[['max_tokens','max_tokens（兼容服务）'],['max_completion_tokens','max_completion_tokens（OpenAI 推理模型）']]);
+  make('p','长度参数选项仅用于 Chat Completions 直连；Responses 和 Anthropic 自动使用各自字段。',advanced);
+  choices(reasoning,[['auto','auto（跟随服务默认）'],['none','关闭（none）'],['minimal','minimal'],['low','low'],['medium','medium'],['high','high'],['xhigh','xhigh'],['max','max'],['ultra','ultra']]);
+  make('p','指定思考程度需使用直连协议。可用等级由服务和模型决定，max 不会自动降级；不支持时服务会报错。Anthropic 使用 adaptive thinking 与 effort；思考和回答共用最大 tokens，启用后不发送采样参数。OpenAI 推理模型如不支持温度等参数，请将其留空。',advanced);
   note(advanced,'留空表示不发送该采样参数，使用服务默认值。最大回复长度为 0 时不发送；Top K 为 0 时不发送。不同服务支持的参数不同。');
   const advancedRow=uiGrid(doc,advanced);
   const maxTokens=field('最大回复 tokens','number',advancedRow),temperature=field('更新温度','number',advancedRow),topP=field('Top P','number',advancedRow),topK=field('Top K','number',advancedRow),frequency=field('频率惩罚','number',advancedRow),presence=field('存在惩罚','number',advancedRow);
@@ -114,7 +127,8 @@ export function createApiPanel({doc,read,write,binding,setBinding,run,cancel,und
   action('清除诊断',()=>{clearDiagnostics();syncDiagnostics();},diagnosticActions);
   function load(){
     resetModels();const p=(read().profiles??[]).find(p=>p.id===select.value);editedId=p?.id??'';
-    for(const [el,value] of [[name,p?.name??''],[url,p?.url??''],[key,p?.key??''],[model,p?.model??''],[maxTokens,p?.maxTokens??4096],[temperature,p?.temperature??0.2],[topP,p?.topP??''],[topK,p?.topK??''],[frequency,p?.frequencyPenalty??''],[presence,p?.presencePenalty??'']])el.value=value==='unset'?'':value;
+    protocol.value=p?.protocol??'helper';exact.checked=p?.exact??false;modelsUrl.value=p?.modelsUrl??'';headers.value=JSON.stringify(p?.headers??{});reasoning.value=p?.reasoning??'auto';tokenField.value=p?.tokenField??'max_tokens';
+    for(const [el,value] of [[name,p?.name??''],[url,p?.url??''],[key,p?.key??''],[model,p?.model??''],[maxTokens,p?.maxTokens??8000],[temperature,p?.temperature??0.2],[topP,p?.topP??''],[topK,p?.topK??''],[frequency,p?.frequencyPenalty??''],[presence,p?.presencePenalty??'']])el.value=value==='unset'?'':value;
   }
   function visibility(){presetName.parentElement.hidden=presetMode.value!=='named';bound.parentElement.hidden=source.value!=='custom';}
   presetMode.onchange=source.onchange=visibility;
@@ -133,13 +147,16 @@ export function createApiPanel({doc,read,write,binding,setBinding,run,cancel,und
     load();visibility();refreshOperations();
   }
   select.onchange=load;
-  const values=()=>({id:editedId||crypto.randomUUID(),name:name.value,url:url.value,key:key.value,model:model.value,maxTokens:maxTokens.value,temperature:temperature.value,topP:topP.value,topK:topK.value,frequencyPenalty:frequency.value,presencePenalty:presence.value});
+  const values=()=>({id:editedId||crypto.randomUUID(),name:name.value,url:url.value,key:key.value,model:model.value,maxTokens:maxTokens.value,temperature:temperature.value,topP:topP.value,topK:topK.value,frequencyPenalty:frequency.value,presencePenalty:presence.value,protocol:protocol.value,exact:exact.checked,modelsUrl:modelsUrl.value,headers:headers.value,reasoning:reasoning.value,tokenField:tokenField.value});
   action('保存 API 预设',()=>{const p=values();write(saveApiProfile(read(),p));sync(p.id);status.textContent+=' API 预设已保存。';},profileActions).classList.add('ls-primary');
   action('另存为新 API 预设',()=>{const p={...values(),id:crypto.randomUUID()};write(saveApiProfile(read(),p));sync(p.id);},profileActions);
   action('删除 API 预设',()=>{if(!editedId)throw new Error('请选择要删除的预设');write(deleteApiProfile(read(),editedId));sync('');},profileActions).classList.add('ls-danger');
   action('保存状态更新绑定',()=>{
     const config=normalizeUpdateSettings({...binding(),mode:mode.value,profileId:bound.value,source:source.value,presetMode:presetMode.value,presetName:presetName.value,auto:auto.checked,stream:stream.checked,attempts:attempts.value,timeoutSeconds:timeout.value});
-    if(config.mode==='extra'&&config.source==='custom')boundApiProfile(read(),config.profileId);
+    if(config.mode==='extra'&&config.source==='custom'){
+      const p=boundApiProfile(read(),config.profileId);
+      if(p.protocol!=='helper'&&config.presetMode!=='builtin')throw new Error('直连协议请使用内置预设；酒馆预设请使用酒馆助手连接');
+    }
     if(config.presetMode==='named'&&!listRequestPresets().includes(config.presetName))throw new Error('所选酒馆预设已失效');
     setBinding(config);sync();
   },bindingActions).classList.add('ls-primary');
@@ -151,5 +168,5 @@ export function createApiPanel({doc,read,write,binding,setBinding,run,cancel,und
     updateScope.textContent=(latest?`目标：第 ${latest.floor} 楼。`:'当前聊天还没有 AI 回复。')+(config.mode==='inline'?'随正文模式：只重算失败回复；尾部截断会先要求核对分界。':'额外模型模式：重新整理最新回复状态。')+` 模型：${config.source==='current'?'酒馆当前连接':profile?.name??'未绑定，请先配置模型连接'}。`;
     syncUpdatePreview();syncDiagnostics();
   }
-  return {panel,updatePanel,sync,refreshOperations,report:text=>{updateStatus.textContent=text;},refreshUpdate:syncUpdatePreview,refreshDiagnostics:syncDiagnostics,clear:()=>{modelEpoch++;loadedSignature=null;key.value='';updateStatus.textContent='';updateScope.textContent='';updateBox.value='';updateMeta.textContent='';diagnosticBox.value='';diagnosticMeta.textContent='';}};
+  return {panel,updatePanel,sync,refreshOperations,report:text=>{updateStatus.textContent=text;},refreshUpdate:syncUpdatePreview,refreshDiagnostics:syncDiagnostics,clear:()=>{modelEpoch++;modelController?.abort();headers.value='{}';loadedSignature=null;key.value='';updateStatus.textContent='';updateScope.textContent='';updateBox.value='';updateMeta.textContent='';diagnosticBox.value='';diagnosticMeta.textContent='';}};
 }

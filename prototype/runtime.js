@@ -9,6 +9,7 @@ import { createControlCenter } from './control-center.js';
 import { listPresets, sameSchema, savePreset, deletePreset } from './presets.js';
 import { API_PROFILE_KEY, boundApiProfile, extraModelRequest, normalizeUpdateSettings } from './api-profiles.js';
 import { createApiPanel } from './api-panel.js';
+import { callNativeApi } from './api-transport.js';
 import { appearancePrompt, createAppearanceJob } from './appearance-authoring.js';
 import { createAppearancePanel } from './appearance-panel.js';
 import { variableStory, validateExtraUpdate, settleContinuedMessage, splitTruncatedUpdate } from './extra-update.js';
@@ -27,12 +28,16 @@ export function startPrototype(defaultHtml) {
   const loadedChatId=ctx().getCurrentChatId(),loadedChatRef=ctx().chat;
   let runtimeRegistration=null;
   const settings=()=>getVariables({type:'script'})[PROTO_KEY]??{};
-  const chatSettings=()=>getVariables({type:'chat'})[PROTO_KEY]??{};
+  const chatSettings=()=>{
+    const saved=getVariables({type:'chat'})[PROTO_KEY]??{},config=settings();
+    return config.configId&&saved.configId!==config.configId?{enabled:false}:saved;
+  };
   const apiSettings=()=>getVariables({type:'global'})?.[API_PROFILE_KEY]??{profiles:[]};
   const updateBinding=()=>normalizeUpdateSettings(chatSettings().variableUpdate);
   const requestPresets=()=>typeof getPresetNames==='function'?getPresetNames():[];
   const selectedStateModel=binding=>binding.source==='custom'?boundApiProfile(apiSettings(),binding.profileId):null;
   function checkRequestPreset(binding){
+    if(binding.source==='custom'&&selectedStateModel(binding).protocol!=='helper'&&binding.presetMode!=='builtin')throw new Error('直连协议请使用内置预设；酒馆预设请使用酒馆助手连接');
     if(binding.source==='current'&&ctx().mainApi!=='openai')throw new Error('跟随当前连接需要酒馆使用 Chat Completion；其他连接请绑定独立 API');
     if(binding.presetMode!=='builtin'&&typeof generate!=='function')throw new Error('当前酒馆助手缺少预设生成接口');
     if(binding.presetMode==='named'&&!requestPresets().includes(binding.presetName))throw new Error('指定的酒馆请求预设不存在，请重新选择');
@@ -395,12 +400,12 @@ export function startPrototype(defaultHtml) {
     if(!ctx().getCurrentChatId()||!messages().length)throw new Error('请先打开角色聊天');
     if(ctx().chatMetadata?.wishnote_v1?.enabled||ctx().chatMetadata?.lorestate_v1?.enabled)throw new Error('本聊天启用了旧扩展状态，请先停用旧版或使用新测试聊天');
     const schema=dataSchemaFromEntry(entry),previous=settings();validateTemplateV2(html.value,schema);
-    if(previous.ready&&previous.schema&&!sameSchema(schema,previous.schema))throw new Error('已有配置不支持改变栏目，以免影响其他聊天。新栏目请使用独立角色脚本。');
+    if(previous.ready&&previous.schema&&!sameSchema(schema,previous.schema))throw new Error('栏目已改变，请先在“聊天维护”中彻底删除旧配置，再保存新的栏目。');
     const activePresetId=previous.activePresetId??'default';
     const activeName=listPresets(previous).find(p=>p.id===activePresetId)?.name??'默认样式';
     const config=savePreset({...previous,version:4,ready:true,book,uid:entry.uid,setupBinding:{book,uid:entry.uid},entryName:entry.name,html:html.value,schema,activePresetId},activeName,html.value,activePresetId);
     updateVariablesWith(v=>({...v,[PROTO_KEY]:config}),{type:'script'});
-    const old=chatSettings();updateVariablesWith(v=>({...v,[PROTO_KEY]:{...old,enabled:true,start:old.start??(previous.ready?1:Math.max(1,messages().length))}}),{type:'chat'});
+    const old=chatSettings();updateVariablesWith(v=>({...v,[PROTO_KEY]:{...old,configId:config.configId,enabled:true,start:old.start??(config.configId?Math.max(1,(messages().at(-1)?.message_id??0)+1):previous.ready?1:Math.max(1,messages().length))}}),{type:'chat'});
     // Separate display and prompt copy filters; neither edits the source message.
     await installRegex();if(!matches(original))return;
     if(!isCharacterTavernRegexesEnabled())report('已保存，但本卡局部正则未启用。请启用局部正则后生成，否则历史标签仍会进入上下文。');
@@ -414,6 +419,19 @@ export function startPrototype(defaultHtml) {
   });
   button('暂停本聊天',panel,async()=>{
     updateVariablesWith(v=>({...v,[PROTO_KEY]:{...chatSettings(),enabled:false}}),{type:'chat'});uninject?.();uninject=null;stateWindow.close();view?.remove();report('已暂停；数据和 HTML 保留，标签过滤正则保留。');
+  });
+  const resetHelp=node('p','彻底删除会清除本脚本的栏目、HTML、外观预设、作者默认配置，以及本聊天的状态、快照、回档与更新绑定。聊天正文、世界书和全局 API 预设保留。其他旧聊天会停用，重新启用时清除旧状态，从下一条回复开始。请输入“删除旧配置”确认。');
+  const resetLabel=node('label','删除确认'),resetInput=node('input',undefined,resetLabel);resetInput.setAttribute('aria-label','删除旧配置确认');
+  button('彻底删除旧配置',panel,async()=>{
+    if(resetInput.value!=='删除旧配置')throw new Error('请输入“删除旧配置”确认删除范围');
+    if(hostGenerating()||extraJob||continuationWork||appearanceJob?.busy)throw new Error('请先停止生成或取消状态更新、外观生成，再删除配置');
+    chatEpoch++;cancelExtraUpdate();uninject?.();uninject=null;
+    const configId=crypto.randomUUID();
+    updateVariablesWith(v=>({...v,[PROTO_KEY]:{configId,ready:false}}),{type:'script'});
+    updateVariablesWith(v=>{const next={...v};delete next[PROTO_KEY];return next;},{type:'chat'});
+    stateWindow.close();view?.remove();renderKey='';capturedKey='';noticeKey='';notice.hidden=true;runtimeLogs=[];draft=null;restoreDraft=null;
+    html.value='';maker.value='';initialEditor.value='';constraintEditor.value='';policyDraft=null;policyPreview.textContent='尚未预览';preview.srcdoc='';snapshotPreview.textContent='';resetInput.value='';apiUi.sync();syncPresets();
+    report('旧配置已删除。重新选择世界书条目、填写 HTML 并保存即可改变栏目；新状态从下一条回复开始，历史正文保留。');
   });
   button('重新读取当前聊天状态',panel,async()=>{renderKey='';await refresh();const result=getResult();report(result.errors.length?`重新校验后仍有 ${result.errors.length} 轮失败，请打开状态管理器。`:'全部参与回放的楼层已通过校验。');});
   const authorHelp=node('p','可选：作者初始档案让首轮直接从确定事实增量更新；字段规则只做文字约束。保存的默认值用于新聊天，已有聊天保留自己的配置。');authorHelp.className='ls-note';
@@ -444,7 +462,7 @@ export function startPrototype(defaultHtml) {
     updateVariablesWith(v=>({...v,[PROTO_KEY]:{...v[PROTO_KEY],policy}}),{type:'chat'});renderKey='';capturedKey='';await refresh();report('作者配置已用于本聊天，首轮将按初始档案更新。');
   });
   async function loadSettings(){try{syncPresets();await loadBooks();}catch(e){fault(e,'设置读取失败');}}
-  async function open(){if(!settings().ready){center.open('settings');await loadSettings();}else openManager();}
+  async function open(){if(!settings().ready||settings().configId&&getVariables({type:'chat'})[PROTO_KEY]?.configId!==settings().configId){center.open('settings');await loadSettings();report('请保存并启用当前配置；重新启用旧聊天会清除旧状态，从下一条回复开始。');}else openManager();}
   const a=title=>actions.get(title);
   function cancelExtraUpdate(){
     autoUpdate=null;clearTimeout(autoTimer);autoTimer=null;
@@ -479,7 +497,8 @@ export function startPrototype(defaultHtml) {
     const profile=selectedStateModel(binding),input=appearanceInput(options),id=identity(),epoch=chatEpoch,key=appearanceContext();
     appearancePrompt(input);
     generating=false;uninject?.();uninject=null;
-    const job=createAppearanceJob({generate:request=>generateRaw(request),stop:id=>stopGenerationById(id),
+    const nativeController=new AbortController();
+    const job=createAppearanceJob({generate:request=>profile&&profile.protocol!=='helper'?callNativeApi(profile,request,nativeController.signal):generateRaw(request),stop:id=>{nativeController.abort();stopGenerationById(id);},
       validate:source=>{renderTemplateV2(source,templatePreviewState(input.schema),input.schema);},report:notify,
       assertCurrent:()=>{if(!matches(id)||epoch!==chatEpoch||hostGenerating()||key!==appearanceContext())throw new Error('聊天、栏目、草稿或 API 配置已变化，生成结果未写入');},
     });
@@ -497,7 +516,7 @@ export function startPrototype(defaultHtml) {
     appearancePanel:appearanceUi.panel,loadAppearance:async()=>{await loadSettings();appearanceUi.sync();},settingsGroups:[
     {title:'世界书与规则',hint:'选择条目后确认绑定，再到外观制作台生成 HTML，最后保存并启用。',items:[bookLabel,entryLabel,[a('刷新世界书列表'),a('确认绑定状态栏条目'),openAppearance],ruleDisclosure,[a('保存 HTML 并启用本聊天')]]},
     {title:'初始档案与字段约束',hint:'可选：给新聊天一份确定的初始状态，并用文字规则约束字段。保存的默认值用于新聊天，已有聊天保留自己的配置。',items:[authorHelp,initialLabel,[a('生成初始档案模板')],constraintLabel,[a('预览作者配置')],policyPreview,[a('保存为新聊天默认配置'),a('应用到尚未开始的本聊天')]]},
-    {title:'聊天维护',hint:'重新计算本聊天状态，或暂停本聊天的状态更新。',items:[[a('重新读取当前聊天状态'),a('暂停本聊天')]]},
+    {title:'聊天维护',hint:'重新计算本聊天状态，或暂停本聊天的状态更新。',items:[[a('重新读取当前聊天状态'),a('暂停本聊天')],resetHelp,resetLabel,[a('彻底删除旧配置')]]},
   ]});
   const menu=node('div');menu.className='extension_container';
   const opener=button('LoreState',menu,open);opener.className='list-group-item';opener.style.cssText='background:transparent;color:inherit;border:0;text-align:left;width:100%;font:inherit';
@@ -568,7 +587,7 @@ export function startPrototype(defaultHtml) {
     const schemaKey=snapshotSchema(schema,start),captureKey=JSON.stringify([ctx().getCurrentChatId(),signature,schemaKey,checkpoint]);
     const snapshots=capturedKey===captureKey?readSnapshots(old):await collectSnapshots(list,schema,start,old.checkpoint,readSnapshots(old));
     const packed=capturedKey===captureKey&&old.snapshotStore?old.snapshotStore:await packSnapshots(snapshots,old.snapshotStore??emptySnapshotStore());
-    if(!matches(id)||hostGenerating()||historyIdentity(messages())!==signature||snapshotSchema(schemaFor(),chatSettings().start??1)!==schemaKey||JSON.stringify(chatSettings().checkpoint??null)!==checkpoint)return;
+    if(!matches(id)||!active(settings())||hostGenerating()||historyIdentity(messages())!==signature||snapshotSchema(schemaFor(),chatSettings().start??1)!==schemaKey||JSON.stringify(chatSettings().checkpoint??null)!==checkpoint)return;
     const record={...result,lastFloor:list.at(-1)?.message_id??-1};
     updateVariablesWith(v=>{
       const current=v[PROTO_KEY]??{},store=current.snapshotStore??emptySnapshotStore(),merged=new Map(store.snapshots.map(s=>[s.id,s]));
@@ -637,7 +656,8 @@ export function startPrototype(defaultHtml) {
     const token=crypto.randomUUID();let generationId=crypto.randomUUID();
     let rejectCancel,timer;
     const cancelled=new Promise((_,reject)=>{rejectCancel=reject;});
-    const job={cancelled:false,committed:false,cancel(){if(job.cancelled||job.committed)return;job.cancelled=true;try{stopGenerationById(generationId);}catch{}rejectCancel(new Error('状态更新已取消或超时，原消息保留'));}};
+    const controller=new AbortController();
+    const job={cancelled:false,committed:false,cancel(){if(job.cancelled||job.committed)return;job.cancelled=true;controller.abort();try{stopGenerationById(generationId);}catch{}rejectCancel(new Error('状态更新已取消或超时，原消息保留'));}};
     extraJob=job;autoUpdate=null;
     const current=()=>matches(id)&&chatEpoch===epoch&&!job.cancelled;
     const assertCurrent=()=>{
@@ -646,7 +666,7 @@ export function startPrototype(defaultHtml) {
       if(requestContextIdentity(binding)!==requestContextKey)throw new Error('酒馆预设或当前连接已变化，状态结果未写入');
     };
     apiUi.report(`正在使用“${profile?.name??'酒馆当前连接'}”更新第 ${last.message_id} 楼状态…`);
-    timer=setTimeout(job.cancel,binding.timeoutSeconds*1000);
+    if(binding.timeoutSeconds>0)timer=setTimeout(job.cancel,binding.timeoutSeconds*1000);
     try{
       await Promise.race([cancelled,(async()=>{
         const source=await getWorldbook(config.book);assertCurrent();
@@ -669,7 +689,7 @@ export function startPrototype(defaultHtml) {
           let output,failure;
           try{
             const request=extraModelRequest(profile,content,narrative,generationId,binding);
-            output=await (binding.presetMode==='builtin'?generateRaw(request):generate(request));
+            output=await (profile&&profile.protocol!=='helper'?callNativeApi(profile,request,controller.signal):binding.presetMode==='builtin'?generateRaw(request):generate(request));
             const savedOutput=diagnosticText(output);Object.assign(diagnostic,{status:'returned-awaiting-validation',output:savedOutput.text,truncated:savedOutput.truncated});
           }catch(error){failure='状态 API 请求失败，请检查连接配置和网络';Object.assign(diagnostic,{status:'request-error',requestError:safeDiagnosticError(error,[profile?.key])});}
           assertCurrent();

@@ -89,8 +89,8 @@ test('正文模式只提供只读状态，原随正文模式继续输出协议',
   assert.match(preparePrompt('记录地点',schema,result).content,/<LoreState version="3" mode="delta"/);
 });
 test('旧绑定保持默认行为；请求次数、总超时和参数范围严格校验',()=>{
-  const config=normalizeUpdateSettings({mode:'extra',profileId:'a'});assert.equal(config.auto,true);assert.equal(config.attempts,1);assert.equal(config.timeoutSeconds,120);assert.equal(config.presetMode,'builtin');assert.equal(config.source,'custom');
-  for(const patch of [{attempts:0},{attempts:6},{attempts:1.5},{timeoutSeconds:0},{timeoutSeconds:601},{auto:'false'},{presetMode:'named',presetName:''}])assert.throws(()=>normalizeUpdateSettings(patch));
+  const config=normalizeUpdateSettings({mode:'extra',profileId:'a'});assert.equal(config.auto,true);assert.equal(config.attempts,3);assert.equal(config.timeoutSeconds,0);assert.equal(config.presetMode,'builtin');assert.equal(config.source,'custom');
+  for(const patch of [{attempts:0},{attempts:6},{attempts:1.5},{timeoutSeconds:1},{timeoutSeconds:-1},{timeoutSeconds:601},{auto:'false'},{presetMode:'named',presetName:''}])assert.throws(()=>normalizeUpdateSettings(patch));
   for(const patch of [{topP:1.1},{topK:1.5},{frequencyPenalty:-3},{presencePenalty:3}])assert.throws(()=>normalizeApiProfile({...profile,...patch}));
 });
 test('高级采样参数与流式开关进入请求，留空与零值遵守省略语义',()=>{

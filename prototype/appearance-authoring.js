@@ -46,7 +46,7 @@ export function createAppearanceJob({generate,stop,validate,assertCurrent,report
     const job={cancelled:false,id:'',reject:null};
     const cancelled=new Promise((_,reject)=>{job.reject=reject;});
     active=job;
-    const timer=setTimer(()=>cancel('外观生成超时，原草稿保留'),options.timeoutSeconds*1000);
+    const timer=options.timeoutSeconds>0?setTimer(()=>cancel('外观生成超时，原草稿保留'),options.timeoutSeconds*1000):undefined;
     const guard=()=>{if(job.cancelled)throw new Error('外观生成已取消，原草稿保留');assertCurrent();};
     try{
       return await Promise.race([cancelled,(async()=>{

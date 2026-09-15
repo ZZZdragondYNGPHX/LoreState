@@ -571,6 +571,7 @@ await check('自动更新只在正文成功结束后运行一次；消息渲染�
   assert(extraCalls.length===calls+1);
 });
 await check('请求超时按请求编号取消，写入失败不宣称更新成功',async()=>{
+  variables.chat[PROTO_KEY].variableUpdate.timeoutSeconds=120;
   const original=list.at(-1).message,nativeTimeout=window.setTimeout;let timeout;
   window.setTimeout=(fn,ms,...args)=>{if(ms===120000){timeout=fn;return nativeTimeout(()=>{},120000);}return nativeTimeout(fn,ms,...args);};
   window.generateRaw=request=>new Promise(resolve=>{pendingReply=()=>resolve(extraReply(request));});

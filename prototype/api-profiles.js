@@ -2,18 +2,18 @@ import { builtinOrderedPrompts } from './builtin-preset.js';
 import { extraUpdateRetryHint } from './extra-update.js';
 // Local user configuration only. Never copy this namespace to script/card data.
 export const API_PROFILE_KEY='lorestate_api_profiles_v1';
-export function normalizeApiAddress(value){
+export function normalizeApiAddress(value,protocol='helper',exact=false){
   let url;try{url=new URL(String(value??'').trim());}catch{throw new Error('请填写完整的 API 地址');}
   if(!['http:','https:'].includes(url.protocol)||url.username||url.password||url.search||url.hash)throw new Error('API 地址只接受 HTTP/HTTPS，凭据请填写在密钥栏');
-  url.pathname=url.pathname.replace(/\/(?:chat\/completions|models)\/?$/,'').replace(/\/$/,'');
-  return url.href.replace(/\/$/,'');
+  if(!exact)url.pathname=url.pathname.replace(/\/(?:chat\/completions|responses|messages|models)\/?$/,'').replace(/\/$/,'');
+  return exact?url.href:url.href.replace(/\/$/,'');
 }
 export function normalizeUpdateSettings(value={}){
-  const config={...value,mode:value.mode??'inline',profileId:value.profileId??'',source:value.source??'custom',presetMode:value.presetMode??'builtin',presetName:value.presetName??'',auto:value.auto??true,stream:value.stream??false,attempts:Number(value.attempts??1),timeoutSeconds:Number(value.timeoutSeconds??120)};
+  const config={...value,mode:value.mode??'inline',profileId:value.profileId??'',source:value.source??'custom',presetMode:value.presetMode??'builtin',presetName:value.presetName??'',auto:value.auto??true,stream:value.stream??false,attempts:Number(value.attempts??3),timeoutSeconds:Number(value.timeoutSeconds??0)};
   if(!['inline','extra'].includes(config.mode)||!['custom','current'].includes(config.source)||!['builtin','current','named'].includes(config.presetMode))throw new Error('状态更新方式、模型来源或请求预设无效');
   if(typeof config.auto!=='boolean'||typeof config.stream!=='boolean')throw new Error('自动更新和流式设置必须为开关');
   if(!Number.isInteger(config.attempts)||config.attempts<1||config.attempts>5)throw new Error('请求总次数需为 1～5 的整数');
-  if(!Number.isInteger(config.timeoutSeconds)||config.timeoutSeconds<15||config.timeoutSeconds>600)throw new Error('总超时需为 15～600 秒的整数');
+  if(!Number.isInteger(config.timeoutSeconds)||config.timeoutSeconds!==0&&(config.timeoutSeconds<15||config.timeoutSeconds>600))throw new Error('总超时需为 0（无限制）或 15～600 秒的整数');
   if(config.presetMode==='named'&&!config.presetName.trim())throw new Error('请选择酒馆请求预设');
   return config;
 }
@@ -21,7 +21,19 @@ export function normalizeApiProfile(profile){
   const name=String(profile.name??'').trim(),model=String(profile.model??'').trim();
   if(!name||name.length>40)throw new Error('API 预设名称需为 1～40 个字符');
   if(!model||model.length>200)throw new Error('请填写模型名称（最多 200 字符）');
-  const url=normalizeApiAddress(profile.url),maxTokens=Number(profile.maxTokens??4096);
+  const protocol=profile.protocol??'helper',exact=profile.exact===true;
+  if(!['helper','chat','responses','anthropic'].includes(protocol))throw new Error('不支持的 API 协议');
+  if(protocol==='helper'&&exact)throw new Error('完整端点请使用直连协议');
+  const url=normalizeApiAddress(profile.url,protocol,exact),maxTokens=Number(profile.maxTokens??8000);
+  const headers=normalizeApiHeaders(profile.headers??{});
+  if(protocol==='helper'&&Object.keys(headers).length)throw new Error('自定义请求头请使用直连协议');
+  const modelsUrl=profile.modelsUrl?normalizeApiAddress(profile.modelsUrl,protocol,true):'';
+  const reasoning=profile.reasoning??'auto';
+  const tokenField=profile.tokenField??'max_tokens';
+  if(!['max_tokens','max_completion_tokens'].includes(tokenField))throw new Error('最大回复参数无效');
+  if(!['auto','none','minimal','low','medium','high','xhigh','max','ultra'].includes(reasoning))throw new Error('思考程度无效');
+  if(protocol==='helper'&&reasoning!=='auto')throw new Error('指定思考程度请使用直连协议，或在酒馆当前连接中配置');
+  if(protocol==='anthropic'&&reasoning==='minimal')throw new Error('Anthropic 请使用 low、medium、high、xhigh 或 max 思考程度');
   if(!Number.isInteger(maxTokens)||maxTokens<0||maxTokens>65536)throw new Error('最大回复长度需为 0～65536 的整数，0 表示不发送此参数');
   const sampling={};
   for(const [key,label,min,max,fallback] of [['temperature','温度',0,2,0.2],['topP','Top P',0,1,'unset'],['topK','Top K',0,1000,'unset'],['frequencyPenalty','频率惩罚',-2,2,'unset'],['presencePenalty','存在惩罚',-2,2,'unset']]){
@@ -30,7 +42,18 @@ export function normalizeApiProfile(profile){
     const number=Number(raw);if(!Number.isFinite(number)||number<min||number>max||(key==='topK'&&!Number.isInteger(number)))throw new Error(`${label} 参数范围为 ${min}～${max}${key==='topK'?' 的整数':''}`);
     sampling[key]=key==='topK'&&number===0?'unset':number;
   }
-  return {id:profile.id,name,url,key:String(profile.key??'').trim(),model,maxTokens,...sampling};
+  if(protocol==='anthropic'&&(maxTokens===0||sampling.temperature!=='unset'&&sampling.temperature>1))throw new Error('Anthropic 最大回复长度需大于 0，温度为 0～1 或留空');
+  return {id:profile.id,name,url,key:String(profile.key??'').trim(),model,maxTokens,...sampling,protocol,exact,headers,modelsUrl,reasoning,tokenField};
+}
+export function normalizeApiHeaders(value){
+  let headers;try{headers=typeof value==='string'?JSON.parse(value.trim()||'{}'):value;}catch{throw new Error('自定义请求头需要 JSON 对象');}
+  if(!headers||Array.isArray(headers)||typeof headers!=='object'||Object.keys(headers).length>20)throw new Error('自定义请求头需要至多 20 项的 JSON 对象');
+  const result={};
+  for(const [name,value] of Object.entries(headers)){
+    if(!/^[A-Za-z0-9!#$%&'*+.^_`|~-]+$/.test(name)||typeof value!=='string'||/[\r\n]/.test(value)||value.length>8000||/^(host|cookie|content-length|origin|referer|connection|proxy-.*|sec-.*)$/i.test(name))throw new Error('自定义请求头名称或值无效');
+    result[name.toLowerCase()]=value;
+  }
+  return result;
 }
 export function saveApiProfile(config,profile){
   const next=normalizeApiProfile(profile),profiles=config.profiles??[];
