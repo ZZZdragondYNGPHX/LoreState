@@ -1,3 +1,4 @@
+import { stripStateReview, validateStateReview } from './state-review.js';
 const ENTITY_DELETE_TOTAL_LIMIT=500;
 const ENTITY_DELETE_ALLOWED_ATTRS=new Set(['id','mode','action','reason']);
 const ENTITY_DELETE_ID=/^[A-Za-z][A-Za-z0-9_-]{0,39}$/;
@@ -72,13 +73,16 @@ export function installEntityDeleteProtocol(hooks){
   const baseApplyState=hooks.getApplyState();
   const basePreparePrompt=hooks.getPreparePrompt();
   hooks.setApplyState(function(previous,source,schema,floor=null,receipt=null){
-    const {deletes,retired}=collectEntityDeletes(source,previous,receipt);
-    const cleaned=removeDeleteTags(source,deletes);
+    const stateSource=stripStateReview(source);
+    const {deletes,retired}=collectEntityDeletes(stateSource,previous,receipt);
+    const cleaned=removeDeleteTags(stateSource,deletes);
     const next=baseApplyState(previous,cleaned,schema,floor,receipt);
-    return applyEntityDeletes(next,deletes,retired);
+    const result=applyEntityDeletes(next,deletes,retired);
+    validateStateReview(source,previous,result,schema,receipt);
+    return result;
   });
-  hooks.setPreparePrompt(function(rules,schema,result,text='',readToken='',purpose='combined'){
-    const prepared=basePreparePrompt(rules,schema,result,text,readToken,purpose);
+  hooks.setPreparePrompt(function(rules,schema,result,text='',readToken='',purpose='combined',reviewInstructions=''){
+    const prepared=basePreparePrompt(rules,schema,result,text,readToken,purpose,reviewInstructions);
     if(purpose==='narration')return prepared;
     const addon=deletionPromptAddon(result);
     const marker='\n当前有效公共状态：';

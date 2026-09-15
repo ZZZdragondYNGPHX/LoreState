@@ -1,5 +1,6 @@
 import { builtinOrderedPrompts } from './builtin-preset.js';
 import { extraUpdateRetryHint } from './extra-update.js';
+import { normalizeReviewInstructions } from './state-review.js';
 // Local user configuration only. Never copy this namespace to script/card data.
 export const API_PROFILE_KEY='lorestate_api_profiles_v1';
 export function normalizeApiAddress(value,protocol='helper',exact=false){
@@ -15,6 +16,7 @@ export function normalizeUpdateSettings(value={}){
   if(!Number.isInteger(config.attempts)||config.attempts<1||config.attempts>5)throw new Error('请求总次数需为 1～5 的整数');
   if(!Number.isInteger(config.timeoutSeconds)||config.timeoutSeconds!==0&&(config.timeoutSeconds<15||config.timeoutSeconds>600))throw new Error('总超时需为 0（无限制）或 15～600 秒的整数');
   if(config.presetMode==='named'&&!config.presetName.trim())throw new Error('请选择酒馆请求预设');
+  config.reviewInstructions=normalizeReviewInstructions(value.reviewInstructions??'');
   return config;
 }
 export function normalizeApiProfile(profile){
@@ -75,7 +77,7 @@ export function customApiSettings(profile){
   return {apiurl:p.url,key:p.key,model:p.model,source:'openai',max_tokens:p.maxTokens||'unset',temperature:p.temperature,top_p:p.topP,top_k:p.topK,frequency_penalty:p.frequencyPenalty,presence_penalty:p.presencePenalty};
 }
 export function extraModelRequest(profile,content,story,generationId,options={}){
-  const settings=normalizeUpdateSettings(options),retryHint=extraUpdateRetryHint(content),task=content+'\n本次只整理已发生剧情的文字状态，不续写剧情。只返回唯一 LoreState 更新块，不附解释、思考或代码围栏。下一条消息是已发生的剧情资料。'+(retryHint?'\n\n'+retryHint:'');
+  const settings=normalizeUpdateSettings(options),retryHint=extraUpdateRetryHint(content),task=content+'\n本次只整理已发生剧情的文字状态，不续写剧情。先返回唯一 LoreStateReview 简短核对摘要，再返回唯一 LoreState 更新块；不附其他解释、长篇推理或代码围栏。下一条消息是已发生的剧情资料。'+(retryHint?'\n\n'+retryHint:'');
   const request={generation_id:generationId,should_stream:settings.stream,should_silence:true,max_chat_history:0,tools:[]};
   if(settings.source==='custom'){
     request.custom_api=customApiSettings(profile);

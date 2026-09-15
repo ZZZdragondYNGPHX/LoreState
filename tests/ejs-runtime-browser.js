@@ -18,6 +18,7 @@ function assert(value, message = '断言失败') { if (!value) throw new Error(m
 async function check(name, fn) { try { await fn(); results.push('PASS ' + name); } catch (e) { results.push('FAIL ' + name + ': ' + e.message); } }
 async function prepare(extra = {}) { const context = { ...extra }; await emit(eventName, context); return context; }
 Object.assign(window, {
+  updateTavernRegexesWith: async updater => { updater([]); },
   getVariables: ({ type }) => variables[type],
   updateVariablesWith: (fn, { type }) => { variables[type] = fn(variables[type]); },
   getChatMessages: (_range, options) => { reads++; return structuredClone(list.map(m => options?.include_swipes ? { ...m, swipes: m.swipes ?? [m.message] } : m)); },

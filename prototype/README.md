@@ -1,6 +1,6 @@
-# LoreState prototype · 0.12.3 固定版与 main 开发版
+# LoreState prototype · 0.13.0 固定版与 main 开发版
 
-当前固定安装使用 [0.12.3 远程组件](dist/0.12.3/lorestate-script.json)；持续开发使用 [main 远程组件](dist/main/lorestate-script.json) 和 [main bundle](../artifact/bundle.js)。旧固定标签保持不可移动。
+当前固定安装使用 [0.13.0 远程组件](dist/0.13.0/lorestate-script.json)；持续开发使用 [main 远程组件](dist/main/lorestate-script.json) 和 [main bundle](../artifact/bundle.js)。旧固定标签保持不可移动。
 
 作者请从 [文档目录](../docs/README.md) 与 [作者入门](../docs/作者入门.md) 开始；本目录主要面向维护者。
 
@@ -40,10 +40,10 @@ npm test
 
 涉及模板/UI/宿主事件时运行 `node scripts/test-browser.mjs`；EJS 相关按需运行 `node scripts/test-ejs.mjs`。
 
-`npm run build` 只生成 main 开发入口。当前 0.12.3 已发布，下一 patch 示例：
+`npm run build` 只生成 main 开发入口。当前 0.13.0 已发布，下一 patch 示例：
 
 ```sh
-npm run build -- 0.12.4
+npm run build -- 0.13.1
 ```
 
 正式固定 loader 只能引用自己的 `@<version>/artifact/bundle.js`，不能引用 `@main`。

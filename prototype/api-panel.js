@@ -23,6 +23,13 @@ export function createApiPanel({doc,read,write,binding,setBinding,run,cancel,und
   const presetMode=field('请求预设','select',presetRow);choices(presetMode,[['builtin','内置预设'],['current','当前酒馆预设'],['named','指定酒馆预设']]);
   const presetName=field('目标酒馆预设','select',presetRow);
   note(bindingGroup,'状态规则与输出格式固定发送，不受预设选择影响。预设用于补充语气、文风等要求；内置预设的补充内容默认留空。酒馆预设只用于本次请求，不切换正文预设；指定预设时，其采样参数按酒馆助手规则优先生效。');
+  uiHeading(doc,bindingGroup,'更新前核对');
+  note(bindingGroup,'默认逐项核对已加载栏目，重点检查时间、地点、进出场、物品转移、关系和事件。可补充本状态栏的判断依据与更新条件；随正文和额外模型更新均生效。规则随角色卡脚本数据保存，影响该卡的所有聊天；导出时须包含脚本数据。');
+  note(bindingGroup,'保存时，更新方式、自动更新、流式、重试与超时也作为随卡默认值，供尚未配置的聊天使用。API 绑定、模型来源和酒馆请求预设仍只保存到本聊天；导入者使用额外模型前需绑定自己的连接。');
+  const reviewLabel=make('label','自定义更新核对规则',bindingGroup),reviewInstructions=make('textarea',null,reviewLabel);
+  reviewInstructions.setAttribute('aria-label','自定义更新核对规则');reviewInstructions.rows=6;reviewInstructions.maxLength=6000;reviewInstructions.style.width='100%';
+  reviewInstructions.placeholder='例如：好感度只在明确的信任或冲突事件后变化；物品转移需同时核对持有人与背包；战斗结束核对伤势和消耗。留空使用默认规则，最多 6000 字符。';
+  action('恢复默认核对规则',()=>{reviewInstructions.value='';status.textContent='已清空自定义规则；点击“保存状态更新绑定”后生效。';},bindingGroup);
   uiHeading(doc,bindingGroup,'模型来源');
   const sourceRow=uiGrid(doc,bindingGroup);
   const source=field('状态模型来源','select',sourceRow);choices(source,[['custom','绑定 API 预设'],['current','跟随酒馆当前连接']]);
@@ -141,7 +148,7 @@ export function createApiPanel({doc,read,write,binding,setBinding,run,cancel,und
     const profiles=read().profiles??[];choices(select,[['','新建预设'],...profiles.map(p=>[p.id,p.name])]);choices(bound,[['','未绑定'],...profiles.map(p=>[p.id,p.name])]);
     select.value=preferred;const config=normalizeUpdateSettings(binding());bound.value=config.profileId;mode.value=config.mode;source.value=config.source;presetMode.value=config.presetMode;
     choices(presetName,[['','请选择预设'],...listRequestPresets().map(name=>[name,name])]);presetName.value=config.presetName;
-    auto.checked=config.auto;stream.checked=config.stream;attempts.value=config.attempts;timeout.value=config.timeoutSeconds;
+    auto.checked=config.auto;stream.checked=config.stream;attempts.value=config.attempts;timeout.value=config.timeoutSeconds;reviewInstructions.value=config.reviewInstructions;
     const current=profiles.find(p=>p.id===config.profileId);
     status.textContent=`当前模式：${config.mode==='extra'?'额外模型':'随正文更新'}；状态模型：${config.source==='current'?'酒馆当前连接':current?.name??(config.profileId?'预设已删除，请重新绑定':'未绑定')}。`;
     load();visibility();refreshOperations();
@@ -152,7 +159,7 @@ export function createApiPanel({doc,read,write,binding,setBinding,run,cancel,und
   action('另存为新 API 预设',()=>{const p={...values(),id:crypto.randomUUID()};write(saveApiProfile(read(),p));sync(p.id);},profileActions);
   action('删除 API 预设',()=>{if(!editedId)throw new Error('请选择要删除的预设');write(deleteApiProfile(read(),editedId));sync('');},profileActions).classList.add('ls-danger');
   action('保存状态更新绑定',()=>{
-    const config=normalizeUpdateSettings({...binding(),mode:mode.value,profileId:bound.value,source:source.value,presetMode:presetMode.value,presetName:presetName.value,auto:auto.checked,stream:stream.checked,attempts:attempts.value,timeoutSeconds:timeout.value});
+    const config=normalizeUpdateSettings({...binding(),mode:mode.value,profileId:bound.value,source:source.value,presetMode:presetMode.value,presetName:presetName.value,auto:auto.checked,stream:stream.checked,attempts:attempts.value,timeoutSeconds:timeout.value,reviewInstructions:reviewInstructions.value});
     if(config.mode==='extra'&&config.source==='custom')boundApiProfile(read(),config.profileId);
     if(config.presetMode==='named'&&!listRequestPresets().includes(config.presetName))throw new Error('所选酒馆预设已失效');
     setBinding(config);sync();

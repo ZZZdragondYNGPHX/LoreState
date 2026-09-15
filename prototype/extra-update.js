@@ -1,4 +1,5 @@
 import { TAG_PATTERN, applyState } from './core.js';
+import { parseStateReview, stripStateReview, REVIEW_PATTERN } from './state-review.js';
 
 const retryHints=new Map();
 function retryToken(content){
@@ -13,13 +14,14 @@ function rememberRetryHint(receipt,error){
 }
 export function extraUpdateRetryHint(content){
   const token=retryToken(content),reason=token&&retryHints.get(token);if(!reason)return '';
-  return `【纠错重试】\n上一次状态输出未通过本地校验：${reason}\n请从头重新生成。本次只能返回一个完整 LoreState 更新块；不要解释、不要代码围栏、不要重复旧块；严格使用本次要求的 version、mode、read 凭据与栏目。`;
+  return `【纠错重试】\n上一次状态输出未通过本地校验：${reason}\n请从头重新生成。本次先返回一个完整 LoreStateReview 核对摘要，再返回一个完整 LoreState 更新块；不要解释、不要代码围栏、不要重复旧块；严格使用本次要求的 version、mode、read 凭据与栏目，修正核对与更新之间的不一致。`;
 }
 export function normalizeExtraUpdateOutput(output){
   if(typeof output!=='string')throw new Error('状态模型未返回文字更新块');
   return output.trim().replace(/^```(?:xml)?\s*\n([\s\S]*?)\n```$/,'$1').trim();
 }
 export function variableStory(source){
+  source=stripStateReview(source);
   const blocks=[...source.matchAll(new RegExp(TAG_PATTERN,'g'))];
   if(blocks.some(block=>(block[0].match(/<\/?LoreState\b/gi)??[]).length!==2))throw new Error('原消息状态标签存在嵌套，无法确定正文边界，请先手动修复');
   const story=source.replace(new RegExp(TAG_PATTERN,'g'),'');
@@ -29,6 +31,16 @@ export function variableStory(source){
 // A proposal only: the user must confirm the entire suffix before it is replaced.
 export function splitTruncatedUpdate(source){
   if(typeof source!=='string')return null;
+  if(/<\/?LoreStateReview\b/.test(source)){
+    const summaries=[...source.matchAll(new RegExp(REVIEW_PATTERN,'g'))];
+    if(summaries.length!==1)return null;
+    const summary=summaries[0],after=source.slice(summary.index+summary[0].length);
+    if(!/^\s*<LoreState(?=\s|>|$)/.test(after))return null;
+    try{parseStateReview(summary[0]+'<LoreState version="3" mode="delta"></LoreState>');}catch{return null;}
+    const story=source.slice(0,summary.index);
+    if(!splitTruncatedUpdate(story+after))return null;
+    return {story,tail:source.slice(summary.index)};
+  }
   const starts=[...source.matchAll(/<Lore/gi)];
   if(starts.length!==1)return null;
   const index=starts[0].index,tail=source.slice(index),story=source.slice(0,index);
@@ -39,23 +51,26 @@ export function splitTruncatedUpdate(source){
   if(closes.length>1||closes.some(close=>close.index<index||!'</LoreState>'.startsWith(source.slice(close.index).trimEnd())))return null;
   return {story,tail};
 }
-export function validateExtraUpdate(output,original,previous,schema,floor,receipt){
+export function validateExtraUpdate(output,original,previous,schema,floor,receipt,requireReview=false){
   // Only protocol-bearing output can provide useful correction feedback.
   retryHints.delete(receipt?.token);
   let hasUpdateBlock=false;
   try{
-    const text=normalizeExtraUpdateOutput(output);
-    const blocks=[...text.matchAll(new RegExp(TAG_PATTERN,'g'))];
+    const response=normalizeExtraUpdateOutput(output);
+    const blocks=[...response.matchAll(new RegExp(TAG_PATTERN,'g'))];
     hasUpdateBlock=blocks.length>0;
+    parseStateReview(response,requireReview);
+    const text=stripStateReview(response).trim();
     if(blocks.length!==1||blocks[0][0]!==text)throw new Error('状态模型必须只返回一个完整 LoreState 更新块');
     if(!text.startsWith(`<LoreState version="3" mode="${previous?'delta':'full'}" read="${receipt.token}">`))throw new Error('状态模型返回的 mode 或读取凭据不匹配，请重试');
     // This is the same parser and cold-record permission check used for replay.
-    applyState(previous,text,schema,floor,receipt);
+    applyState(previous,response,schema,floor,receipt);
     variableStory(original); // Validate boundaries before replacing anything.
     let replaced=false;
-    const updated=original.replace(new RegExp(TAG_PATTERN,'g'),()=>{if(replaced)return '';replaced=true;return text;});
+    const cleanOriginal=stripStateReview(original);
+    const updated=cleanOriginal.replace(new RegExp(TAG_PATTERN,'g'),()=>{if(replaced)return '';replaced=true;return text;});
     retryHints.delete(receipt.token);
-    return replaced?updated:original+'\n\n'+text;
+    return replaced?updated:cleanOriginal+'\n\n'+text;
   }catch(error){
     if(hasUpdateBlock)rememberRetryHint(receipt,error);
     throw error;
@@ -71,6 +86,6 @@ export function settleContinuedMessage(original,current,mode,previous,schema,flo
   if(mode==='extra')return variableStory(narrative);
   const blocks=[...suffix.matchAll(new RegExp(TAG_PATTERN,'g'))];
   if(blocks.length!==1) return narrative.replace(new RegExp(TAG_PATTERN,'g'),''); // Keep partial tags for diagnostics, retire complete untrusted blocks.
-  try{return validateExtraUpdate(blocks[0][0],narrative,previous,schema,floor,receipt);}
-  catch{return narrative.replace(new RegExp(TAG_PATTERN,'g'),'');}
+  try{const review=parseStateReview(suffix);return validateExtraUpdate((review?review.raw+'\n':'')+blocks[0][0],narrative,previous,schema,floor,receipt);}
+  catch{return stripStateReview(narrative).replace(new RegExp(TAG_PATTERN,'g'),'');}
 }

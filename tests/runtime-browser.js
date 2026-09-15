@@ -8,7 +8,10 @@ const wrap=(text,mode='delta')=>`<LoreState version="3" mode="${mode}"><Shared><
 let list=[{message_id:1,role:'assistant',message:wrap('车站','full'),swipe_id:0},{message_id:3,role:'assistant',message:wrap('A & B'),swipe_id:0}];
 let chatId='test',chatRef=[],variables={script:{[PROTO_KEY]:{ready:true,schema:{shared:['地点'],entity:[]},html}},chat:{[PROTO_KEY]:{enabled:true,start:1}}};
 const handlers=new Map();
+let characterRegexes=[];
 Object.assign(window,{
+  updateTavernRegexesWith:async updater=>{characterRegexes=updater(characterRegexes);},
+  isCharacterTavernRegexesEnabled:()=>true,
   getCharWorldbookNames:()=>({primary:'test-book',additional:[]}),
   getChatWorldbookName:()=>null,
   getWorldbook:async()=>[{uid:1,name:'状态规则',content:'记录地点'}],
@@ -47,7 +50,7 @@ await check('单入口、五页签、独立外观草稿和键盘导航',async()=
   assert(tabs.every(tab=>tab.getBoundingClientRect().height>=44),'页签触控热区不足 44px');
   tabs[2].click();await tick();assert(!document.getElementById('lorestate-prototype-settings').hidden);assert(document.getElementById('ls-page-state').hidden);
   const settingCards=[...document.querySelectorAll('#lorestate-prototype-settings>.ls-card')];
-  assert(settingCards.length===3,'设置页保留初始化、作者配置与聊天维护，外观独立');assert(settingCards.filter(card=>card.open).length===1,'设置页默认只展开第一步');
+  assert(settingCards.length===4,'设置页保留初始化、作者配置、导出与聊天维护，外观独立');assert(settingCards.filter(card=>card.open).length===1,'设置页默认只展开第一步');
   const editor=manager.querySelector('[aria-label="HTML 模板"]');const original=editor.value;editor.value='未保存草稿';
   tabs[0].click();tabs[2].click();await tick();assert(editor.value==='未保存草稿');editor.value=original;
   tabs[2].dispatchEvent(new KeyboardEvent('keydown',{key:'Home',bubbles:true}));assert(tabs[0].getAttribute('aria-selected')==='true');
@@ -384,7 +387,7 @@ await check('模块归属变化在请求前中止，状态与快照不被重解�
 });
 const apiKey='lorestate_api_profiles_v1';
 let extraCalls=[],extraStops=[],extraPlace='书店',pendingReply;
-const extraReply=request=>{const source=request.ordered_prompts.find(item=>item?.content?.includes('<LoreState version="3"'))?.content??request.user_input;const token=source.match(/read="([a-f\d-]+)"/)[1],mode=source.match(/<LoreState version="3" mode="(full|delta)"/)[1];return `<LoreState version="3" mode="${mode}" read="${token}"><Shared><地点>${extraPlace}</地点></Shared></LoreState>`;};
+const extraReply=request=>{const source=request.ordered_prompts.find(item=>item?.content?.includes('<LoreState version="3"'))?.content??request.user_input;const token=source.match(/read="([a-f\d-]+)"/)[1],mode=source.match(/<LoreState version="3" mode="(full|delta)"/)[1],before=source.match(/当前有效公共状态：\s*<地点>([^<]*)<\/地点>/)?.[1];return `<LoreStateReview>${JSON.stringify([{path:'/shared/地点',change:before!==extraPlace,reason:'根据本轮已发生的剧情核对地点'}])}</LoreStateReview><LoreState version="3" mode="${mode}" read="${token}"><Shared><地点>${extraPlace}</地点></Shared></LoreState>`;};
 const normalExtra=async request=>{extraCalls.push(request);const count=stops;await generate();assert(stops===count,'独立请求重入宿主钩子不应停止正文控制器');return extraReply(request);};
 const input=(label,value)=>{const el=manager.querySelector(`[aria-label="${label}"]`);el.value=value;return el;};
 await check('API 预设只存全局，当前聊天独立绑定；保存和删除不影响正文设置',async()=>{
@@ -401,6 +404,60 @@ await check('API 预设只存全局，当前聊天独立绑定；保存和删除
   assert(variables.chat[PROTO_KEY].variableUpdate.profileId===first.id);assert(variables.global.keep==='global');
   assert(!JSON.stringify(variables.script).includes('synthetic-private-key'));assert(!JSON.stringify(variables.chat).includes('synthetic-private-key'));
   await click('删除 API 预设');assert(variables.global[apiKey].profiles.length===1);
+});
+await check('自定义核对规则随卡保存、导航保留、额外模型与随正文均使用、可恢复默认',async()=>{
+  const custom='地点变化需核对本轮明确抵达的地点';
+  input('自定义更新核对规则',custom);await click('保存状态更新绑定');
+  assert(variables.script[PROTO_KEY].reviewInstructions===custom);
+  assert(!JSON.stringify(variables.chat).includes(custom));assert(!JSON.stringify(variables.global).includes(custom));
+  await click('更新与恢复');await click('模型连接');assert(manager.querySelector('[aria-label="自定义更新核对规则"]').value===custom);
+  await click('重新更新最新回复状态');assert(extraCalls.at(-1).ordered_prompts.some(item=>item?.content?.includes(custom)));
+  const diagnostic=manager.querySelector('[aria-label="最近一次 LoreState 更新诊断"]').value;
+  assert(diagnostic.includes('LoreStateReview'));assert(!list[1].message.includes('LoreStateReview'));
+  await click('查看下一轮状态提示');assert(document.querySelector('[aria-label="HTML 制作提示词"]').value.includes(custom));
+  input('状态更新方式','inline');await click('保存状态更新绑定');controller=new AbortController();await generate();assert(authorPromptText.includes(custom));
+  assert(characterRegexes.length===2);
+  for(const rule of characterRegexes){const pattern=rule.find_regex.slice(1,-2);assert(('正文<LoreStateReview>[]</LoreStateReview>'+wrap('车站')).replace(new RegExp(pattern,'g'),'')==='正文');}
+  input('状态更新方式','extra');await click('恢复默认核对规则');await click('保存状态更新绑定');
+  assert(variables.script[PROTO_KEY].reviewInstructions==='');
+});
+await check('随卡配置 JSON 往返后，新聊天恢复核对规则与外观且不继承个人模型连接',async()=>{
+  const savedVariables=structuredClone(variables),savedList=structuredClone(list);
+  try{
+    const custom='移交物品后核对持有人';
+    const authorPolicy={initial:wrap('作者开局地点','full'),constraints:{shared:{地点:{required:true}},entity:{}}};
+    const cardData=JSON.parse(JSON.stringify({...variables.script,[PROTO_KEY]:{...variables.script[PROTO_KEY],reviewInstructions:custom,authorPolicy}}));
+    variables={script:cardData,global:{},chat:{[PROTO_KEY]:{enabled:true,start:1,configId:cardData[PROTO_KEY].configId}}};
+    list=[{message_id:0,role:'user',message:'出发'}];
+    await emit('CHAT_CHANGED');await click('LoreState');await click('模型连接');
+    assert(manager.querySelector('[aria-label="自定义更新核对规则"]').value===custom);
+    assert(manager.querySelector('[aria-label="状态更新方式"]').value==='extra');
+    assert(manager.querySelector('[aria-label="状态更新 API 预设"]').value==='');
+    controller=new AbortController();await generate();assert(controller.signal.aborted,'未绑定读者连接时不可自动借用作者 API');
+    input('状态更新方式','inline');await click('保存状态更新绑定');controller=new AbortController();await generate();assert(authorPromptText.includes(custom));
+    assert(authorPromptText.includes('作者开局地点'));assert(authorPromptText.includes('required'));assert(JSON.stringify(variables.script[PROTO_KEY].authorPolicy)===JSON.stringify(authorPolicy));
+    assert(variables.script[PROTO_KEY].html===savedVariables.script[PROTO_KEY].html);
+  }finally{variables=savedVariables;list=savedList;await emit('CHAT_CHANGED');await click('LoreState');await click('模型连接');}
+});
+await check('导出准备同步规则副本、保留作者配置并只开启当前脚本的数据导出',async()=>{
+  const savedVariables=structuredClone(variables),worldbook=window.getWorldbook;
+  const oldApis=[window.getScriptId,window.getScriptTrees,window.updateScriptTreesWith];
+  let trees=[{type:'script',id:'ours',export_with:{data:false,button:false}},{type:'script',id:'other',export_with:{data:false,button:false}}];
+  window.getScriptId=()=> 'ours';window.getScriptTrees=()=>trees.map(item=>item.id==='ours'?{...item,data:variables.script}:item);
+  window.updateScriptTreesWith=updater=>{trees=updater(window.getScriptTrees());return trees;};
+  try{
+    window.getWorldbook=async()=>[{uid:1,name:'导出规则',content:'核对地点，只有确实到达才更新'}];
+    await click('检查并准备角色卡导出');
+    assert(variables.script[PROTO_KEY].ruleSnapshot.content==='核对地点，只有确实到达才更新');
+    assert(trees[0].export_with.data&&trees[0].export_with.button);assert(!trees[1].export_with.data);
+    assert(variables.script[PROTO_KEY].updateDefaults.mode==='extra');
+    assert(!JSON.stringify(trees[0].data).includes('synthetic-private-key'));
+    variables.chat[PROTO_KEY].variableUpdate.mode='inline';
+    window.getWorldbook=async()=>{throw new Error('导入后的本机没有这本书');};
+    controller=new AbortController();await generate();assert(!controller.signal.aborted);assert(authorPromptText.includes('只有确实到达才更新'));
+    await click('规则配置');
+    assert(!notice.textContent.includes('世界书读取失败'));
+  }finally{variables=savedVariables;window.getWorldbook=worldbook;[window.getScriptId,window.getScriptTrees,window.updateScriptTreesWith]=oldApis;await emit('MESSAGE_UPDATED');await click('模型连接');}
 });
 await check('额外模型初次更新、重试与撤销保留正文；重试始终读取本轮前态',async()=>{
   await click('重新更新最新回复状态');const firstDiagnostic=manager.querySelector('textarea[aria-label="最近一次 LoreState 更新诊断"]')?.value??'';assert(variables.chat[PROTO_KEY].current?.state?.shared?.地点==='书店',notice.textContent+'\n'+firstDiagnostic);assert(firstDiagnostic.includes('validated-success'));assert(list[1].message.startsWith('我们抵达书店。'));
@@ -544,7 +601,7 @@ await check('状态请求失败或输出不合法不覆盖消息，日志不泄�
   window.generateRaw=async()=>{throw new Error('synthetic-private-key raw provider error');};await click('重新更新最新回复状态');assert(list[1].message===before);assert(!notice.textContent.includes('synthetic-private-key'));
   let diagnostic=manager.querySelector('textarea[aria-label="最近一次 LoreState 更新诊断"]');assert(diagnostic.value.includes('request-error'));assert(diagnostic.value.includes('[REDACTED]'));assert(!diagnostic.value.includes('synthetic-private-key'));
   window.generateRaw=async()=>'<LoreState version="3" mode="full"></LoreState>';await click('重新更新最新回复状态');assert(list[1].message===before);assert(notice.textContent.includes('校验'));
-  diagnostic=manager.querySelector('textarea[aria-label="最近一次 LoreState 更新诊断"]');assert(diagnostic.value.includes('validation-failed'));assert(diagnostic.value.includes('mode 或读取凭据不匹配'));assert(diagnostic.value.includes('<LoreState version="3" mode="full"></LoreState>'));
+  diagnostic=manager.querySelector('textarea[aria-label="最近一次 LoreState 更新诊断"]');assert(diagnostic.value.includes('validation-failed'));assert(diagnostic.value.includes('缺少 LoreStateReview'));assert(diagnostic.value.includes('<LoreState version="3" mode="full"></LoreState>'));
   window.generateRaw=normalExtra;
 });
 await check('请求中编辑消息、切换分支或修改绑定拒绝迟到结果',async()=>{
@@ -1022,7 +1079,7 @@ await check('Responses 复用当前和指定酒馆提示词预设，中止组装
     assert(stopped===captures,'组装请求必须先中止');sends++;assert(url==='https://example.invalid/v3/responses');const data=JSON.parse(options.body);
     assert(data.input[0].content==='酒馆预设已展开');assert(data.reasoning.effort==='ultra');
     const token=data.input.map(m=>m.content).join('\n').match(/read="([a-f\d-]+)"/)[1];
-    return new Response(JSON.stringify({status:'completed',output:[{type:'message',role:'assistant',content:[{type:'output_text',text:`<LoreState version="3" mode="full" read="${token}"><Shared><天气>晴</天气></Shared></LoreState>`}]}]}),{headers:{'content-type':'application/json'}});
+    return new Response(JSON.stringify({status:'completed',output:[{type:'message',role:'assistant',content:[{type:'output_text',text:`<LoreStateReview>[{"path":"/shared/天气","change":true,"reason":"正文明确天气晴朗"}]</LoreStateReview><LoreState version="3" mode="full" read="${token}"><Shared><天气>晴</天气></Shared></LoreState>`}]}]}),{headers:{'content-type':'application/json'}});
   };
   try{
     for(const presetMode of ['current','named']){

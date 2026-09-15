@@ -1,4 +1,7 @@
-# LoreState｜创作者 / 使用者快速参考 · 0.12.3
+# LoreState｜创作者 / 使用者快速参考 · 0.13.0
+
+**更新核对与导出**：模型连接中可填写自定义更新核对规则；作者初始档案/字段约束先“保存为新聊天默认配置”。分享前到“规则配置 → 角色卡导出”执行“检查并准备角色卡导出”。详见 [核对与导出指南](../更新核对与随卡导出.md)。
+
 
 这份适合放在 Discord 置顶、资源帖或功能介绍帖的后续楼层。需要深入理解某一项时，再进入对应完整文档。
 
@@ -6,7 +9,7 @@
 - 固定稳定版：`0.12.3`
 - 需要：SillyTavern + Tavern Helper
 - 固定版与 `main` 不要同时启用
-- 固定组件：https://github.com/ZZZdragondYNGPHX/LoreState/raw/refs/tags/0.12.3/prototype/dist/0.12.3/lorestate-script.json
+- 固定组件：https://github.com/ZZZdragondYNGPHX/LoreState/raw/refs/tags/0.13.0/prototype/dist/0.13.0/lorestate-script.json
 
 **第一次配置**
 1. 在世界书创建 `【LoreState模块 v1】` 状态栏条目。

@@ -31,6 +31,71 @@ function modulePrompt(parsed,projection,text,initial=false){
   return `${parsed.common}\n${parsed.shared.rules}\n模块目录（每个新实体只填写所属类别的全部栏目）：\n${directory}\n本轮详细模块规则：\n${Object.entries(parsed.modules).filter(([name])=>selected.has(name)).map(([name,m])=>`【模块：${name}】\n${m.rules}`).join('\n')||'无已加载实体；按目录和通用规则建档。'}\n正文新出现的已声明类别可按目录建档，仅记录正文明确事实，未知填“未知”；下轮加载该类详细规则。未声明类别不得建档。涉及多个模块的同一事实必须在唯一更新块中一致提交；没有变化的模块省略。`;
 }
 
+
+// A public, bounded decision summary; never stored in the state object.
+const REVIEW_PATTERN = '<LoreStateReview>[\\s\\S]*?<\\/LoreStateReview>';
+function normalizeReviewInstructions(value='') {
+  if(typeof value!=='string'||value.length>6000)throw new Error('自定义更新核对规则须为不超过 6000 字符的文字');
+  return value.trim();
+}
+const STATE_REVIEW_PROMPT = `更新前核对：先检查本轮已经发生的剧情与旧状态，逐项判断公共栏目、完整加载实体的栏目是否变化；重点检查时间推进、地点变化、进出场、物品转移、关系依据和事件进展。未发生的计划、推测和未读取的冷档事实不能当作变化。
+在唯一 LoreState 更新块紧前输出一个 <LoreStateReview>JSON数组</LoreStateReview>。这是简短的可核验决策摘要，不是长篇推理；每项格式为 {"path":"/shared/地点","change":true,"reason":"已抵达车站"}。每个公共栏目与完整加载实体的每个栏目都列一项，无变化写 change:false 和简短依据；不要抄写旧值。首次或新建实体须核对全部所属栏目。实体字段路径为 /entities/编号/fields/栏目；进出场、关联和事件标记分别用 /entities/编号/presence、/entities/编号/links、/entities/编号/pending。新建或整体删除可另列 /entities/编号。未加载冷档只能核对出入场唤醒，不能分析其字段。
+每个路径只能出现一次，reason 为 1–120 字，change 必须为布尔值。摘要内文字的 < 写成 JSON 转义 \\u003c。只有摘要使用 JSON，状态仍使用 v3 XML。change:true 必须在更新块产生实际变化，change:false 必须保留原值；检查所有拟更新路径都有对应更新后再输出。没有变化也要完成核对，并输出空 delta。`;
+
+function parseStateReview(source, required=false) {
+  // Existing schemas may use LoreStateReview as a field name. Only outer blocks are summaries.
+  const outside=String(source).replace(/<LoreState\b[^>]*>[\s\S]*?<\/LoreState>/g,block=>' '.repeat(block.length));
+  const matches=[...outside.matchAll(new RegExp(REVIEW_PATTERN,'g'))];
+  const markers=outside.match(/<\/?LoreStateReview\b/g)??[];
+  if(!markers.length){if(required)throw new Error('缺少 LoreStateReview 更新前核对摘要');return null;}
+  if(matches.length!==1||markers.length!==2)throw new Error('核对摘要必须是唯一完整的 LoreStateReview');
+  const match=matches[0],stateAt=source.indexOf('<LoreState ');
+  if(stateAt<match.index+match[0].length||source.slice(match.index+match[0].length,stateAt).trim())throw new Error('核对摘要必须紧接在 LoreState 更新块之前');
+  const body=match[0].slice('<LoreStateReview>'.length,-'</LoreStateReview>'.length);
+  if(body.length>100000||body.includes('<'))throw new Error('核对摘要过长或包含未转义标签');
+  let checks;try{checks=JSON.parse(body);}catch{throw new Error('核对摘要需要合法 JSON 数组');}
+  if(!Array.isArray(checks)||checks.length>17000)throw new Error('核对摘要需要有限的检查项数组');
+  const seen=new Set();
+  for(const item of checks){
+    if(!item||typeof item!=='object'||Array.isArray(item)||Object.keys(item).sort().join(',')!=='change,path,reason'||typeof item.path!=='string'||item.path.length>140||typeof item.change!=='boolean'||typeof item.reason!=='string'||!item.reason.trim()||item.reason.length>120)throw new Error('核对项只允许 path、布尔 change 和 1–120 字 reason');
+    if(seen.has(item.path))throw new Error(`核对路径重复：${item.path}`);
+    seen.add(item.path);
+  }
+  return {checks,raw:match[0]};
+}
+
+function stripStateReview(source) {
+  const review=parseStateReview(source);
+  return review?source.replace(review.raw,''):source;
+}
+
+function validateStateReview(source,previous,next,schema,receipt,required=false) {
+  const review=parseStateReview(source,required);if(!review)return;
+  const allowed=new Map(),coverage=new Set();
+  const add=(path,before,after,cover=false)=>{allowed.set(path,{before,after});if(cover)coverage.add(path);};
+  for(const field of schema.shared)add(`/shared/${field}`,previous?.shared?.[field],next.shared[field],true);
+  const ids=new Set([...Object.keys(previous?.entities??{}),...Object.keys(next.entities)]);
+  for(const id of ids){
+    const before=previous?.entities?.[id],after=next.entities[id],base=`/entities/${id}`;
+    const loaded=!before||before.presence==='active'||before.pending||(receipt?.ids??[]).includes(id);
+    // An unloaded cold record can only be woken; the core parser checks authority.
+    add(base+'/presence',before?.presence,after?.presence,!!before&&!!after&&before.presence!==after.presence);
+    if(!loaded)continue;
+    add(base,before,after,!after);
+    for(const attr of ['links','pending','confirmed'])add(base+'/'+attr,before?.[attr],after?.[attr],attr!=='confirmed'&&!!before&&!!after&&JSON.stringify(before[attr])!==JSON.stringify(after[attr]));
+    if(!after)continue; // Whole-record removal supersedes per-field checks.
+    for(const field of entityFields(schema,after.type))add(base+'/fields/'+field,before?.fields?.[field],after.fields[field],true);
+  }
+  for(const {path,change} of review.checks){
+    const values=allowed.get(path);if(!values)throw new Error(`核对路径未配置或未完整加载：${path}`);
+    const changed=JSON.stringify(values.before)!==JSON.stringify(values.after);
+    if(change&&!changed)throw new Error(`核对计划更新但未产生变化：${path}`);
+    if(!change&&changed)throw new Error(`核对声明保留但实际发生变化：${path}`);
+    coverage.delete(path);
+  }
+  if(coverage.size)throw new Error(`核对遗漏栏目：${[...coverage].slice(0,6).join('、')}`);
+}
+
 // Independent of SillyTavern: a small text-tag protocol for the author-flow prototype.
 const PROTO_KEY = 'lorestate_world_v3';
 const TAG_PATTERN = '<LoreState\\b[^>]*>[\\s\\S]*?<\\/LoreState>';
@@ -200,6 +265,7 @@ function applyStateInternal(previous,source,schema,floor,receipt){
   if(!previous&&schema.shared.length&&!sharedSeen)throw new Error('首次需要完整 Shared 公共状态');
   for(const entity of Object.values(draft.entities))if(entity.links.some(id=>!Object.hasOwn(draft.entities,id)))throw new Error(`实体 ${entity.id} 关联了尚未建档的编号`);
   if(Object.keys(draft.entities).length>ENTITY_LIMIT||JSON.stringify(draft).length>1000000)throw new Error('实体记忆超过本地容量限制');
+  validateStateReview(source,previous,draft,schema,receipt);
   return draft;
 }
 function applyState(previous,source,schema,floor=null,receipt=null){
@@ -262,8 +328,8 @@ function projectEntities(state,text=''){
   const index=candidates.slice(0,24).map(({id,name,identity,type,confirmed})=>({id,name,identity,type,confirmed}));
   return {full,index,retrieved,deferred,omitted:candidates.length-index.length,roots};
 }
-function preparePrompt(rules,schema,result,text='',readToken='',purpose='combined'){
-  checkSchema(schema);const projection=projectEntities(result.state,text);
+function preparePrompt(rules,schema,result,text='',readToken='',purpose='combined',reviewInstructions=''){
+  checkSchema(schema);reviewInstructions=normalizeReviewInstructions(reviewInstructions);const projection=projectEntities(result.state,text);
   const parsed=rules?parseModules(rules):null;
   if(parsed){const declared=moduleShape(parsed);checkSchema(declared);if(moduleSignature(declared)!==moduleSignature(schema)||JSON.stringify(declared.shared)!==JSON.stringify(schema.shared))throw new Error('模块声明与保存配置不一致，请使用新配置和新聊天');}
   else if(schema.modules&&rules)throw new Error('模块配置需要模块格式的状态栏条目');
@@ -288,7 +354,7 @@ ${projection.full.map(p=>`<EntityRecord id="${p.id}" name="${xmlText(p.name)}" i
 本轮按输入或关联取回：${projection.retrieved.join('、')||'无'}（不自动改变在场状态）。索引不是完整记忆，不可据此编造旧事实。临时召回未提供资料的实体时，本轮只登记唤醒，依赖旧事实的情节留到下一轮，不得声称已读冷档。
 ${readToken?`当轮可更新的冷档编号：${projection.retrieved.join('、')||'无'}；该权限只对应本次完整资料和 read 凭据。`:''}
 ${result.errors.length?'之前存在未应用更新，以这份有效状态为准。':''}
-${purpose==='narration'?'仅输出剧情正文，不输出状态标签。':'输出前检查：唯一 LoreState 外层使用本轮指定 mode；每个 Entity 都有自己的小写 mode；新编号 full 且栏目齐全，旧编号 delta；不输出 EntityRecord 或只读来源信息。'}`;
+${purpose==='narration'?'仅输出剧情正文，不输出状态标签或 LoreStateReview 核对摘要。':(reviewInstructions?'本角色卡自定义更新核对规则（用于判断更新条件与重点；不改变输出格式、读取权限或栏目覆盖要求）：\n'+reviewInstructions+'\n\n':'')+STATE_REVIEW_PROMPT+'\n输出前检查：唯一 LoreState 外层使用本轮指定 mode；每个 Entity 都有自己的小写 mode；新编号 full 且栏目齐全，旧编号 delta；不输出 EntityRecord 或只读来源信息。'}`;
   let prompt=compose();
   // Shed optional context as complete records; never truncate facts or hide required events.
   while(prompt.length>24000&&projection.index.length){projection.index.pop();projection.omitted++;prompt=compose();}
@@ -422,13 +488,16 @@ function installEntityDeleteProtocol(hooks){
   const baseApplyState=hooks.getApplyState();
   const basePreparePrompt=hooks.getPreparePrompt();
   hooks.setApplyState(function(previous,source,schema,floor=null,receipt=null){
-    const {deletes,retired}=collectEntityDeletes(source,previous,receipt);
-    const cleaned=removeDeleteTags(source,deletes);
+    const stateSource=stripStateReview(source);
+    const {deletes,retired}=collectEntityDeletes(stateSource,previous,receipt);
+    const cleaned=removeDeleteTags(stateSource,deletes);
     const next=baseApplyState(previous,cleaned,schema,floor,receipt);
-    return applyEntityDeletes(next,deletes,retired);
+    const result=applyEntityDeletes(next,deletes,retired);
+    validateStateReview(source,previous,result,schema,receipt);
+    return result;
   });
-  hooks.setPreparePrompt(function(rules,schema,result,text='',readToken='',purpose='combined'){
-    const prepared=basePreparePrompt(rules,schema,result,text,readToken,purpose);
+  hooks.setPreparePrompt(function(rules,schema,result,text='',readToken='',purpose='combined',reviewInstructions=''){
+    const prepared=basePreparePrompt(rules,schema,result,text,readToken,purpose,reviewInstructions);
     if(purpose==='narration')return prepared;
     const addon=deletionPromptAddon(result);
     const marker='\n当前有效公共状态：';
@@ -875,6 +944,7 @@ function normalizeUpdateSettings(value={}){
   if(!Number.isInteger(config.attempts)||config.attempts<1||config.attempts>5)throw new Error('请求总次数需为 1～5 的整数');
   if(!Number.isInteger(config.timeoutSeconds)||config.timeoutSeconds!==0&&(config.timeoutSeconds<15||config.timeoutSeconds>600))throw new Error('总超时需为 0（无限制）或 15～600 秒的整数');
   if(config.presetMode==='named'&&!config.presetName.trim())throw new Error('请选择酒馆请求预设');
+  config.reviewInstructions=normalizeReviewInstructions(value.reviewInstructions??'');
   return config;
 }
 function normalizeApiProfile(profile){
@@ -935,7 +1005,7 @@ function customApiSettings(profile){
   return {apiurl:p.url,key:p.key,model:p.model,source:'openai',max_tokens:p.maxTokens||'unset',temperature:p.temperature,top_p:p.topP,top_k:p.topK,frequency_penalty:p.frequencyPenalty,presence_penalty:p.presencePenalty};
 }
 function extraModelRequest(profile,content,story,generationId,options={}){
-  const settings=normalizeUpdateSettings(options),retryHint=extraUpdateRetryHint(content),task=content+'\n本次只整理已发生剧情的文字状态，不续写剧情。只返回唯一 LoreState 更新块，不附解释、思考或代码围栏。下一条消息是已发生的剧情资料。'+(retryHint?'\n\n'+retryHint:'');
+  const settings=normalizeUpdateSettings(options),retryHint=extraUpdateRetryHint(content),task=content+'\n本次只整理已发生剧情的文字状态，不续写剧情。先返回唯一 LoreStateReview 简短核对摘要，再返回唯一 LoreState 更新块；不附其他解释、长篇推理或代码围栏。下一条消息是已发生的剧情资料。'+(retryHint?'\n\n'+retryHint:'');
   const request={generation_id:generationId,should_stream:settings.stream,should_silence:true,max_chat_history:0,tools:[]};
   if(settings.source==='custom'){
     request.custom_api=customApiSettings(profile);
@@ -1311,6 +1381,13 @@ function createApiPanel({doc,read,write,binding,setBinding,run,cancel,undo,onErr
   const presetMode=field('请求预设','select',presetRow);choices(presetMode,[['builtin','内置预设'],['current','当前酒馆预设'],['named','指定酒馆预设']]);
   const presetName=field('目标酒馆预设','select',presetRow);
   note(bindingGroup,'状态规则与输出格式固定发送，不受预设选择影响。预设用于补充语气、文风等要求；内置预设的补充内容默认留空。酒馆预设只用于本次请求，不切换正文预设；指定预设时，其采样参数按酒馆助手规则优先生效。');
+  uiHeading(doc,bindingGroup,'更新前核对');
+  note(bindingGroup,'默认逐项核对已加载栏目，重点检查时间、地点、进出场、物品转移、关系和事件。可补充本状态栏的判断依据与更新条件；随正文和额外模型更新均生效。规则随角色卡脚本数据保存，影响该卡的所有聊天；导出时须包含脚本数据。');
+  note(bindingGroup,'保存时，更新方式、自动更新、流式、重试与超时也作为随卡默认值，供尚未配置的聊天使用。API 绑定、模型来源和酒馆请求预设仍只保存到本聊天；导入者使用额外模型前需绑定自己的连接。');
+  const reviewLabel=make('label','自定义更新核对规则',bindingGroup),reviewInstructions=make('textarea',null,reviewLabel);
+  reviewInstructions.setAttribute('aria-label','自定义更新核对规则');reviewInstructions.rows=6;reviewInstructions.maxLength=6000;reviewInstructions.style.width='100%';
+  reviewInstructions.placeholder='例如：好感度只在明确的信任或冲突事件后变化；物品转移需同时核对持有人与背包；战斗结束核对伤势和消耗。留空使用默认规则，最多 6000 字符。';
+  action('恢复默认核对规则',()=>{reviewInstructions.value='';status.textContent='已清空自定义规则；点击“保存状态更新绑定”后生效。';},bindingGroup);
   uiHeading(doc,bindingGroup,'模型来源');
   const sourceRow=uiGrid(doc,bindingGroup);
   const source=field('状态模型来源','select',sourceRow);choices(source,[['custom','绑定 API 预设'],['current','跟随酒馆当前连接']]);
@@ -1429,7 +1506,7 @@ function createApiPanel({doc,read,write,binding,setBinding,run,cancel,undo,onErr
     const profiles=read().profiles??[];choices(select,[['','新建预设'],...profiles.map(p=>[p.id,p.name])]);choices(bound,[['','未绑定'],...profiles.map(p=>[p.id,p.name])]);
     select.value=preferred;const config=normalizeUpdateSettings(binding());bound.value=config.profileId;mode.value=config.mode;source.value=config.source;presetMode.value=config.presetMode;
     choices(presetName,[['','请选择预设'],...listRequestPresets().map(name=>[name,name])]);presetName.value=config.presetName;
-    auto.checked=config.auto;stream.checked=config.stream;attempts.value=config.attempts;timeout.value=config.timeoutSeconds;
+    auto.checked=config.auto;stream.checked=config.stream;attempts.value=config.attempts;timeout.value=config.timeoutSeconds;reviewInstructions.value=config.reviewInstructions;
     const current=profiles.find(p=>p.id===config.profileId);
     status.textContent=`当前模式：${config.mode==='extra'?'额外模型':'随正文更新'}；状态模型：${config.source==='current'?'酒馆当前连接':current?.name??(config.profileId?'预设已删除，请重新绑定':'未绑定')}。`;
     load();visibility();refreshOperations();
@@ -1440,7 +1517,7 @@ function createApiPanel({doc,read,write,binding,setBinding,run,cancel,undo,onErr
   action('另存为新 API 预设',()=>{const p={...values(),id:crypto.randomUUID()};write(saveApiProfile(read(),p));sync(p.id);},profileActions);
   action('删除 API 预设',()=>{if(!editedId)throw new Error('请选择要删除的预设');write(deleteApiProfile(read(),editedId));sync('');},profileActions).classList.add('ls-danger');
   action('保存状态更新绑定',()=>{
-    const config=normalizeUpdateSettings({...binding(),mode:mode.value,profileId:bound.value,source:source.value,presetMode:presetMode.value,presetName:presetName.value,auto:auto.checked,stream:stream.checked,attempts:attempts.value,timeoutSeconds:timeout.value});
+    const config=normalizeUpdateSettings({...binding(),mode:mode.value,profileId:bound.value,source:source.value,presetMode:presetMode.value,presetName:presetName.value,auto:auto.checked,stream:stream.checked,attempts:attempts.value,timeoutSeconds:timeout.value,reviewInstructions:reviewInstructions.value});
     if(config.mode==='extra'&&config.source==='custom')boundApiProfile(read(),config.profileId);
     if(config.presetMode==='named'&&!listRequestPresets().includes(config.presetName))throw new Error('所选酒馆预设已失效');
     setBinding(config);sync();
@@ -1470,13 +1547,14 @@ function rememberRetryHint(receipt,error){
 }
 function extraUpdateRetryHint(content){
   const token=retryToken(content),reason=token&&retryHints.get(token);if(!reason)return '';
-  return `【纠错重试】\n上一次状态输出未通过本地校验：${reason}\n请从头重新生成。本次只能返回一个完整 LoreState 更新块；不要解释、不要代码围栏、不要重复旧块；严格使用本次要求的 version、mode、read 凭据与栏目。`;
+  return `【纠错重试】\n上一次状态输出未通过本地校验：${reason}\n请从头重新生成。本次先返回一个完整 LoreStateReview 核对摘要，再返回一个完整 LoreState 更新块；不要解释、不要代码围栏、不要重复旧块；严格使用本次要求的 version、mode、read 凭据与栏目，修正核对与更新之间的不一致。`;
 }
 function normalizeExtraUpdateOutput(output){
   if(typeof output!=='string')throw new Error('状态模型未返回文字更新块');
   return output.trim().replace(/^```(?:xml)?\s*\n([\s\S]*?)\n```$/,'$1').trim();
 }
 function variableStory(source){
+  source=stripStateReview(source);
   const blocks=[...source.matchAll(new RegExp(TAG_PATTERN,'g'))];
   if(blocks.some(block=>(block[0].match(/<\/?LoreState\b/gi)??[]).length!==2))throw new Error('原消息状态标签存在嵌套，无法确定正文边界，请先手动修复');
   const story=source.replace(new RegExp(TAG_PATTERN,'g'),'');
@@ -1486,6 +1564,16 @@ function variableStory(source){
 // A proposal only: the user must confirm the entire suffix before it is replaced.
 function splitTruncatedUpdate(source){
   if(typeof source!=='string')return null;
+  if(/<\/?LoreStateReview\b/.test(source)){
+    const summaries=[...source.matchAll(new RegExp(REVIEW_PATTERN,'g'))];
+    if(summaries.length!==1)return null;
+    const summary=summaries[0],after=source.slice(summary.index+summary[0].length);
+    if(!/^\s*<LoreState(?=\s|>|$)/.test(after))return null;
+    try{parseStateReview(summary[0]+'<LoreState version="3" mode="delta"></LoreState>');}catch{return null;}
+    const story=source.slice(0,summary.index);
+    if(!splitTruncatedUpdate(story+after))return null;
+    return {story,tail:source.slice(summary.index)};
+  }
   const starts=[...source.matchAll(/<Lore/gi)];
   if(starts.length!==1)return null;
   const index=starts[0].index,tail=source.slice(index),story=source.slice(0,index);
@@ -1496,23 +1584,26 @@ function splitTruncatedUpdate(source){
   if(closes.length>1||closes.some(close=>close.index<index||!'</LoreState>'.startsWith(source.slice(close.index).trimEnd())))return null;
   return {story,tail};
 }
-function validateExtraUpdate(output,original,previous,schema,floor,receipt){
+function validateExtraUpdate(output,original,previous,schema,floor,receipt,requireReview=false){
   // Only protocol-bearing output can provide useful correction feedback.
   retryHints.delete(receipt?.token);
   let hasUpdateBlock=false;
   try{
-    const text=normalizeExtraUpdateOutput(output);
-    const blocks=[...text.matchAll(new RegExp(TAG_PATTERN,'g'))];
+    const response=normalizeExtraUpdateOutput(output);
+    const blocks=[...response.matchAll(new RegExp(TAG_PATTERN,'g'))];
     hasUpdateBlock=blocks.length>0;
+    parseStateReview(response,requireReview);
+    const text=stripStateReview(response).trim();
     if(blocks.length!==1||blocks[0][0]!==text)throw new Error('状态模型必须只返回一个完整 LoreState 更新块');
     if(!text.startsWith(`<LoreState version="3" mode="${previous?'delta':'full'}" read="${receipt.token}">`))throw new Error('状态模型返回的 mode 或读取凭据不匹配，请重试');
     // This is the same parser and cold-record permission check used for replay.
-    applyState(previous,text,schema,floor,receipt);
+    applyState(previous,response,schema,floor,receipt);
     variableStory(original); // Validate boundaries before replacing anything.
     let replaced=false;
-    const updated=original.replace(new RegExp(TAG_PATTERN,'g'),()=>{if(replaced)return '';replaced=true;return text;});
+    const cleanOriginal=stripStateReview(original);
+    const updated=cleanOriginal.replace(new RegExp(TAG_PATTERN,'g'),()=>{if(replaced)return '';replaced=true;return text;});
     retryHints.delete(receipt.token);
-    return replaced?updated:original+'\n\n'+text;
+    return replaced?updated:cleanOriginal+'\n\n'+text;
   }catch(error){
     if(hasUpdateBlock)rememberRetryHint(receipt,error);
     throw error;
@@ -1528,8 +1619,45 @@ function settleContinuedMessage(original,current,mode,previous,schema,floor,rece
   if(mode==='extra')return variableStory(narrative);
   const blocks=[...suffix.matchAll(new RegExp(TAG_PATTERN,'g'))];
   if(blocks.length!==1) return narrative.replace(new RegExp(TAG_PATTERN,'g'),''); // Keep partial tags for diagnostics, retire complete untrusted blocks.
-  try{return validateExtraUpdate(blocks[0][0],narrative,previous,schema,floor,receipt);}
-  catch{return narrative.replace(new RegExp(TAG_PATTERN,'g'),'');}
+  try{const review=parseStateReview(suffix);return validateExtraUpdate((review?review.raw+'\n':'')+blocks[0][0],narrative,previous,schema,floor,receipt);}
+  catch{return stripStateReview(narrative).replace(new RegExp(TAG_PATTERN,'g'),'');}
+}
+
+
+// Only author behavior travels with a card. Local endpoints, keys and preset names do not.
+function portableUpdateDefaults(binding) {
+  const value=normalizeUpdateSettings(binding);
+  return Object.fromEntries(['mode','auto','stream','attempts','timeoutSeconds'].map(key=>[key,value[key]]));
+}
+function captureCardRule(config,entry,book=config.book) {
+  if(!entry||typeof entry.content!=='string'||!entry.content.trim()||entry.content.length>24000)throw new Error('随卡规则需要完整的非空条目，最多 24000 字符');
+  const modules=parseModules(entry.content);
+  if(config.schema?.modules&&(!modules||!sameSchema(moduleShape(modules),config.schema)))throw new Error('随卡规则栏目与已保存配置不一致');
+  return {book,uid:entry.uid,name:entry.name??'状态规则',content:entry.content};
+}
+async function readCardRule(config,loadWorldbook) {
+  let source;
+  try{source=await loadWorldbook(config.book);}catch(error){
+    const saved=config.ruleSnapshot;
+    if(!saved||saved.book!==config.book||saved.uid!==config.uid)throw error;
+    captureCardRule(config,saved);
+    return {...saved,origin:'card'};
+  }
+  const entry=source.find(e=>e.uid===config.uid);
+  // A removed entry in an available book is an author edit, not a failed import.
+  if(!entry)throw new Error('世界书关联失效，请重新选择状态栏条目');
+  return {...entry,origin:'worldbook'};
+}
+function enableCardScriptExport(trees,id) {
+  let found=false;
+  const visit=items=>items.map(item=>{
+    if(item.type==='folder')return {...item,scripts:visit(item.scripts)};
+    if(item.id!==id)return item;
+    found=true;return {...item,export_with:{...item.export_with,data:true,button:true}};
+  });
+  const next=visit(trees);
+  if(!found)throw new Error('当前 LoreState 不在角色卡脚本列表中；请将脚本导入本角色卡后再准备导出');
+  return next;
 }
 
 // The management shell owns its light palette; user-authored HTML stays independent.
@@ -1968,7 +2096,7 @@ function startPrototype(defaultHtml) {
     return config.configId&&saved.configId!==config.configId?{enabled:false,...(saved.preparedConfigId===config.configId?{variableUpdate:saved.preparedVariableUpdate}:{})}:saved;
   };
   const apiSettings=()=>getVariables({type:'global'})?.[API_PROFILE_KEY]??{profiles:[]};
-  const updateBinding=()=>normalizeUpdateSettings(chatSettings().variableUpdate);
+  const updateBinding=()=>normalizeUpdateSettings({...settings().updateDefaults,...chatSettings().variableUpdate,reviewInstructions:settings().reviewInstructions??''});
   const requestPresets=()=>typeof getPresetNames==='function'?getPresetNames():[];
   const selectedStateModel=binding=>binding.source==='custom'?boundApiProfile(apiSettings(),binding.profileId):null;
   function checkRequestPreset(binding){
@@ -2201,7 +2329,8 @@ function startPrototype(defaultHtml) {
     const wanted=selectionIdentity&&matches(selectionIdentity)&&loadedBook===name?entries.value:saved.book===name&&saved.uid!=null?String(saved.uid):null;
     loadedEntries=[];loadedBook='';entries.replaceChildren();rules.value='';
     if(!name)return;
-    const data=await getWorldbook(name);if(!matches(id)||books.value!==name||request!==entryLoad)return;
+    let data;try{data=await getWorldbook(name);}catch(error){const snapshot=settings().ruleSnapshot;if(!snapshot||snapshot.book!==name)throw error;data=[captureCardRule(settings(),snapshot)];report('本机世界书不可用，当前显示随卡保存的规则副本。');}
+    if(!matches(id)||books.value!==name||request!==entryLoad)return;
     loadedEntries=data;loadedBook=name;selectionIdentity=id;
     for(const e of data){const opt=node('option',e.name||`条目 ${e.uid}`,entries);opt.value=String(e.uid);}
     if(wanted!==null)entries.value=data.some(e=>String(e.uid)===wanted)?wanted:'';
@@ -2212,7 +2341,7 @@ function startPrototype(defaultHtml) {
     const saved=settings().setupBinding??settings();
     const wanted=selectionIdentity&&matches(selectionIdentity)?books.value:saved.book;
     const bound=getCharWorldbookNames('current'),chatBook=getChatWorldbookName('current');
-    const names=[...new Set([bound.primary,...bound.additional,chatBook].filter(Boolean))];books.replaceChildren();
+    const names=[...new Set([bound.primary,...bound.additional,chatBook,settings().ruleSnapshot?.book].filter(Boolean))];books.replaceChildren();
     for(const name of names)node('option',name,books).value=name;
     if(wanted)books.value=names.includes(wanted)?wanted:'';
     await loadEntries();if(!names.length)report('当前角色没有绑定世界书。请先在酒馆绑定状态栏世界书，再刷新列表。');
@@ -2222,7 +2351,7 @@ function startPrototype(defaultHtml) {
   button('确认绑定状态栏条目',panel,()=>{
     const entry=selectedEntry(),schema=dataSchemaFromEntry(entry),previous=settings();
     if(previous.ready&&previous.schema&&!sameSchema(schema,previous.schema))throw new Error('已有配置不支持改变栏目，以免影响其他聊天。新栏目请使用独立角色脚本。');
-    writeConfig({...previous,setupBinding:{book:books.value,uid:entry.uid}});
+    writeConfig({...previous,setupBinding:{book:books.value,uid:entry.uid},...(!previous.ready?{ruleSnapshot:captureCardRule(previous,entry,books.value)}:{})});
     report(`已确认绑定“${entry.name||entry.uid}”。可以打开外观制作台生成 HTML；保存 HTML 并启用后才会更新活动配置。`);
   });
   const maker=node('textarea',undefined,panel);maker.readOnly=true;maker.setAttribute('aria-label','HTML 制作提示词');maker.placeholder='点击下方按钮生成提示词，可复制给网页 AI';
@@ -2325,7 +2454,7 @@ function startPrototype(defaultHtml) {
   async function installRegex(){
     await updateTavernRegexesWith(old=>[
       ...old.filter(r=>![regexId,`${regexId}-display`,`${regexId}-prompt`].includes(r.id)),
-      ...['display','prompt'].map(destination=>({id:`${regexId}-${destination}`,script_name:`LoreState 原型｜${destination==='display'?'仅显示：隐藏更新标签':'仅提示词：过滤历史更新标签'}（保留正文）`,enabled:true,find_regex:`/${TAG_PATTERN}/g`,replace_string:'',trim_strings:[],source:{user_input:false,ai_output:true,slash_command:false,world_info:false,reasoning:false},destination:{display:destination==='display',prompt:destination==='prompt'},run_on_edit:true,min_depth:null,max_depth:null})),
+      ...['display','prompt'].map(destination=>({id:`${regexId}-${destination}`,script_name:`LoreState 原型｜${destination==='display'?'仅显示：隐藏更新标签':'仅提示词：过滤历史更新标签'}（保留正文）`,enabled:true,find_regex:`/(?:${REVIEW_PATTERN}|${TAG_PATTERN})/g`,replace_string:'',trim_strings:[],source:{user_input:false,ai_output:true,slash_command:false,world_info:false,reasoning:false},destination:{display:destination==='display',prompt:destination==='prompt'},run_on_edit:true,min_depth:null,max_depth:null})),
     ],{type:'character'});
   }
   button('保存 HTML 并启用本聊天',panel,async()=>{
@@ -2338,6 +2467,7 @@ function startPrototype(defaultHtml) {
     const activePresetId=previous.activePresetId??'default';
     const activeName=listPresets(previous).find(p=>p.id===activePresetId)?.name??'默认样式';
     const config=savePreset({...previous,version:4,ready:true,book,uid:entry.uid,setupBinding:{book,uid:entry.uid},entryName:entry.name,html:html.value,schema,activePresetId},activeName,html.value,activePresetId);
+    config.ruleSnapshot=captureCardRule(config,entry,book);
     updateVariablesWith(v=>({...v,[PROTO_KEY]:config}),{type:'script'});
     const old=chatSettings();updateVariablesWith(v=>({...v,[PROTO_KEY]:{...old,configId:config.configId,enabled:true,start:old.start??(config.configId?Math.max(1,(messages().at(-1)?.message_id??0)+1):previous.ready?1:Math.max(1,messages().length))}}),{type:'chat'});
     // Separate display and prompt copy filters; neither edits the source message.
@@ -2347,9 +2477,9 @@ function startPrototype(defaultHtml) {
     renderKey='';await refresh();
   });
   button('查看下一轮状态提示',panel,async()=>{
-    const config=settings(),source=await getWorldbook(config.book),entry=source.find(e=>e.uid===config.uid);
+    const config=settings(),entry=await readCardRule(config,getWorldbook);
     if(!entry)throw new Error('保存的世界书关联已失效，请重新选择');
-    maker.value=playPrompt(entry.content,schemaFor(config),getResult(config),doc.getElementById('send_textarea')?.value??'');report('此处仅预览提示，没有调用模型。');
+    maker.value=preparePrompt(entry.content,schemaFor(config),getResult(config),doc.getElementById('send_textarea')?.value??'','','combined',updateBinding().reviewInstructions).content;report('此处仅预览提示，没有调用模型。');
   });
   button('暂停本聊天',panel,async()=>{
     updateVariablesWith(v=>({...v,[PROTO_KEY]:{...chatSettings(),enabled:false}}),{type:'chat'});uninject?.();uninject=null;stateWindow.close();view?.remove();report('已暂停；数据和 HTML 保留，标签过滤正则保留。');
@@ -2408,8 +2538,10 @@ function startPrototype(defaultHtml) {
     binding:updateBinding,setBinding:value=>{
       if(!ctx().getCurrentChatId())throw new Error('请先打开角色聊天');
       appearanceJob?.cancel('API 绑定已变化，外观草稿保留');cancelExtraUpdate();
+      const {reviewInstructions,...localBinding}=value;
+      writeConfig({...settings(),reviewInstructions,updateDefaults:portableUpdateDefaults(localBinding)});
       updateVariablesWith(v=>{const saved=v[PROTO_KEY]??{},configId=settings().configId;
-        return {...v,[PROTO_KEY]:configId&&saved.configId!==configId?{...saved,preparedConfigId:configId,preparedVariableUpdate:value}:{...saved,variableUpdate:value}};
+        return {...v,[PROTO_KEY]:configId&&saved.configId!==configId?{...saved,preparedConfigId:configId,preparedVariableUpdate:localBinding}:{...saved,variableUpdate:localBinding}};
       },{type:'chat'});
     },
     run:()=>{if(updateBinding().mode==='inline'&&splitTruncatedUpdate(messages().at(-1)?.message)){return previewTruncatedTail(messages().at(-1)?.message_id);}return runExtraUpdate();},cancel:()=>{const committed=extraJob?.committed;cancelExtraUpdate();apiUi.report(committed?'状态已经写入，如需恢复请撤销最近一次更新。':'状态更新已取消，原消息保留。');},undo:undoExtraUpdate,onError:e=>fault(e,'状态更新操作失败'),
@@ -2452,10 +2584,29 @@ function startPrototype(defaultHtml) {
     applyDraft:async()=>{const config=settings();if(!config.ready)throw new Error('请先在“规则配置”完成首次栏目绑定并启用本聊天；将使用这份 HTML 草稿');validateTemplateV2(html.value,config.schema);writeConfig({...config,html:html.value});renderKey='';await refresh();},
   });
   const openAppearance=button('打开外观制作台',panel,async()=>{center.select('appearance');await loadSettings();appearanceUi.sync();});
+  const exportHelp=node('p','导出前同步已保存的规则、核对要求和新聊天默认值，并检查脚本数据导出开关。外观草稿与未保存编辑需先保存；剧情世界书和可选 EJS 扩展仍需随卡配置或另行安装。');
+  button('检查并准备角色卡导出',panel,async()=>{
+    if(hostGenerating()||extraJob||appearanceJob?.busy)throw new Error('请等待生成结束后再准备导出');
+    const config=settings(),id=identity(),signature=JSON.stringify(config);
+    if(!config.ready)throw new Error('请先保存 HTML 并启用本聊天');
+    if(typeof getScriptId!=='function'||typeof getScriptTrees!=='function'||typeof updateScriptTreesWith!=='function')throw new Error('当前酒馆助手缺少脚本导出检查接口，请使用支持的酒馆助手版本');
+    const scriptId=getScriptId();enableCardScriptExport(getScriptTrees({type:'character'}),scriptId);
+    validateTemplateV2(config.html,config.schema);
+    if(config.authorPolicy)initialResult({...config.schema,...config.authorPolicy});
+    const entry=await readCardRule(config,getWorldbook);
+    const ruleSnapshot=captureCardRule(config,entry);
+    if(!matches(id)||JSON.stringify(settings())!==signature)throw new Error('准备期间角色或配置已变化，请重试');
+    writeConfig({...config,ruleSnapshot,updateDefaults:portableUpdateDefaults(updateBinding())});
+    await updateScriptTreesWith(trees=>enableCardScriptExport(trees,scriptId),{type:'character'});
+    if(!matches(id))return;
+    await installRegex();if(!matches(id))return;
+    report(`导出准备完成：${entry.origin==='card'?'使用随卡规则副本':'已同步最新世界书规则'}；核对规则、外观及 ${listPresets(config).length} 份预设、作者默认初值/约束、更新默认值均在脚本数据中。已开启脚本数据导出并刷新过滤正则。请使用酒馆导出角色卡；读者需启用脚本与局部正则，额外模型需绑定自己的连接。`);
+  });
   const center=createControlCenter({doc,manager,panel,summary,status,floorSelect,details,diagnostics,repairBox,tailPreview,snapshotPanel,apiPanel:apiUi.panel,loadApi:apiUi.sync,updatePanel:apiUi.updatePanel,loadUpdates:apiUi.refreshOperations,actions,loadSettings,
     appearancePanel:appearanceUi.panel,loadAppearance:async()=>{await loadSettings();appearanceUi.sync();},settingsGroups:[
     {title:'世界书与规则',hint:'选择条目后确认绑定，再到外观制作台生成 HTML，最后保存并启用。',items:[bookLabel,entryLabel,[a('刷新世界书列表'),a('确认绑定状态栏条目'),openAppearance],ruleDisclosure,[a('保存 HTML 并启用本聊天')]]},
     {title:'初始档案与字段约束',hint:'可选：给新聊天一份确定的初始状态，并用文字规则约束字段。保存的默认值用于新聊天，已有聊天保留自己的配置。',items:[authorHelp,initialLabel,[a('生成初始档案模板')],constraintLabel,[a('预览作者配置')],policyPreview,[a('保存为新聊天默认配置'),a('应用到尚未开始的本聊天')]]},
+    {title:'角色卡导出',hint:'保留作者配置，个人连接和游玩进度留在本地。',items:[exportHelp,[a('检查并准备角色卡导出')]]},
     {title:'聊天维护',hint:'重新计算本聊天状态，或暂停本聊天的状态更新。',items:[[a('重新读取当前聊天状态'),a('暂停本聊天')],resetHelp,resetLabel,[a('彻底删除旧配置')]]},
   ]});
   const menu=node('div');menu.className='extension_container';
@@ -2609,10 +2760,9 @@ function startPrototype(defaultHtml) {
     if(binding.timeoutSeconds>0)timer=setTimeout(job.cancel,binding.timeoutSeconds*1000);
     try{
       await Promise.race([cancelled,(async()=>{
-        const source=await getWorldbook(config.book);assertCurrent();
-        const entry=source.find(e=>e.uid===config.uid);if(!entry)throw new Error('世界书关联失效，请重新选择');
+        const entry=await readCardRule(config,getWorldbook);assertCurrent();
         const user=list.slice(0,-1).findLast(m=>m.role==='user')?.message??'';
-        const {content,readIds}=preparePrompt(entry.content,schema,previous,user+'\n'+story,token);
+        const {content,readIds}=preparePrompt(entry.content,schema,previous,user+'\n'+story,token,'combined',binding.reviewInstructions);
         const store=saved.snapshotStore??await packSnapshots(readSnapshots(saved));assertCurrent();
         const prepared=await addReadReceipt(store,token,previous.state,schema,readIds);assertCurrent();
         const narrative='本轮用户输入：\n'+variableStory(user)+'\n\n本轮已经发生的 AI 剧情（只据此更新，不续写）：\n'+story;
@@ -2637,15 +2787,15 @@ function startPrototype(defaultHtml) {
             const savedOutput=diagnosticText(output);Object.assign(diagnostic,{status:'returned-awaiting-validation',output:savedOutput.text,truncated:savedOutput.truncated});
           }catch(error){failure='状态 API 请求失败，请检查连接配置和网络';Object.assign(diagnostic,{status:'request-error',requestError:safeDiagnosticError(error,[profile?.key])});}
           assertCurrent();
-          if(!failure){try{updated=validateExtraUpdate(output,replacementSource,previous.state,schema,last.message_id,receipt);diagnostic.status='validated-success';}catch(error){failure='状态模型输出未通过协议、栏目或读取凭据校验';Object.assign(diagnostic,{status:'validation-failed',localError:safeDiagnosticError(error)});}}
+          if(!failure){try{updated=validateExtraUpdate(output,replacementSource,previous.state,schema,last.message_id,receipt,true);diagnostic.status='validated-success';}catch(error){failure='状态模型输出未通过核对摘要、协议、栏目或读取凭据校验';Object.assign(diagnostic,{status:'validation-failed',localError:safeDiagnosticError(error)});}}
           apiUi.refreshDiagnostics();
           if(!failure)break;
           if(attempt===binding.attempts)throw new Error(`${failure}；已尝试 ${attempt} 次，原消息保留`);
         }
         assertCurrent();
         // Re-read rules too: an edited worldbook must not commit an outdated request.
-        const latestSource=await getWorldbook(config.book);assertCurrent();
-        if(latestSource.find(e=>e.uid===config.uid)?.content!==entry.content)throw new Error('状态规则已变化，请重新更新');
+        const latestEntry=await readCardRule(config,getWorldbook);assertCurrent();
+        if(latestEntry.content!==entry.content||latestEntry.origin!==entry.origin)throw new Error('状态规则已变化，请重新更新');
         assertCurrent();
         // Persist the receipt before the message; an interrupted write leaves only an unused receipt and a recovery backup.
         updateVariablesWith(v=>{const current=v[PROTO_KEY]??{},latest=current.snapshotStore??store;return {...v,[PROTO_KEY]:{...current,snapshotStore:{...latest,states:{...latest.states,...prepared.states},schemas:{...latest.schemas,...prepared.schemas},receipts:{...latest.receipts,[token]:prepared.receipts[token]}},variableUpdateBackup:{floor:last.message_id,swipe:last.swipe_id,original:last.message,updated}}};},{type:'chat'});
@@ -2708,8 +2858,7 @@ function startPrototype(defaultHtml) {
       }
       if(['continue','swipe','regenerate'].includes(type)&&chatSettings().checkpoint&&target?.message_id<=chatSettings().checkpoint.cutoff)throw new Error('不能改写回档前保留的正文，请发送新一轮继续');
       freezePolicy();
-      const source=await getWorldbook(config.book);if(!matches(id))return;
-      const entry=source.find(e=>e.uid===config.uid);
+      const entry=await readCardRule(config,getWorldbook);if(!matches(id))return;
       if(!entry)throw new Error('世界书关联失效，请在原型设置中重新选择');
       let list=messages();if(['swipe','regenerate','continue'].includes(type)&&list.at(-1)?.role==='assistant')list=list.slice(0,-1);
       const result=getResult(config,list);
@@ -2721,7 +2870,8 @@ function startPrototype(defaultHtml) {
         if(typeof generateRaw!=='function'||typeof stopGenerationById!=='function')throw new Error('当前酒馆助手缺少独立生成或取消接口');
         if(result.errors.length)throw new Error('此前状态更新未完成，请先重新更新或修复历史');
       }
-      const {content:baseContent,readIds}=preparePrompt(entry.content,schema,result,userText+(continuing?'\n'+variableStory(target.message):''),extra?'':token,extra?'narration':'combined');
+      const {content:baseContent,readIds}=preparePrompt(entry.content,schema,result,userText+(continuing?'\n'+variableStory(target.message):''),extra?'':token,extra?'narration':'combined',updateBinding().reviewInstructions);
+      await installRegex();if(!matches(id))return;
       const content=baseContent+(continuing?'\n本次续写同一条 AI 回复。以上状态是该回复开始前的状态。继续原剧情；'+(extra?'不要输出状态块。':'末尾输出一个替代旧块的新状态块，覆盖原回复与本次新增剧情的全部变化；忽略旧块的读取凭据，使用本次指定凭据。'):'');
       const old=chatSettings(),store=old.snapshotStore??await packSnapshots(readSnapshots(old));
       const prepared=await addReadReceipt(store,token,result.state,schema,readIds);

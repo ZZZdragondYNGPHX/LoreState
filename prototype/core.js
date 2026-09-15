@@ -1,4 +1,5 @@
 import { parseModules, moduleShape, moduleSignature, entityFields, modulePrompt } from './modules.js';
+import { STATE_REVIEW_PROMPT, validateStateReview, normalizeReviewInstructions } from './state-review.js';
 // Independent of SillyTavern: a small text-tag protocol for the author-flow prototype.
 export const PROTO_KEY = 'lorestate_world_v3';
 export const TAG_PATTERN = '<LoreState\\b[^>]*>[\\s\\S]*?<\\/LoreState>';
@@ -168,6 +169,7 @@ function applyStateInternal(previous,source,schema,floor,receipt){
   if(!previous&&schema.shared.length&&!sharedSeen)throw new Error('首次需要完整 Shared 公共状态');
   for(const entity of Object.values(draft.entities))if(entity.links.some(id=>!Object.hasOwn(draft.entities,id)))throw new Error(`实体 ${entity.id} 关联了尚未建档的编号`);
   if(Object.keys(draft.entities).length>ENTITY_LIMIT||JSON.stringify(draft).length>1000000)throw new Error('实体记忆超过本地容量限制');
+  validateStateReview(source,previous,draft,schema,receipt);
   return draft;
 }
 export function applyState(previous,source,schema,floor=null,receipt=null){
@@ -230,8 +232,8 @@ export function projectEntities(state,text=''){
   const index=candidates.slice(0,24).map(({id,name,identity,type,confirmed})=>({id,name,identity,type,confirmed}));
   return {full,index,retrieved,deferred,omitted:candidates.length-index.length,roots};
 }
-export function preparePrompt(rules,schema,result,text='',readToken='',purpose='combined'){
-  checkSchema(schema);const projection=projectEntities(result.state,text);
+export function preparePrompt(rules,schema,result,text='',readToken='',purpose='combined',reviewInstructions=''){
+  checkSchema(schema);reviewInstructions=normalizeReviewInstructions(reviewInstructions);const projection=projectEntities(result.state,text);
   const parsed=rules?parseModules(rules):null;
   if(parsed){const declared=moduleShape(parsed);checkSchema(declared);if(moduleSignature(declared)!==moduleSignature(schema)||JSON.stringify(declared.shared)!==JSON.stringify(schema.shared))throw new Error('模块声明与保存配置不一致，请使用新配置和新聊天');}
   else if(schema.modules&&rules)throw new Error('模块配置需要模块格式的状态栏条目');
@@ -256,7 +258,7 @@ ${projection.full.map(p=>`<EntityRecord id="${p.id}" name="${xmlText(p.name)}" i
 本轮按输入或关联取回：${projection.retrieved.join('、')||'无'}（不自动改变在场状态）。索引不是完整记忆，不可据此编造旧事实。临时召回未提供资料的实体时，本轮只登记唤醒，依赖旧事实的情节留到下一轮，不得声称已读冷档。
 ${readToken?`当轮可更新的冷档编号：${projection.retrieved.join('、')||'无'}；该权限只对应本次完整资料和 read 凭据。`:''}
 ${result.errors.length?'之前存在未应用更新，以这份有效状态为准。':''}
-${purpose==='narration'?'仅输出剧情正文，不输出状态标签。':'输出前检查：唯一 LoreState 外层使用本轮指定 mode；每个 Entity 都有自己的小写 mode；新编号 full 且栏目齐全，旧编号 delta；不输出 EntityRecord 或只读来源信息。'}`;
+${purpose==='narration'?'仅输出剧情正文，不输出状态标签或 LoreStateReview 核对摘要。':(reviewInstructions?'本角色卡自定义更新核对规则（用于判断更新条件与重点；不改变输出格式、读取权限或栏目覆盖要求）：\n'+reviewInstructions+'\n\n':'')+STATE_REVIEW_PROMPT+'\n输出前检查：唯一 LoreState 外层使用本轮指定 mode；每个 Entity 都有自己的小写 mode；新编号 full 且栏目齐全，旧编号 delta；不输出 EntityRecord 或只读来源信息。'}`;
   let prompt=compose();
   // Shed optional context as complete records; never truncate facts or hide required events.
   while(prompt.length>24000&&projection.index.length){projection.index.pop();projection.omitted++;prompt=compose();}
