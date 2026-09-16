@@ -51,7 +51,7 @@ test('独立请求显式绑定 API 和提示，未请求原生聊天历史或正
   assert.equal(request.custom_api.key,'synthetic-key');assert.equal(request.custom_api.source,'openai');assert.equal(request.max_chat_history,0);
   assert.equal(request.should_silence,true);assert.equal(request.generation_id,'job');assert.deepEqual(request.tools,[]);
   assert.equal(request.ordered_prompts.includes('user_input'),true);assert.equal(request.user_input,'剧情');
-  const task=request.ordered_prompts.find(item=>typeof item==='object'&&item.content.includes('规则')&&item.content.includes('只整理已发生剧情'));
+  const task=request.ordered_prompts.find(item=>typeof item==='object'&&item.content.includes('规则')&&item.content.includes('状态更新的判断规则只采用上方状态栏条目与自定义更新核对规则'));
   assert.ok(task);
 });
 test('额外更新和重试从本轮前态计算，替换旧块并保留正文',async()=>{
@@ -105,7 +105,7 @@ test('内置、当前及指定酒馆预设使用不同请求路径，跟随当�
   }
   const builtin=extraModelRequest(normalizeApiProfile(profile),'状态协议','已发生的剧情','id');
   assert.equal(builtin.preset_name,undefined);
-  const task=builtin.ordered_prompts.find(item=>typeof item==='object'&&item.content.includes('状态协议')&&item.content.includes('只整理已发生剧情'));
+  const task=builtin.ordered_prompts.find(item=>typeof item==='object'&&item.content.includes('状态协议')&&item.content.includes('状态更新的判断规则只采用上方状态栏条目与自定义更新核对规则'));
   assert.ok(task);assert.doesNotMatch(task.content,/SYSTEM RESET|忽略安全|UpdateVariable/);
 });
 

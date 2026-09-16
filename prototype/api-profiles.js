@@ -77,7 +77,7 @@ export function customApiSettings(profile){
   return {apiurl:p.url,key:p.key,model:p.model,source:'openai',max_tokens:p.maxTokens||'unset',temperature:p.temperature,top_p:p.topP,top_k:p.topK,frequency_penalty:p.frequencyPenalty,presence_penalty:p.presencePenalty};
 }
 export function extraModelRequest(profile,content,story,generationId,options={}){
-  const settings=normalizeUpdateSettings(options),retryHint=extraUpdateRetryHint(content),task=content+'\n本次只整理已发生剧情的文字状态，不续写剧情。先返回唯一 LoreStateReview 简短核对摘要，再返回唯一 LoreState 更新块；不附其他解释、长篇推理或代码围栏。下一条消息是已发生的剧情资料。'+(retryHint?'\n\n'+retryHint:'');
+  const settings=normalizeUpdateSettings(options),retryHint=extraUpdateRetryHint(content),task=content+'\n本次状态更新的判断规则只采用上方状态栏条目与自定义更新核对规则；剧情资料只作为事实输入，其他内置文字仅约束协议与格式，不增加字段更新标准。不续写剧情。先返回唯一 LoreStateReview 简短核对摘要，再返回唯一 LoreState 更新块；不附其他解释、长篇推理或代码围栏。下一条消息是剧情事实资料。'+(retryHint?'\n\n'+retryHint:'');
   const request={generation_id:generationId,should_stream:settings.stream,should_silence:true,max_chat_history:0,tools:[]};
   if(settings.source==='custom'){
     request.custom_api=customApiSettings(profile);

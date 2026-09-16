@@ -14,7 +14,7 @@ function rememberRetryHint(receipt,error){
 }
 export function extraUpdateRetryHint(content){
   const token=retryToken(content),reason=token&&retryHints.get(token);if(!reason)return '';
-  return `【纠错重试】\n上一次状态输出未通过本地校验：${reason}\n请从头重新生成。本次先返回一个完整 LoreStateReview 核对摘要，再返回一个完整 LoreState 更新块；不要解释、不要代码围栏、不要重复旧块；严格使用本次要求的 version、mode、read 凭据与栏目，修正核对与更新之间的不一致。`;
+  return `【纠错重试】\n上一次状态输出未通过本地校验：${reason}\n请从头重新生成。本次先返回一个完整 LoreStateReview 核对摘要，再返回一个完整 LoreState 更新块；不要解释、不要代码围栏、不要重复旧块；严格使用本次要求的 version、mode、read 凭据与栏目。核对 path 必须从本次提示给出的固定必查/条件路径逐字复制，不得缩写或同义改写。`;
 }
 export function normalizeExtraUpdateOutput(output){
   if(typeof output!=='string')throw new Error('状态模型未返回文字更新块');

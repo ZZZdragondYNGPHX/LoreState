@@ -1,6 +1,6 @@
 # LoreState Agent Guide
 
-- 这是 LoreState 的主仓库；当前维护线是 `prototype/` 的 Tavern Helper 远程脚本，`artifact/bundle.js` 是 `main` 分支运行代码；当前固定稳定版是不可移动标签 **`0.13.0`**。
+- 这是 LoreState 的主仓库；当前维护线是 `prototype/` 的 Tavern Helper 远程脚本，`artifact/bundle.js` 是 `main` 分支运行代码；当前固定稳定版是不可移动标签 **`0.13.1`**。
 - 默认用中文沟通。开始工作前先读本文件、`docs/版本管理.md`、`docs/开发说明.md` 和 `交接文档.md`，再确认目标、基底 ref、红线和验收；不要把历史交接记录当成当前指令。
 - `examples/` 与 `examples/wishnote` 分支已退休，不得重新创建或把 WishNote 专用代码接回主构建。
 - 根目录 `src/`、`index.js`、`manifest.json` 与 `package.json` 的 `0.2.1` 属于旧原生扩展；不得拿它当当前 Tavern Helper 脚本版本。
@@ -55,10 +55,10 @@ npm run build
 npm run build -- <version>
 ```
 
-当前 `0.13.0` 已发布；下一 patch 的示例：
+当前 `0.13.1` 已发布；下一 patch 的示例：
 
 ```sh
-npm run build -- 0.13.1
+npm run build -- 0.13.2
 ```
 
 固定版本的 `prototype/dist/<version>/lorestate-script.json` 必须且只能引用 `@<version>/artifact/bundle.js`。提交生成物并通过检查后，tag 再指向这个完全一致的提交。已经发布的 tag 永远不移动。

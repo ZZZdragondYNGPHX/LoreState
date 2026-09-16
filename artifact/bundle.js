@@ -38,9 +38,21 @@ function normalizeReviewInstructions(value='') {
   if(typeof value!=='string'||value.length>6000)throw new Error('自定义更新核对规则须为不超过 6000 字符的文字');
   return value.trim();
 }
-const STATE_REVIEW_PROMPT = `更新前核对：先检查本轮已经发生的剧情与旧状态，逐项判断公共栏目、完整加载实体的栏目是否变化；重点检查时间推进、地点变化、进出场、物品转移、关系依据和事件进展。未发生的计划、推测和未读取的冷档事实不能当作变化。
-在唯一 LoreState 更新块紧前输出一个 <LoreStateReview>JSON数组</LoreStateReview>。这是简短的可核验决策摘要，不是长篇推理；每项格式为 {"path":"/shared/地点","change":true,"reason":"已抵达车站"}。每个公共栏目与完整加载实体的每个栏目都列一项，无变化写 change:false 和简短依据；不要抄写旧值。首次或新建实体须核对全部所属栏目。实体字段路径为 /entities/编号/fields/栏目；进出场、关联和事件标记分别用 /entities/编号/presence、/entities/编号/links、/entities/编号/pending。新建或整体删除可另列 /entities/编号。未加载冷档只能核对出入场唤醒，不能分析其字段。
-每个路径只能出现一次，reason 为 1–120 字，change 必须为布尔值。摘要内文字的 < 写成 JSON 转义 \\u003c。只有摘要使用 JSON，状态仍使用 v3 XML。change:true 必须在更新块产生实际变化，change:false 必须保留原值；检查所有拟更新路径都有对应更新后再输出。没有变化也要完成核对，并输出空 delta。`;
+
+function stateReviewPrompt(schema,state,readIds=[]) {
+  const retrieved=new Set(readIds),required=[],conditional=[];
+  for(const field of schema.shared)required.push(`/shared/${field}`);
+  for(const entity of Object.values(state?.entities??{})){
+    const base=`/entities/${entity.id}`,loaded=entity.presence==='active'||entity.pending||retrieved.has(entity.id);
+    conditional.push(base+'/presence');
+    if(!loaded)continue;
+    for(const field of entityFields(schema,entity.type))required.push(base+'/fields/'+field);
+    conditional.push(base+'/links',base+'/pending',base);
+  }
+  const requiredText=required.length?required.map(path=>'- '+path).join('\n'):'- （当前没有固定必查路径）';
+  const conditionalText=conditional.length?conditional.map(path=>'- '+path).join('\n'):'- （当前没有已有实体条件路径）';
+  return `更新核对的“判断规则”只有两处来源：上方作者规则（状态栏条目），以及本角色卡的自定义更新核对规则（若已配置）。剧情正文与旧状态只作为事实资料。下面的内置说明只规定输出格式、读取权限和精确路径，不得额外引入时间、地点、关系、事件、物品或其他默认更新标准。\n在唯一 LoreState 更新块紧前输出一个 <LoreStateReview>JSON数组</LoreStateReview>。每项只能是 {"path":"精确路径","change":true或false,"reason":"1–120字简短依据"}。path 必须逐字复制当前栏目名，不得缩写、改名、翻译或同义改写；reason 说明依据即可，不抄写整段旧值。\n本轮固定必查路径如下，每项恰好出现一次；无变化也写 change:false：\n${requiredText}\n若整体删除一个已完整加载实体，则用 /entities/编号 这一项替代该实体的字段必查项，不再列被删除实体的字段路径。\n以下是条件路径，仅在对应属性本轮确实发生变化时才列；未发生变化不要为了凑项添加：\n${conditionalText}\n新实体无法预先列出编号：新建后必须按其所属 type 的全部精确栏目逐项使用 /entities/新编号/fields/栏目原名；不要另猜公共字段或其他路径。未完整加载的冷档只能使用其 /presence 路径，不能核对或更新其字段。\n每个路径只能出现一次。摘要内文字的 < 写成 JSON 转义 \\u003c。只有摘要使用 JSON，状态仍使用 v3 XML。change:true 必须在随后 LoreState 更新块产生实际变化，change:false 必须保留原值；没有变化也要完成固定必查项并输出空 delta。`;
+}
 
 function parseStateReview(source, required=false) {
   // Existing schemas may use LoreStateReview as a field name. Only outer blocks are summaries.
@@ -87,7 +99,7 @@ function validateStateReview(source,previous,next,schema,receipt,required=false)
     for(const field of entityFields(schema,after.type))add(base+'/fields/'+field,before?.fields?.[field],after.fields[field],true);
   }
   for(const {path,change} of review.checks){
-    const values=allowed.get(path);if(!values)throw new Error(`核对路径未配置或未完整加载：${path}`);
+    const values=allowed.get(path);if(!values)throw new Error(`核对路径未配置或未完整加载：${path}；path 必须逐字使用本轮提示列出的当前栏目名`);
     const changed=JSON.stringify(values.before)!==JSON.stringify(values.after);
     if(change&&!changed)throw new Error(`核对计划更新但未产生变化：${path}`);
     if(!change&&changed)throw new Error(`核对声明保留但实际发生变化：${path}`);
@@ -354,7 +366,7 @@ ${projection.full.map(p=>`<EntityRecord id="${p.id}" name="${xmlText(p.name)}" i
 本轮按输入或关联取回：${projection.retrieved.join('、')||'无'}（不自动改变在场状态）。索引不是完整记忆，不可据此编造旧事实。临时召回未提供资料的实体时，本轮只登记唤醒，依赖旧事实的情节留到下一轮，不得声称已读冷档。
 ${readToken?`当轮可更新的冷档编号：${projection.retrieved.join('、')||'无'}；该权限只对应本次完整资料和 read 凭据。`:''}
 ${result.errors.length?'之前存在未应用更新，以这份有效状态为准。':''}
-${purpose==='narration'?'仅输出剧情正文，不输出状态标签或 LoreStateReview 核对摘要。':(reviewInstructions?'本角色卡自定义更新核对规则（用于判断更新条件与重点；不改变输出格式、读取权限或栏目覆盖要求）：\n'+reviewInstructions+'\n\n':'')+STATE_REVIEW_PROMPT+'\n输出前检查：唯一 LoreState 外层使用本轮指定 mode；每个 Entity 都有自己的小写 mode；新编号 full 且栏目齐全，旧编号 delta；不输出 EntityRecord 或只读来源信息。'}`;
+${purpose==='narration'?'仅输出剧情正文，不输出状态标签或 LoreStateReview 核对摘要。':(reviewInstructions?'本角色卡自定义更新核对规则（这是除状态栏条目外唯一可影响字段更新判断的规则；不改变输出格式或读取权限）：\n'+reviewInstructions+'\n\n':'本角色卡未配置自定义更新核对规则；字段更新判断只依据状态栏条目。\n\n')+stateReviewPrompt(schema,result.state,readToken?[...projection.retrieved]:[])+'\n输出前检查：唯一 LoreState 外层使用本轮指定 mode；每个 Entity 都有自己的小写 mode；新编号 full 且栏目齐全，旧编号 delta；不输出 EntityRecord 或只读来源信息。'}`;
   let prompt=compose();
   // Shed optional context as complete records; never truncate facts or hide required events.
   while(prompt.length>24000&&projection.index.length){projection.index.pop();projection.omitted++;prompt=compose();}
@@ -1005,7 +1017,7 @@ function customApiSettings(profile){
   return {apiurl:p.url,key:p.key,model:p.model,source:'openai',max_tokens:p.maxTokens||'unset',temperature:p.temperature,top_p:p.topP,top_k:p.topK,frequency_penalty:p.frequencyPenalty,presence_penalty:p.presencePenalty};
 }
 function extraModelRequest(profile,content,story,generationId,options={}){
-  const settings=normalizeUpdateSettings(options),retryHint=extraUpdateRetryHint(content),task=content+'\n本次只整理已发生剧情的文字状态，不续写剧情。先返回唯一 LoreStateReview 简短核对摘要，再返回唯一 LoreState 更新块；不附其他解释、长篇推理或代码围栏。下一条消息是已发生的剧情资料。'+(retryHint?'\n\n'+retryHint:'');
+  const settings=normalizeUpdateSettings(options),retryHint=extraUpdateRetryHint(content),task=content+'\n本次状态更新的判断规则只采用上方状态栏条目与自定义更新核对规则；剧情资料只作为事实输入，其他内置文字仅约束协议与格式，不增加字段更新标准。不续写剧情。先返回唯一 LoreStateReview 简短核对摘要，再返回唯一 LoreState 更新块；不附其他解释、长篇推理或代码围栏。下一条消息是剧情事实资料。'+(retryHint?'\n\n'+retryHint:'');
   const request={generation_id:generationId,should_stream:settings.stream,should_silence:true,max_chat_history:0,tools:[]};
   if(settings.source==='custom'){
     request.custom_api=customApiSettings(profile);
@@ -1547,7 +1559,7 @@ function rememberRetryHint(receipt,error){
 }
 function extraUpdateRetryHint(content){
   const token=retryToken(content),reason=token&&retryHints.get(token);if(!reason)return '';
-  return `【纠错重试】\n上一次状态输出未通过本地校验：${reason}\n请从头重新生成。本次先返回一个完整 LoreStateReview 核对摘要，再返回一个完整 LoreState 更新块；不要解释、不要代码围栏、不要重复旧块；严格使用本次要求的 version、mode、read 凭据与栏目，修正核对与更新之间的不一致。`;
+  return `【纠错重试】\n上一次状态输出未通过本地校验：${reason}\n请从头重新生成。本次先返回一个完整 LoreStateReview 核对摘要，再返回一个完整 LoreState 更新块；不要解释、不要代码围栏、不要重复旧块；严格使用本次要求的 version、mode、read 凭据与栏目。核对 path 必须从本次提示给出的固定必查/条件路径逐字复制，不得缩写或同义改写。`;
 }
 function normalizeExtraUpdateOutput(output){
   if(typeof output!=='string')throw new Error('状态模型未返回文字更新块');

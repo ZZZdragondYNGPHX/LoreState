@@ -1,5 +1,5 @@
 import { parseModules, moduleShape, moduleSignature, entityFields, modulePrompt } from './modules.js';
-import { STATE_REVIEW_PROMPT, validateStateReview, normalizeReviewInstructions } from './state-review.js';
+import { stateReviewPrompt, validateStateReview, normalizeReviewInstructions } from './state-review.js';
 // Independent of SillyTavern: a small text-tag protocol for the author-flow prototype.
 export const PROTO_KEY = 'lorestate_world_v3';
 export const TAG_PATTERN = '<LoreState\\b[^>]*>[\\s\\S]*?<\\/LoreState>';
@@ -258,7 +258,7 @@ ${projection.full.map(p=>`<EntityRecord id="${p.id}" name="${xmlText(p.name)}" i
 本轮按输入或关联取回：${projection.retrieved.join('、')||'无'}（不自动改变在场状态）。索引不是完整记忆，不可据此编造旧事实。临时召回未提供资料的实体时，本轮只登记唤醒，依赖旧事实的情节留到下一轮，不得声称已读冷档。
 ${readToken?`当轮可更新的冷档编号：${projection.retrieved.join('、')||'无'}；该权限只对应本次完整资料和 read 凭据。`:''}
 ${result.errors.length?'之前存在未应用更新，以这份有效状态为准。':''}
-${purpose==='narration'?'仅输出剧情正文，不输出状态标签或 LoreStateReview 核对摘要。':(reviewInstructions?'本角色卡自定义更新核对规则（用于判断更新条件与重点；不改变输出格式、读取权限或栏目覆盖要求）：\n'+reviewInstructions+'\n\n':'')+STATE_REVIEW_PROMPT+'\n输出前检查：唯一 LoreState 外层使用本轮指定 mode；每个 Entity 都有自己的小写 mode；新编号 full 且栏目齐全，旧编号 delta；不输出 EntityRecord 或只读来源信息。'}`;
+${purpose==='narration'?'仅输出剧情正文，不输出状态标签或 LoreStateReview 核对摘要。':(reviewInstructions?'本角色卡自定义更新核对规则（这是除状态栏条目外唯一可影响字段更新判断的规则；不改变输出格式或读取权限）：\n'+reviewInstructions+'\n\n':'本角色卡未配置自定义更新核对规则；字段更新判断只依据状态栏条目。\n\n')+stateReviewPrompt(schema,result.state,readToken?[...projection.retrieved]:[])+'\n输出前检查：唯一 LoreState 外层使用本轮指定 mode；每个 Entity 都有自己的小写 mode；新编号 full 且栏目齐全，旧编号 delta；不输出 EntityRecord 或只读来源信息。'}`;
   let prompt=compose();
   // Shed optional context as complete records; never truncate facts or hide required events.
   while(prompt.length>24000&&projection.index.length){projection.index.pop();projection.omitted++;prompt=compose();}
